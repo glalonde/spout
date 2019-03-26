@@ -1,0 +1,11 @@
+build --crosstool_top=@llvm_toolchain//:toolchain
+build --copt=-Wall
+build --copt=-Wno-unused-function
+build --copt=-Wno-strict-overflow
+build --copt=-Wno-sign-compare
+build --copt=-mavx
+build --copt=-march=native
+build --copt=-Wno-unused-local-typedefs
+build --strip never
+build --dynamic_mode off
+build --compilation_mode opt
