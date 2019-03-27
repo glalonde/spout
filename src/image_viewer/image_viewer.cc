@@ -3,14 +3,13 @@
 
 #include "base/format.h"
 #include "src/check_opengl_errors.h"
-#include "src/controller_input.h"
 #include "src/image_viewer/image_viewer.h"
 #include "src/load_shader.h"
 #include "src/opengl.h"
 
 class ImageViewer::Impl {
  public:
-  Impl(Image<PixelType::RGBAU8> image) : image_(std::move(image)) {
+  Impl(int width, int height) : image_(width, height) {
     Init();
     InitRenderShader();
     MakeTexture();
@@ -22,12 +21,18 @@ class ImageViewer::Impl {
     SDL_Quit();
   }
 
-  void Loop() {
+  // Mutate the image data, then call update.
+  Image<PixelType::RGBAU8>* data() {
+    return &image_;
+  }
+
+  ControllerInput Update() {
+    LOG(INFO) << "Rendering";
+    UpdateTexture();
     Render();
     ControllerInput input;
-    while (!input.quit) {
-      UpdateInput(&input);
-    }
+    UpdateInput(&input);
+    return input;
   }
 
   void Render() {
@@ -160,6 +165,11 @@ class ImageViewer::Impl {
     glBindTexture(GL_TEXTURE_2D, tex_handle_);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    CHECK(CheckGLErrors());
+  }
+
+  void UpdateTexture() {
+    glBindTexture(GL_TEXTURE_2D, tex_handle_);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, image_.cols(), image_.rows(), 0,
                  GL_RGBA, GL_UNSIGNED_BYTE, image_.data());
     CHECK(CheckGLErrors());
@@ -179,11 +189,15 @@ class ImageViewer::Impl {
   GLuint tex_handle_;
 };
 
-ImageViewer::ImageViewer(Image<PixelType::RGBAU8> image)
-    : impl_(std::make_unique<ImageViewer::Impl>(std::move(image))) {}
+ImageViewer::ImageViewer(int width, int height)
+    : impl_(std::make_unique<ImageViewer::Impl>(width, height)) {}
 
 ImageViewer::~ImageViewer() = default;
 
-void ImageViewer::Loop() {
-  impl_->Loop();
+Image<PixelType::RGBAU8>* ImageViewer::data() {
+  return impl_->data();
+}
+
+ControllerInput ImageViewer::Update() {
+  return impl_->Update();
 }

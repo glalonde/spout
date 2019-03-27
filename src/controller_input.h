@@ -11,7 +11,8 @@ struct ControllerInput {
   bool pause = false;
 };
 
-void UpdateControllerInput(const SDL_Event& event, ControllerInput* input) {
+inline void UpdateControllerInput(const SDL_Event& event,
+                                  ControllerInput* input) {
   switch (event.type) {
     case SDL_QUIT:
       input->quit = true;

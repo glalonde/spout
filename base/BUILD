@@ -72,3 +72,19 @@ cc_library(
         ":logging",
     ],
 )
+
+cc_library(
+    name = "time",
+    srcs = ["time.cc"],
+    hdrs = ["time.h"],
+    deps = [":logging"],
+)
+
+cc_library(
+    name = "wall_timer",
+    hdrs = ["wall_timer.h"],
+    deps = [
+        ":logging",
+        ":time",
+    ],
+)

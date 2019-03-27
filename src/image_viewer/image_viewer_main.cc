@@ -9,7 +9,10 @@ int main(int argc, char* argv[]) {
   Init(argc, argv);
   auto maybe_image = ReadImage(FLAGS_image_path);
   CHECK(maybe_image) << "Couldn't load image at: " << FLAGS_image_path;
-  ImageViewer sdl(std::move(*maybe_image));
-  sdl.Loop();
+  ImageViewer viewer(maybe_image->cols(), maybe_image->rows());
+  auto* data = viewer.data();
+  *data = *maybe_image;
+  while (!viewer.Update().quit) {
+  }
   return 0;
 }

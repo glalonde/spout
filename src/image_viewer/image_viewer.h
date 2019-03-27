@@ -1,12 +1,14 @@
 #pragma once
 
+#include "src/controller_input.h"
 #include "src/image.h"
 
 class ImageViewer {
  public:
-  ImageViewer(Image<PixelType::RGBAU8> image);
+  ImageViewer(int width, int height);
   ~ImageViewer();
-  void Loop();
+  Image<PixelType::RGBAU8>* data();
+  ControllerInput Update();
 
  private:
   class Impl;
