@@ -91,10 +91,9 @@ class ImageViewer::Impl {
 
   void InitRenderShader() {
     render_program_ = glCreateProgram();
-    GLuint vert =
-        LoadShader("new_spout/image_viewer/shader.vert", GL_VERTEX_SHADER);
+    GLuint vert = LoadShader("src/image_viewer/shader.vert", GL_VERTEX_SHADER);
     GLuint frag =
-        LoadShader("new_spout/image_viewer/shader.frag", GL_FRAGMENT_SHADER);
+        LoadShader("src/image_viewer/shader.frag", GL_FRAGMENT_SHADER);
     glAttachShader(render_program_, vert);
     glAttachShader(render_program_, frag);
     glBindFragDataLocation(render_program_, 0, "out_color");
