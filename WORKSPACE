@@ -47,3 +47,17 @@ http_archive(
     strip_prefix = "eigen-git-mirror-master",
     urls = ["https://github.com/eigenteam/eigen-git-mirror/archive/master.tar.gz"]
 )
+
+http_archive(
+    name = "com_github_c42f_tinyformat",
+    build_file = "@//third_party:tinyformat.BUILD",
+    strip_prefix = "tinyformat-master",
+    urls = ["https://github.com/c42f/tinyformat/archive/master.zip"],
+)
+
+http_archive(
+    name = "com_github_nothings_stb",
+    build_file = "@//third_party:stb.BUILD",
+    strip_prefix = "stb-master",
+    urls = ["https://github.com/nothings/stb/archive/master.zip"],
+)

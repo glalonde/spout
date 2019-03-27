@@ -34,3 +34,38 @@ cc_binary(
         "//base:googletest",
     ],
 )
+
+
+filegroup(
+    name = "testdata",
+    srcs = glob([
+        "testdata/*",
+    ]),
+)
+
+cc_library(
+    name = "image",
+    hdrs = ["image.h"],
+    deps = [":eigen_types"],
+)
+
+cc_library(
+    name = "image_io",
+    srcs = ["image_io.cc"],
+    hdrs = ["image_io.h"],
+    deps = [
+        ":image",
+        "//base:logging",
+        "@com_github_nothings_stb//:stb_image",
+    ],
+)
+
+cc_test(
+    name = "image_io_test",
+    srcs = ["image_io_test.cc"],
+    data = [":testdata"],
+    deps = [
+        ":image_io",
+        "//base:googletest",
+    ],
+)
