@@ -4,6 +4,7 @@ cc_library(
     name = "logging",
     hdrs = ["logging.h"],
     deps = [
+        "@com_github_bombela_backwardcpp//:backwardcpp",
         "@com_google_glog//:glog",
         "@com_github_gflags_gflags//:gflags",
     ],

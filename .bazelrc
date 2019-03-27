@@ -9,3 +9,12 @@ build --copt=-Wno-unused-local-typedefs
 build --strip never
 build --dynamic_mode off
 build --compilation_mode opt
+
+build:asan --copt -g
+build:asan --copt -fsanitize=address
+build:asan --copt -O1
+build:asan --copt -fno-omit-frame-pointer
+build:asan --linkopt -fsanitize=address
+test:asan --test_env=ASAN_OPTIONS
+test:asan --test_env=LSAN_OPTIONS
+test:asan --test_env=ASAN_SYMBOLIZER_PATH
