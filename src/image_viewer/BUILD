@@ -54,5 +54,6 @@ cc_binary(
         "//base:init",
         "//src/color_maps",
         "//src:convert",
+        "//base:time",
     ],
 )

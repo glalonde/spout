@@ -23,18 +23,24 @@ class ImageViewer::Impl {
 
   // Mutate the image data, then call update.
   Image<PixelType::RGBAU8>* data() {
+    data_changed_ = true;
     return &image_;
   }
 
   ControllerInput Update() {
-    UpdateTexture();
-    Render();
     ControllerInput input;
-    UpdateInput(&input);
+    HandleEvents(&input);
+    if (data_changed_) {
+      UpdateTexture();
+    }
+    if (ShouldRedraw()) {
+      Render();
+    }
     return input;
   }
 
   void Render() {
+    LOG(INFO) << "Rendering";
     glClearColor(1.0, 1.0, 1.0, 1.0);
     glClear(GL_COLOR_BUFFER_BIT);
     glUseProgram(render_program_);
@@ -42,18 +48,41 @@ class ImageViewer::Impl {
     glBindVertexArray(vertex_array_);
     glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
     SDL_GL_SwapWindow(window_);
+    data_changed_ = false;
+    window_changed_ = false;
   }
 
-  void UpdateInput(ControllerInput* input) {
+  void HandleEvents(ControllerInput* input) {
     while (SDL_PollEvent(&event_)) {
       UpdateControllerInput(event_, input);
+      UpdateWindowState(event_);
     }
   }
 
  private:
+  bool ShouldRedraw() {
+    return data_changed_ || window_changed_;
+  }
+
+  void UpdateWindowState(const SDL_Event& event) {
+    switch (event.type) {
+      case SDL_WINDOWEVENT:
+        switch (event.window.event) {
+          case SDL_WINDOWEVENT_EXPOSED:
+            window_changed_ = true;
+            break;
+          default:
+            break;
+        }
+      default:
+        break;
+    }
+  }
+
   void Init() {
     SDL_Init(SDL_INIT_EVERYTHING);
-    uint32_t window_flags = SDL_WINDOW_SHOWN | SDL_WINDOW_OPENGL;
+    uint32_t window_flags =
+        SDL_WINDOW_SHOWN | SDL_WINDOW_OPENGL | SDL_WINDOW_BORDERLESS;
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK,
                         SDL_GL_CONTEXT_PROFILE_CORE);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 4);
@@ -175,6 +204,8 @@ class ImageViewer::Impl {
   }
 
   Image<PixelType::RGBAU8> image_;
+  bool data_changed_;
+  bool window_changed_;
 
   SDL_Event event_;
   SDL_Window* window_;

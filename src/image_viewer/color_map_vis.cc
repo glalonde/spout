@@ -1,4 +1,6 @@
+#include <thread>
 #include "base/init.h"
+#include "base/time.h"
 #include "src/color_maps/color_maps.h"
 #include "src/convert.h"
 #include "src/image_viewer/image_viewer.h"
