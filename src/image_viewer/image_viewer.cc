@@ -27,7 +27,6 @@ class ImageViewer::Impl {
   }
 
   ControllerInput Update() {
-    LOG(INFO) << "Rendering";
     UpdateTexture();
     Render();
     ControllerInput input;
@@ -190,7 +189,7 @@ class ImageViewer::Impl {
 };
 
 ImageViewer::ImageViewer(int width, int height)
-    : impl_(std::make_unique<ImageViewer::Impl>(width, height)) {}
+    : impl_(std::make_unique<ImageViewer::Impl>(height, width)) {}
 
 ImageViewer::~ImageViewer() = default;
 

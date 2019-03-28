@@ -140,3 +140,8 @@ cc_test(
         "//base:googletest",
  ],
 )
+
+cc_library(
+    name = "interpolation",
+    hdrs = ["interpolation.h"],
+)

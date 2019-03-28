@@ -45,3 +45,14 @@ cc_binary(
         "//base:file",
     ],
 )
+
+cc_binary(
+    name = "color_map_vis",
+    srcs = ["color_map_vis.cc"],
+    deps = [
+        ":image_viewer",
+        "//base:init",
+        "//src/color_maps",
+        "//src:convert",
+    ],
+)

@@ -49,3 +49,10 @@ PixelType::RGBAU8 Convert<PixelType::RGBAU8, PixelType::RGBF32>(
   return Convert<PixelType::RGBAU8, PixelType::RGBU8>(
       Convert<PixelType::RGBU8, PixelType::RGBF32>(input));
 }
+
+template <>
+PixelType::RGBAU8 Convert<PixelType::RGBAU8, PixelType::RGBF64>(
+    const PixelType::RGBF64& input) {
+  return Convert<PixelType::RGBAU8, PixelType::RGBU8>(
+      Convert<PixelType::RGBU8, PixelType::RGBF64>(input));
+}
