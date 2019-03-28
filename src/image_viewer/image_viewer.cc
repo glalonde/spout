@@ -9,16 +9,35 @@
 
 class ImageViewer::Impl {
  public:
-  Impl(int width, int height) : image_(width, height) {
-    Init();
+  Impl(int window_width, int window_height)
+      : window_size_(window_width, window_height) {
+    InitWindow();
     InitRenderShader();
     MakeTexture();
   }
 
   ~Impl() {
+    glDeleteTextures(1, &tex_handle_);
     SDL_GL_DeleteContext(gl_context_);
     SDL_DestroyWindow(window_);
     SDL_Quit();
+  }
+
+  void SetWindowSize(int width, int height) {
+    CHECK_GE(width, 0);
+    CHECK_GE(height, 0);
+    if (width != window_size_[0] || height != window_size_[1]) {
+      window_size_ = {width, height};
+      SDL_SetWindowSize(window_, width, height);
+    }
+  }
+
+  void SetTextureSize(int width, int height) {
+    CHECK_GE(width, 0);
+    CHECK_GE(height, 0);
+    if (width != image_.cols() || height != image_.rows()) {
+      image_.resize(height, width);
+    }
   }
 
   // Mutate the image data, then call update.
@@ -79,7 +98,7 @@ class ImageViewer::Impl {
     }
   }
 
-  void Init() {
+  void InitWindow() {
     SDL_Init(SDL_INIT_EVERYTHING);
     uint32_t window_flags =
         SDL_WINDOW_SHOWN | SDL_WINDOW_OPENGL | SDL_WINDOW_BORDERLESS;
@@ -92,8 +111,9 @@ class ImageViewer::Impl {
     SDL_GL_SetAttribute(SDL_GL_GREEN_SIZE, 8);
     SDL_GL_SetAttribute(SDL_GL_BLUE_SIZE, 8);
     SDL_GL_SetAttribute(SDL_GL_ALPHA_SIZE, 8);
-    window_ = SDL_CreateWindow("Image", image_.cols(), image_.rows(),
-                               image_.cols(), image_.rows(), window_flags);
+    window_ = SDL_CreateWindow("Image", SDL_WINDOWPOS_UNDEFINED,
+                               SDL_WINDOWPOS_UNDEFINED, window_size_[0],
+                               window_size_[1], window_flags);
     gl_context_ = SDL_GL_CreateContext(window_);
     if (!gl_context_) {
       LOG(FATAL) << "Couldn't create OpenGL context, error: " << SDL_GetError();
@@ -191,8 +211,8 @@ class ImageViewer::Impl {
   void MakeTexture() {
     glGenTextures(1, &tex_handle_);
     glBindTexture(GL_TEXTURE_2D, tex_handle_);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     CHECK(CheckGLErrors());
   }
 
@@ -203,6 +223,7 @@ class ImageViewer::Impl {
     CHECK(CheckGLErrors());
   }
 
+  Vector2i window_size_;
   Image<PixelType::RGBAU8> image_;
   bool data_changed_;
   bool window_changed_;
@@ -220,9 +241,17 @@ class ImageViewer::Impl {
 };
 
 ImageViewer::ImageViewer(int width, int height)
-    : impl_(std::make_unique<ImageViewer::Impl>(height, width)) {}
+    : impl_(std::make_unique<ImageViewer::Impl>(width, height)) {}
 
 ImageViewer::~ImageViewer() = default;
+
+void ImageViewer::SetWindowSize(int width, int height) {
+  impl_->SetWindowSize(width, height);
+}
+
+void ImageViewer::SetTextureSize(int width, int height) {
+  impl_->SetTextureSize(width, height);
+}
 
 Image<PixelType::RGBAU8>* ImageViewer::data() {
   return impl_->data();

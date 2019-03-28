@@ -5,7 +5,9 @@
 
 class ImageViewer {
  public:
-  ImageViewer(int width, int height);
+  ImageViewer(int window_width, int window_height);
+  void SetTextureSize(int width, int height);
+  void SetWindowSize(int width, int height);
   ~ImageViewer();
   Image<PixelType::RGBAU8>* data();
   ControllerInput Update();

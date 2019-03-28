@@ -7,6 +7,8 @@
 
 DEFINE_int32(width, 256, "display width");
 DEFINE_int32(height, 256, "display height");
+
+DEFINE_double(texture_scale, 1.0, "texture scale factor");
 DEFINE_int32(color_map_index, 0, "Color map index, see color_maps.h");
 
 // Set the data in the image to a radial gradient
@@ -14,6 +16,8 @@ void SetToGradient(const ColorMap map, Image<PixelType::RGBAU8>* data) {
   // (row, col)
   const Vector2d center = Vector2d(data->rows(), data->cols()) / 2.0;
   const double radius = center.norm();
+  LOG(INFO) << "Generating gradient for image: " << data->rows() << ", "
+            << data->cols();
 
   // (row, col)
   Vector2d current;
@@ -31,6 +35,10 @@ void SetToGradient(const ColorMap map, Image<PixelType::RGBAU8>* data) {
 int main(int argc, char* argv[]) {
   Init(argc, argv);
   ImageViewer viewer(FLAGS_width, FLAGS_height);
+  int tex_width = FLAGS_width * FLAGS_texture_scale;
+  int tex_height = FLAGS_height * FLAGS_texture_scale;
+  viewer.SetTextureSize(tex_width, tex_height);
+
   auto* data = viewer.data();
   CHECK_GE(FLAGS_color_map_index, 0);
   CHECK_LT(FLAGS_color_map_index, kAllColorMaps.size());
