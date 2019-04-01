@@ -57,5 +57,6 @@ cc_binary(
         "//src:fps_estimator",
         "//base:time",
         "//base:wall_timer",
+        "//base:scoped_profiler",
     ],
 )

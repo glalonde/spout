@@ -1,5 +1,6 @@
 #include <thread>
 #include "base/init.h"
+#include "base/scoped_profiler.h"
 #include "base/time.h"
 #include "base/wall_timer.h"
 #include "src/color_maps/color_maps.h"
@@ -39,6 +40,7 @@ int main(int argc, char* argv[]) {
   int tex_width = FLAGS_width * FLAGS_texture_scale;
   int tex_height = FLAGS_height * FLAGS_texture_scale;
   viewer.SetTextureSize(tex_width, tex_height);
+  ScopedProfiler prof;
 
   auto* data = viewer.data();
   CHECK_GE(FLAGS_color_map_index, 0);

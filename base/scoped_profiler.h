@@ -9,6 +9,8 @@ class ScopedProfiler {
  public:
   NO_COPY_NO_MOVE_NO_ASSIGN(ScopedProfiler);
 
+  ScopedProfiler() : ScopedProfiler(FLAGS_profile_output) {}
+
   ScopedProfiler(const std::string& profile_output) : started_(false) {
     if (profile_output.empty()) {
       LOG(ERROR) << "No output path specified, not starting profiler";

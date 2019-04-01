@@ -51,6 +51,18 @@ PixelType::RGBAU8 Convert<PixelType::RGBAU8, PixelType::RGBF32>(
 }
 
 template <>
+PixelType::RGBU8 Convert<PixelType::RGBU8, PixelType::RGBF64>(
+    const PixelType::RGBF64& input) {
+  return details::VectorScaleClamp(input, 256.0, 0.0, 255.0).cast<uint8_t>();
+}
+
+template <>
+PixelType::RGBAU8 Convert<PixelType::RGBAU8, PixelType::RGBAF64>(
+    const PixelType::RGBAF64& input) {
+  return details::VectorScaleClamp(input, 256.0, 0.0, 255.0).cast<uint8_t>();
+}
+
+template <>
 PixelType::RGBAU8 Convert<PixelType::RGBAU8, PixelType::RGBF64>(
     const PixelType::RGBF64& input) {
   return Convert<PixelType::RGBAU8, PixelType::RGBU8>(

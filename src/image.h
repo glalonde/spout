@@ -12,4 +12,5 @@ using RGBAU8 = Vector4<uint8_t>;
 using RGBF32 = Vector3<float>;
 using RGBF64 = Vector3<double>;
 using RGBAF32 = Vector4<float>;
+using RGBAF64 = Vector4<double>;
 }  // namespace PixelType
