@@ -10,6 +10,13 @@ cc_library(
 )
 
 cc_library(
+    name = "construction_macros",
+    hdrs = ["construction_macros.h"],
+    deps = [
+    ],
+)
+
+cc_library(
     name = "init",
     hdrs = ["init.h"],
     deps = [":logging"],
@@ -102,5 +109,25 @@ cc_test(
     deps = [
         ":circular_buffer",
         ":googletest",
+    ],
+)
+
+cc_library(
+    name = "scoped_profiler",
+    hdrs = ["scoped_profiler.h"],
+    linkopts = ["-lprofiler"],
+    deps = [
+        ":construction_macros",
+    ],
+)
+
+cc_test(
+    name = "scoped_profiler_test",
+    srcs = ["scoped_profiler_test.cc"],
+    deps = [
+        ":scoped_profiler",
+        ":googletest",
+        ":file",
+        ":time",
     ],
 )
