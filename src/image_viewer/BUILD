@@ -54,6 +54,7 @@ cc_binary(
         "//base:init",
         "//src/color_maps",
         "//src:convert",
+        "//src:fps_estimator",
         "//base:time",
         "//base:wall_timer",
     ],

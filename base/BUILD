@@ -88,3 +88,19 @@ cc_library(
         ":time",
     ],
 )
+
+cc_library(
+    name = "circular_buffer",
+    hdrs = ["circular_buffer.h"],
+    deps = [
+    ],
+)
+
+cc_test(
+    name = "circular_buffer_test",
+    srcs = ["circular_buffer_test.cc"],
+    deps = [
+        ":circular_buffer",
+        ":googletest",
+    ],
+)

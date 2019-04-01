@@ -4,6 +4,7 @@
 #include "base/wall_timer.h"
 #include "src/color_maps/color_maps.h"
 #include "src/convert.h"
+#include "src/fps_estimator.h"
 #include "src/image_viewer/image_viewer.h"
 
 DEFINE_int32(width, 256, "display width");
@@ -31,66 +32,6 @@ void SetToGradient(const ColorMap map, double phase,
     }
   }
 }
-
-class CircularBuffer {
- public:
-  CircularBuffer(int capacity) : write_index_(0) {
-    data_.reserve(capacity);
-  }
-
-  std::optional<Duration> Push(Duration value) {
-    if (data_.size() < data_.capacity()) {
-      data_.push_back(value);
-      return {};
-    } else {
-      Duration removed = data_[write_index_];
-      data_[write_index_] = value;
-      ++write_index_;
-      if (write_index_ >= data_.capacity()) {
-        write_index_ = 0;
-      }
-      return removed;
-    }
-  }
-
-  int WriteIndex() {
-    return write_index_;
-  }
-
-  const std::vector<Duration>& data() {
-    return data_;
-  }
-
- private:
-  int write_index_;
-  std::vector<Duration> data_;
-};
-
-class FPSEstimator {
- public:
-  FPSEstimator(Duration window, double estimated_max_frequency)
-      : deltas_(InitBuffer(window, estimated_max_frequency)), sum_(0) {}
-
-  double Tick(Duration delta) {
-    sum_ += delta;
-    auto maybe_removed = deltas_.Push(delta);
-    if (maybe_removed) {
-      sum_ -= *maybe_removed;
-    }
-    return (1 + deltas_.data().size()) / ToSeconds<double>(sum_);
-  }
-
- private:
-  static CircularBuffer InitBuffer(Duration window,
-                                   double estimated_max_frequency) {
-    const int estimated_number = static_cast<int>(
-        std::ceil(ToSeconds<double>(window) * estimated_max_frequency));
-    return CircularBuffer(estimated_number);
-  }
-
-  CircularBuffer deltas_;
-  Duration sum_;
-};
 
 int main(int argc, char* argv[]) {
   Init(argc, argv);

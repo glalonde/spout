@@ -136,12 +136,23 @@ cc_library(
 cc_test(
     name = "convert_test",
     srcs = ["convert_test.cc"],
-    deps = [":convert",
+    deps = [
+        ":convert",
         "//base:googletest",
- ],
+    ],
 )
 
 cc_library(
     name = "interpolation",
     hdrs = ["interpolation.h"],
+)
+
+cc_library(
+    name = "fps_estimator",
+    hdrs = ["fps_estimator.h"],
+    srcs = ["fps_estimator.cc"],
+    deps = [
+        "//base:circular_buffer",
+        "//base:time",
+    ],
 )
