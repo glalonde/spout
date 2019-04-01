@@ -11,6 +11,10 @@ class ImageViewer {
   ~ImageViewer();
   Image<PixelType::RGBAU8>* data();
   ControllerInput Update();
+  void SetDataChanged();
+
+  bool IsFullScreen();
+  void ToggleFullScreen();
 
  private:
   class Impl;

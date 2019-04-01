@@ -55,5 +55,6 @@ cc_binary(
         "//src/color_maps",
         "//src:convert",
         "//base:time",
+        "//base:wall_timer",
     ],
 )

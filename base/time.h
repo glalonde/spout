@@ -31,7 +31,7 @@ inline T ToSecondsSinceEpoch(TimePoint time_point) {
 //   FromSeconds(0.5) == std::chrono::milliseconds(500)
 //   FromSeconds(0.001) == std::chrono::milliseconds(1)
 template <class T>
-inline Duration FromSeconds(T seconds) {
+constexpr inline Duration FromSeconds(T seconds) {
   return std::chrono::duration_cast<Duration>(
       std::chrono::duration<T, std::chrono::seconds::period>(seconds));
 }
@@ -47,8 +47,7 @@ inline TimePoint FromSecondsSinceEpoch(T seconds) {
 // For example:
 //   FromHz(1.0) == std::chrono::seconds(1)
 //   FromHz(100) == std::chrono::milliseconds(10)
-inline Duration FromHz(double hz) {
-  CHECK_GT(hz, 0.0) << "Hz must be greater than zero";
+constexpr inline Duration FromHz(double hz) {
   return FromSeconds(1.0 / hz);
 }
 

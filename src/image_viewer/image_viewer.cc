@@ -23,6 +23,18 @@ class ImageViewer::Impl {
     SDL_Quit();
   }
 
+  bool IsFullScreen() {
+    return SDL_GetWindowFlags(window_) & SDL_WINDOW_FULLSCREEN_DESKTOP;
+  }
+
+  void ToggleFullScreen() {
+    if (IsFullScreen()) {
+      SDL_SetWindowFullscreen(window_, 0);
+    } else {
+      SDL_SetWindowFullscreen(window_, SDL_WINDOW_FULLSCREEN_DESKTOP);
+    }
+  }
+
   void SetWindowSize(int width, int height) {
     CHECK_GE(width, 0);
     CHECK_GE(height, 0);
@@ -42,8 +54,11 @@ class ImageViewer::Impl {
 
   // Mutate the image data, then call update.
   Image<PixelType::RGBAU8>* data() {
-    data_changed_ = true;
     return &image_;
+  }
+
+  void SetDataChanged() {
+    data_changed_ = true;
   }
 
   ControllerInput Update() {
@@ -59,7 +74,6 @@ class ImageViewer::Impl {
   }
 
   void Render() {
-    LOG(INFO) << "Rendering";
     glClearColor(1.0, 1.0, 1.0, 1.0);
     glClear(GL_COLOR_BUFFER_BIT);
     glUseProgram(render_program_);
@@ -85,16 +99,25 @@ class ImageViewer::Impl {
 
   void UpdateWindowState(const SDL_Event& event) {
     switch (event.type) {
-      case SDL_WINDOWEVENT:
+      case SDL_WINDOWEVENT: {
         switch (event.window.event) {
-          case SDL_WINDOWEVENT_EXPOSED:
+          case SDL_WINDOWEVENT_EXPOSED: {
             window_changed_ = true;
             break;
-          default:
+          }
+          case SDL_WINDOWEVENT_RESIZED: {
+            window_changed_ = true;
+            glViewport(0, 0, event.window.data1, event.window.data2);
             break;
+          }
+          default: {
+            break;
+          }
         }
-      default:
+      }
+      default: {
         break;
+      }
     }
   }
 
@@ -255,6 +278,18 @@ void ImageViewer::SetTextureSize(int width, int height) {
 
 Image<PixelType::RGBAU8>* ImageViewer::data() {
   return impl_->data();
+}
+
+void ImageViewer::SetDataChanged() {
+  impl_->SetDataChanged();
+}
+
+bool ImageViewer::IsFullScreen() {
+  return impl_->IsFullScreen();
+}
+
+void ImageViewer::ToggleFullScreen() {
+  impl_->ToggleFullScreen();
 }
 
 ControllerInput ImageViewer::Update() {
