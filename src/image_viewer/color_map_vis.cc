@@ -1,9 +1,11 @@
 #include <thread>
+#include "base/format.h"
 #include "base/init.h"
 #include "base/scoped_profiler.h"
 #include "base/wall_timer.h"
 #include "src/color_maps/color_maps.h"
 #include "src/convert.h"
+#include "src/fonts/font_renderer.h"
 #include "src/image_viewer/animated_canvas.h"
 
 DEFINE_int32(width, 256, "display width");
@@ -32,6 +34,13 @@ void SetToGradient(const ColorMap map, double phase,
   }
 }
 
+void AddFpsText(double fps, const PixelType::RGBAU8& color,
+                Image<PixelType::RGBAU8>* data) {
+  std::string fps_string = FormatString("%.0f", fps);
+  RenderString(fps_string, {1, 1}, color, 1,
+               font_rendering::Justification::kLeft, data);
+}
+
 int main(int argc, char* argv[]) {
   Init(argc, argv);
   const int tex_width = FLAGS_width * FLAGS_texture_scale;
@@ -39,6 +48,8 @@ int main(int argc, char* argv[]) {
   AnimatedCanvas canvas(FLAGS_width, FLAGS_height, tex_width, tex_height, 60.0);
   ScopedProfiler prof;
 
+  PixelType::RGBAU8 text_color =
+      Convert<PixelType::RGBAU8>(PixelType::RGBF64(1.0, 0.0, 0.0));
   auto* data = canvas.data();
   CHECK_GE(FLAGS_color_map_index, 0);
   CHECK_LT(FLAGS_color_map_index, kAllColorMaps.size());
@@ -48,6 +59,7 @@ int main(int argc, char* argv[]) {
   while (!done) {
     SetToGradient(kAllColorMaps[FLAGS_color_map_index],
                   ToSeconds<double>(timer.ElapsedDuration()), data);
+    AddFpsText(canvas.fps(), text_color, data);
     done = canvas.Tick().quit;
   }
   return 0;

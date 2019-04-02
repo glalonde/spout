@@ -69,5 +69,6 @@ cc_binary(
         "//src:convert",
         "//base:wall_timer",
         "//base:scoped_profiler",
+        "//src/fonts:font_renderer",
     ],
 )

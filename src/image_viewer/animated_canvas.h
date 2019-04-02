@@ -15,7 +15,7 @@ class AnimatedCanvas {
 
   ControllerInput Tick();
 
-  const FPSEstimator& fps() const;
+  double fps() const;
 
  private:
   Duration target_cycle_time_;

@@ -13,6 +13,8 @@ class FPSEstimator {
   // average FPS.
   double Tick(Duration delta);
 
+  double CurrentEstimate() const;
+
  private:
   // Create a fixed size buffer to average FPS over an estimated duration.
   static CircularBuffer<Duration> InitBuffer(Duration window,
@@ -21,4 +23,5 @@ class FPSEstimator {
   // Store the last N cycle times
   CircularBuffer<Duration> deltas_;
   Duration sum_;
+  double current_estimate_;
 };

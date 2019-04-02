@@ -25,6 +25,6 @@ ControllerInput AnimatedCanvas::Tick() {
   return input;
 }
 
-const FPSEstimator& AnimatedCanvas::fps() const {
-  return fps_;
+double AnimatedCanvas::fps() const {
+  return fps_.CurrentEstimate();
 }
