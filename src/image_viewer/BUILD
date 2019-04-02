@@ -46,16 +46,27 @@ cc_binary(
     ],
 )
 
+
+cc_library(
+    name = "animated_canvas",
+    hdrs = ["animated_canvas.h"],
+    srcs = ["animated_canvas.cc"],
+    deps = [
+        ":image_viewer",
+        "//src:image",
+        "//src:fps_estimator",
+        "//base:time",
+    ],
+)
+
 cc_binary(
     name = "color_map_vis",
     srcs = ["color_map_vis.cc"],
     deps = [
-        ":image_viewer",
+        ":animated_canvas",
         "//base:init",
         "//src/color_maps",
         "//src:convert",
-        "//src:fps_estimator",
-        "//base:time",
         "//base:wall_timer",
         "//base:scoped_profiler",
     ],

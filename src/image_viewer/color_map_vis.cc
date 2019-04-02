@@ -1,12 +1,10 @@
 #include <thread>
 #include "base/init.h"
 #include "base/scoped_profiler.h"
-#include "base/time.h"
 #include "base/wall_timer.h"
 #include "src/color_maps/color_maps.h"
 #include "src/convert.h"
-#include "src/fps_estimator.h"
-#include "src/image_viewer/image_viewer.h"
+#include "src/image_viewer/animated_canvas.h"
 
 DEFINE_int32(width, 256, "display width");
 DEFINE_int32(height, 256, "display height");
@@ -36,36 +34,21 @@ void SetToGradient(const ColorMap map, double phase,
 
 int main(int argc, char* argv[]) {
   Init(argc, argv);
-  ImageViewer viewer(FLAGS_width, FLAGS_height);
-  int tex_width = FLAGS_width * FLAGS_texture_scale;
-  int tex_height = FLAGS_height * FLAGS_texture_scale;
-  viewer.SetTextureSize(tex_width, tex_height);
+  const int tex_width = FLAGS_width * FLAGS_texture_scale;
+  const int tex_height = FLAGS_height * FLAGS_texture_scale;
+  AnimatedCanvas canvas(FLAGS_width, FLAGS_height, tex_width, tex_height, 60.0);
   ScopedProfiler prof;
 
-  auto* data = viewer.data();
+  auto* data = canvas.data();
   CHECK_GE(FLAGS_color_map_index, 0);
   CHECK_LT(FLAGS_color_map_index, kAllColorMaps.size());
-  SetToGradient(kAllColorMaps[FLAGS_color_map_index], 0, data);
-  constexpr double kTargetFPS = 60.0;
-  constexpr Duration kTargetCycleTime = FromHz(kTargetFPS);
-
-  FPSEstimator estimator(FromSeconds(1.0), kTargetFPS);
+  bool done = false;
   WallTimer timer;
   timer.Start();
-  viewer.ToggleFullScreen();
-
-  bool done = false;
-  TimePoint previous = ClockType::now();
   while (!done) {
-    auto current = ClockType::now();
-    auto target_finish = current + kTargetCycleTime;
-    estimator.Tick(current - previous);
-    previous = current;
     SetToGradient(kAllColorMaps[FLAGS_color_map_index],
                   ToSeconds<double>(timer.ElapsedDuration()), data);
-    viewer.SetDataChanged();
-    done = viewer.Update().quit;
-    std::this_thread::sleep_until(target_finish);
+    done = canvas.Tick().quit;
   }
   return 0;
 }
