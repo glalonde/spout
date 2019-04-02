@@ -156,3 +156,35 @@ cc_library(
         "//base:time",
     ],
 )
+
+cc_library(
+    name = "bresenham",
+    hdrs = ["bresenham.h"],
+    deps = [
+        ":eigen_types",
+        ":image",
+        "//base:logging",
+    ],
+)
+
+cc_test(
+    name = "bresenham_test",
+    srcs = ["bresenham_test.cc"],
+    deps = [
+        ":bresenham",
+        "//src/image_viewer:animated_canvas",
+        "//base:googletest",
+    ],
+)
+
+cc_binary(
+    name = "bresenham_demo",
+    srcs = ["bresenham_demo.cc"],
+    deps = [
+        ":bresenham",
+        ":particle",
+        "//base:init",
+        "//base:logging",
+        "//base:time",
+    ],
+)
