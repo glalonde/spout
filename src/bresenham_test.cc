@@ -11,8 +11,8 @@ static const PixelType::RGBAU8 kTrailColor = {0, 128, 0, 255};
 
 void RenderEnvironment(const Image<uint8_t>& env,
                        Image<PixelType::RGBAU8>* data) {
-  for (int c = 0; c < env.cols(); ++c) {
-    for (int r = 0; r < env.rows(); ++r) {
+  for (int r = 0; r < env.rows(); ++r) {
+    for (int c = 0; c < env.cols(); ++c) {
       if (env(r, c) == kWall) {
         (*data)(r, c) = kWallColor;
       } else {

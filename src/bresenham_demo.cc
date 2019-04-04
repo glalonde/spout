@@ -1,4 +1,5 @@
 #include <thread>
+#include <random>
 
 #include "base/format.h"
 #include "base/init.h"
@@ -18,12 +19,13 @@ static const PixelType::RGBAU8 text_color =
 
 void RenderEnvironment(const Image<uint8_t>& env,
                        Image<PixelType::RGBAU8>* data) {
-  for (int c = 0; c < env.cols(); ++c) {
-    for (int r = 0; r < env.rows(); ++r) {
+  for (int r = 0; r < env.rows(); ++r) {
+    for (int c = 0; c < env.cols(); ++c) {
+      const int ar = env.rows() - r -1;
       if (env(r, c) == kWall) {
-        (*data)(r, c) = kWallColor;
+        (*data)(ar, c) = kWallColor;
       } else {
-        (*data)(r, c) = {0, 0, 0, 255};
+        (*data)(ar, c) = {0, 0, 0, 255};
       }
     }
   }
@@ -58,12 +60,22 @@ void AddFpsText(double fps, const PixelType::RGBAU8& color,
 }
 
 template <class T>
-void AddNoise(const T& wall_value, Image<T>* data) {}
+void AddNoise(const T& wall_value, double percent_filled, Image<T>* data) {
+  const int num_filled = static_cast<int>(data->size() * percent_filled);
+  CHECK_LT(num_filled, data->size());
+  CHECK_GE(num_filled, 0);
+  std::random_device rd;
+  std::mt19937 gen(rd());
+  std::uniform_int_distribution<> dis(0, data->size());
+  for (int i = 0; i < num_filled; ++i) {
+    (*data)(dis(gen)) = wall_value;
+  }
+}
 
 void Demo(int num_particles) {
   // Set up canvas
   const double kFps = 60.0;
-  const Vector2i window_dims(400, 400);
+  const Vector2i window_dims(800, 800);
   const Vector2i grid_dims = window_dims / 4;
   AnimatedCanvas canvas(window_dims[0], window_dims[1], grid_dims[0],
                         grid_dims[1], kFps);
@@ -72,6 +84,7 @@ void Demo(int num_particles) {
   Image<uint8_t> environment(grid_dims[1], grid_dims[0]);
   environment.setConstant(0);
   AddWalls(kWall, &environment);
+  AddNoise(kWall, .1, &environment);
 
   // Set up particles
   AlignedBox<double, 4> particle_space;
