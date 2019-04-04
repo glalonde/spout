@@ -182,9 +182,10 @@ cc_binary(
     srcs = ["bresenham_demo.cc"],
     deps = [
         ":bresenham",
-        ":particle",
+        "//src/image_viewer:animated_canvas",
         "//base:init",
-        "//base:logging",
-        "//base:time",
+        "//src/fonts:font_renderer",
+        ":convert",
+        "//base:format",
     ],
 )
