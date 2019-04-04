@@ -194,3 +194,23 @@ cc_binary(
         "//base:format",
     ],
 )
+
+cc_library(
+    name = "level_generators",
+    hdrs = ["level_generators.h"],
+    deps = [
+        ":random",
+        ":image",
+    ],
+)
+
+cc_binary(
+    name = "level_generators_demo",
+    srcs = ["level_generators_demo.cc"],
+    deps = [
+        ":level_generators",
+        "//src/image_viewer:animated_canvas",
+        "//base:init",
+        ":convert",
+    ],
+)

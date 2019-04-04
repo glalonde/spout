@@ -1,3 +1,5 @@
+#pragma once
+#include "base/logging.h"
 #include "src/eigen_types.h"
 
 // Get a uniform random floating point distribution
@@ -19,9 +21,9 @@ auto UniformRandomDistribution(const Scalar& min, const Scalar& max) {
 // Initialize an eigen matrix-like object to a given distribution
 template <class DistType, class GenType, class Derived>
 void SetRandomDistribution(DistType* distribution, GenType* gen,
-                           const Eigen::MatrixBase<Derived>& vals) {
-  auto& mutable_vals = const_cast<Eigen::MatrixBase<Derived>&>(vals);
-  mutable_vals = Eigen::MatrixBase<Derived>::NullaryExpr(
+                           Eigen::DenseBase<Derived> const& vals) {
+  auto& mutable_vals = const_cast<Eigen::DenseBase<Derived>&>(vals);
+  mutable_vals = Eigen::DenseBase<Derived>::NullaryExpr(
       vals.rows(), vals.cols(), [&]() { return (*distribution)(*gen); });
 }
 
@@ -29,7 +31,7 @@ void SetRandomDistribution(DistType* distribution, GenType* gen,
 template <class GenType, class Derived>
 void SetRandomUniform(const typename Derived::Scalar& min,
                       const typename Derived::Scalar& max, GenType* gen,
-                      const Eigen::MatrixBase<Derived>& vals) {
+                      Eigen::DenseBase<Derived> const& vals) {
   auto dist = UniformRandomDistribution(min, max);
   SetRandomDistribution(&dist, gen, vals);
 }
