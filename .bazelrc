@@ -7,7 +7,7 @@ build --copt=-mavx
 build --copt=-march=native
 build --copt=-Wno-unused-local-typedefs
 build --copt=-g
-build --linkopt=-ltcmalloc
+#build --linkopt=-ltcmalloc
 build --strip never
 build --dynamic_mode off
 build --compilation_mode opt

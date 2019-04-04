@@ -26,15 +26,20 @@ cc_library(
     deps = ["@eigen"],
 )
 
-cc_binary(
-    name = "eigen_test",
-    srcs = ["eigen_test.cc"],
+cc_library(
+    name = "random",
+    hdrs = ["random.h"],
+    deps = [":eigen_types", "//base:logging"],
+)
+
+cc_test(
+    name = "random_test",
+    srcs = ["random_test.cc"],
     deps = [
-        ":eigen_types",
+        ":random",
         "//base:googletest",
     ],
 )
-
 
 filegroup(
     name = "testdata",

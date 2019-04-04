@@ -1,7 +1,9 @@
 #pragma once
-#include <stdint.h>
+#include <cstdint>
 #include <Eigen/Core>
 #include <Eigen/Geometry>
+#include <random>
+#include <type_traits>
 
 // N-vector using Scalar
 template <class Scalar, int N>
@@ -122,11 +124,12 @@ using Matrix6Xd = Matrix<double, 6, Eigen::Dynamic>;
 using MatrixX6f = Matrix<float, Eigen::Dynamic, 6>;
 using MatrixX6d = Matrix<double, Eigen::Dynamic, 6>;
 
-// 6 x 6 matrix using Scalar
+// Dynamic matrix using Scalar
 template <class Scalar>
 using MatrixX = Matrix<Scalar, Eigen::Dynamic, Eigen::Dynamic>;
 using MatrixXf = MatrixX<float>;
 using MatrixXd = MatrixX<double>;
+using MatrixXi = MatrixX<int>;
 
 template <class Scalar, int Dim>
 using AlignedBox = Eigen::AlignedBox<Scalar, Dim>;
@@ -134,15 +137,3 @@ template <class Scalar>
 using AlignedBox2 = AlignedBox<Scalar, 2>;
 using AlignedBox2d = AlignedBox2<double>;
 using AlignedBox2f = AlignedBox2<float>;
-
-// Set the values in the matrix to random values between min and max
-template <class Derived>
-void SetRandomRange(typename Derived::Scalar min, typename Derived::Scalar max,
-                    const Eigen::MatrixBase<Derived>& vals) {
-  auto& mutable_vals = const_cast<Eigen::MatrixBase<Derived>&>(vals);
-  mutable_vals.setRandom();
-  auto half_range = (max - min) / typename Derived::Scalar(2.0);
-  mutable_vals = mutable_vals * half_range;
-  auto mid_point = (max + min) / typename Derived::Scalar(2.0);
-  mutable_vals = mutable_vals.array() + mid_point;
-}
