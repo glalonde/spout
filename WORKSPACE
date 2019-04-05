@@ -21,9 +21,9 @@ http_archive(
 )
 
 http_archive(
-     name = "com_google_googletest",
-     urls = ["https://github.com/google/googletest/archive/master.zip"],
-     strip_prefix = "googletest-master",
+    name = "com_google_googletest",
+    strip_prefix = "googletest-master",
+    urls = ["https://github.com/google/googletest/archive/master.zip"],
 )
 
 http_archive(
@@ -36,16 +36,16 @@ http_archive(
 )
 
 http_archive(
-     name = "com_google_glog",
-     urls = ["https://github.com/google/glog/archive/master.zip"],
-     strip_prefix = "glog-master",
+    name = "com_google_glog",
+    strip_prefix = "glog-master",
+    urls = ["https://github.com/google/glog/archive/master.zip"],
 )
 
 http_archive(
     name = "eigen",
     build_file = "@//third_party:eigen.BUILD",
     strip_prefix = "eigen-git-mirror-master",
-    urls = ["https://github.com/eigenteam/eigen-git-mirror/archive/master.tar.gz"]
+    urls = ["https://github.com/eigenteam/eigen-git-mirror/archive/master.tar.gz"],
 )
 
 http_archive(

@@ -24,3 +24,4 @@ test:asan --test_env=ASAN_SYMBOLIZER_PATH
 test --test_env DISPLAY=:0
 test --test_env XDG_RUNTIME_DIR=/run/user/1000
 test --test_env XAUTHORITY=/home/glalonde/.Xauthority 
+test --test_env BAZEL_UNIT_TEST=1

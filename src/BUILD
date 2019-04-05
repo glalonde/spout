@@ -29,15 +29,23 @@ cc_library(
 cc_library(
     name = "random",
     hdrs = ["random.h"],
-    deps = [":eigen_types", "//base:logging"],
+    deps = [
+        ":eigen_types",
+        ":interpolation",
+        "//base:logging",
+    ],
 )
 
 cc_test(
     name = "random_test",
     srcs = ["random_test.cc"],
     deps = [
+        ":convert",
+        ":image",
         ":random",
         "//base:googletest",
+        "//src/color_maps",
+        "//src/image_viewer",
     ],
 )
 
@@ -154,8 +162,8 @@ cc_library(
 
 cc_library(
     name = "fps_estimator",
-    hdrs = ["fps_estimator.h"],
     srcs = ["fps_estimator.cc"],
+    hdrs = ["fps_estimator.h"],
     deps = [
         "//base:circular_buffer",
         "//base:time",
@@ -177,8 +185,8 @@ cc_test(
     srcs = ["bresenham_test.cc"],
     deps = [
         ":bresenham",
-        "//src/image_viewer:animated_canvas",
         "//base:googletest",
+        "//src/image_viewer:animated_canvas",
     ],
 )
 
@@ -187,11 +195,11 @@ cc_binary(
     srcs = ["bresenham_demo.cc"],
     deps = [
         ":bresenham",
-        "//src/image_viewer:animated_canvas",
-        "//base:init",
-        "//src/fonts:font_renderer",
         ":convert",
         "//base:format",
+        "//base:init",
+        "//src/fonts:font_renderer",
+        "//src/image_viewer:animated_canvas",
     ],
 )
 
@@ -199,9 +207,8 @@ cc_library(
     name = "level_generators",
     hdrs = ["level_generators.h"],
     deps = [
-        ":random",
-        ":perlin_noise",
         ":image",
+        ":random",
     ],
 )
 
@@ -209,33 +216,11 @@ cc_binary(
     name = "level_generators_demo",
     srcs = ["level_generators_demo.cc"],
     deps = [
+        ":convert",
         ":level_generators",
-        "//src/image_viewer:animated_canvas",
-        "//base:wall_timer",
         "//base:init",
+        "//base:wall_timer",
         "//src/color_maps",
-        ":convert",
-    ],
-)
-
-cc_library(
-    name = "perlin_noise",
-    hdrs = ["perlin_noise.h"],
-    deps = [
-        ":interpolation",
-        ":image",
-        ":random",
-    ],
-)
-
-cc_test(
-    name = "perlin_noise_test",
-    srcs = ["perlin_noise_test.cc"],
-    deps = [
-        ":perlin_noise",
-        "//src/image_viewer:image_viewer",
-        "//src/color_maps",
-        "//base:googletest",
-        ":convert",
+        "//src/image_viewer:animated_canvas",
     ],
 )

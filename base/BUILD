@@ -4,8 +4,8 @@ cc_library(
     name = "logging",
     hdrs = ["logging.h"],
     deps = [
-        "@com_google_glog//:glog",
         "@com_github_gflags_gflags//:gflags",
+        "@com_google_glog//:glog",
     ],
 )
 
@@ -125,9 +125,9 @@ cc_test(
     name = "scoped_profiler_test",
     srcs = ["scoped_profiler_test.cc"],
     deps = [
-        ":scoped_profiler",
-        ":googletest",
         ":file",
+        ":googletest",
+        ":scoped_profiler",
         ":time",
     ],
 )

@@ -1,13 +1,13 @@
 #pragma once
 #include "src/image.h"
-#include "src/perlin_noise.h"
 #include "src/random.h"
 
 template <class T>
 void GenerateRectangleLevel(int max_dimension, int num_vacancies,
                             const T& min_obs_val, const T& max_obs_val,
                             uint32_t level_seed, Image<T>* data) {
-  max_dimension = std::min(static_cast<int>(data->cols()), max_dimension);
+  max_dimension =
+      std::max(1, std::min(static_cast<int>(data->cols()), max_dimension));
   std::mt19937 gen(level_seed);
   Image<double> perlin_vals(data->rows(), data->cols());
   PerlinNoise(40, &gen, perlin_vals);

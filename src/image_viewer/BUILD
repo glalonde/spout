@@ -10,27 +10,25 @@ filegroup(
 filegroup(
     name = "shaders",
     srcs = [
-        "shader.vert",
         "shader.frag",
-        ]
+        "shader.vert",
+    ],
 )
-
-
 
 cc_library(
     name = "image_viewer",
-    hdrs = ["image_viewer.h"],
     srcs = ["image_viewer.cc"],
+    hdrs = ["image_viewer.h"],
     data = [":shaders"],
     deps = [
-        "//src:controller_input",
-        "//src:eigen_types",
-        "//src:opengl",
-        "//src:image",
-        "//src:check_opengl_errors",
-        "//src:load_shader",
         "//base:format",
         "//base:logging",
+        "//src:check_opengl_errors",
+        "//src:controller_input",
+        "//src:eigen_types",
+        "//src:image",
+        "//src:load_shader",
+        "//src:opengl",
     ],
 )
 
@@ -40,22 +38,21 @@ cc_binary(
     data = [":testdata"],
     deps = [
         ":image_viewer",
-        "//src:image_io",
-        "//base:init",
         "//base:file",
+        "//base:init",
+        "//src:image_io",
     ],
 )
 
-
 cc_library(
     name = "animated_canvas",
-    hdrs = ["animated_canvas.h"],
     srcs = ["animated_canvas.cc"],
+    hdrs = ["animated_canvas.h"],
     deps = [
         ":image_viewer",
-        "//src:image",
-        "//src:fps_estimator",
         "//base:time",
+        "//src:fps_estimator",
+        "//src:image",
     ],
 )
 
@@ -65,10 +62,10 @@ cc_binary(
     deps = [
         ":animated_canvas",
         "//base:init",
-        "//src/color_maps",
-        "//src:convert",
-        "//base:wall_timer",
         "//base:scoped_profiler",
+        "//base:wall_timer",
+        "//src:convert",
+        "//src/color_maps",
         "//src/fonts:font_renderer",
     ],
 )
