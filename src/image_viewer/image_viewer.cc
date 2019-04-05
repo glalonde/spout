@@ -189,14 +189,18 @@ class ImageViewer::Impl {
 
     // Vertex data
     std::array<Vertex, 4> vertices;
+    // Bottom right
     vertices[0].position = {1.0f, -1.0f};
-    vertices[0].texture_coordinate = {1.0f, 1.0f};
+    vertices[0].texture_coordinate = {1.0f, 0.0f};
+    // Top right
     vertices[1].position = {1.0f, 1.0f};
-    vertices[1].texture_coordinate = {1.0f, 0.0f};
+    vertices[1].texture_coordinate = {1.0f, 1.0f};
+    // Top left
     vertices[2].position = {-1.0f, 1.0f};
-    vertices[2].texture_coordinate = {0.0f, 0.0f};
+    vertices[2].texture_coordinate = {0.0f, 1.0f};
+    // Bottom left
     vertices[3].position = {-1.0f, -1.0f};
-    vertices[3].texture_coordinate = {0.0f, 1.0f};
+    vertices[3].texture_coordinate = {0.0f, 0.0f};
 
     // Element data
     std::array<GLuint, 6> indices = {0, 1, 3, 1, 2, 3};

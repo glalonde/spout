@@ -21,11 +21,10 @@ void RenderEnvironment(const Image<uint8_t>& env,
                        Image<PixelType::RGBAU8>* data) {
   for (int r = 0; r < env.rows(); ++r) {
     for (int c = 0; c < env.cols(); ++c) {
-      const int ar = env.rows() - r -1;
       if (env(r, c) == kWall) {
-        (*data)(ar, c) = kWallColor;
+        (*data)(r, c) = kWallColor;
       } else {
-        (*data)(ar, c) = {0, 0, 0, 255};
+        (*data)(r, c) = {0, 0, 0, 255};
       }
     }
   }
@@ -34,7 +33,7 @@ void RenderEnvironment(const Image<uint8_t>& env,
 void RenderParticle(const Vector2d& pos, Image<PixelType::RGBAU8>* data) {
   // (x, y) -> (col, height - row)
   Vector2i pos_i = pos.cast<int>();
-  pos_i[1] = data->rows() - pos_i[1] - 1;
+  pos_i[1] = pos_i[1];
   (*data)(pos_i[1], pos_i[0]) = kParticleColor;
 }
 

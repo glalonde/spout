@@ -31,7 +31,8 @@ inline void RenderCharacter(const uint8_t* bitmap, const Vector2i& bottom_left,
        ++row) {
     for (int col = character_box.min().x(); col < character_box.max().x();
          ++col) {
-      const int set = bitmap[row - bottom_left.y()] & 1 << (col - bottom_left.x());
+      const int set = bitmap[kFontHeight - (row - bottom_left.y()) - 1] &
+                      1 << (col - bottom_left.x());
       if (set) {
         (*buffer)(row, col) = set_value;
       }

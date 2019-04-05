@@ -40,7 +40,6 @@ class ScrollingCanvas {
 
  private:
   void MakeLevelBuffer(int i) {
-    LOG(INFO) << "Computing level: " << i;
     CHECK_EQ(buffers_.size(), i);
     buffers_.emplace_back(level_dimensions_.y(), level_dimensions_.x());
     const ColorMap color_map = kAllColorMaps[i % kAllColorMaps.size()];
