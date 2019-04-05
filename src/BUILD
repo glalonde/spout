@@ -224,3 +224,34 @@ cc_binary(
         "//src/image_viewer:animated_canvas",
     ],
 )
+
+cc_binary(
+    name = "scrolling_demo",
+    srcs = ["scrolling_demo.cc"],
+    deps = [
+        ":convert",
+        ":level_generators",
+        "//base:init",
+        "//base:wall_timer",
+        "//src/color_maps",
+        "//src/image_viewer:animated_canvas",
+    ],
+)
+
+cc_library(
+    name = "scrolling_manager",
+    srcs = ["scrolling_manager.cc"],
+    hdrs = ["scrolling_manager.h"],
+    deps = [
+        "//base",
+    ],
+)
+
+cc_test(
+    name = "scrolling_manager_test",
+    srcs = ["scrolling_manager_test.cc"],
+    deps = [
+        ":scrolling_manager",
+        "//base:googletest",
+    ],
+)

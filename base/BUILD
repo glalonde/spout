@@ -131,3 +131,19 @@ cc_test(
         ":time",
     ],
 )
+
+cc_library(
+    name = "base",
+    deps = [
+        ":file",
+        ":format",
+        ":init",
+        ":logging",
+        ":time",
+        ":wall_timer",
+        "@com_google_absl//absl/container:fixed_array",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/container:inlined_vector",
+    ],
+)
