@@ -6,7 +6,6 @@ template <class T>
 void GenerateRectangleLevel(int max_dimension, int num_vacancies,
                             const T& min_obs_val, const T& max_obs_val,
                             uint32_t level_seed, Image<T>* data) {
-  LOG(INFO) << max_dimension << ", " << num_vacancies;
   max_dimension = std::min(static_cast<int>(data->cols()), max_dimension);
   std::mt19937 gen(level_seed);
   SetRandomUniform(min_obs_val, max_obs_val, &gen, *data);

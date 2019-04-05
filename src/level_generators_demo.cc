@@ -3,22 +3,28 @@
 
 #include "base/format.h"
 #include "base/init.h"
+#include "src/color_maps/color_maps.h"
 #include "src/convert.h"
 #include "src/image_viewer/animated_canvas.h"
 #include "src/level_generators.h"
 
 DEFINE_int32(level_number, 1, "Level number");
+DEFINE_int32(color_map, 1, "Color map index");
 
 static constexpr uint8_t kWall = std::numeric_limits<uint8_t>::max();
 static const PixelType::RGBAU8 kWallColor = {0, 0, 255, 255};
 
-void RenderEnvironment(const Image<uint8_t>& env,
+void RenderEnvironment(const Image<uint8_t>& env, const ColorMap& colors,
                        Image<PixelType::RGBAU8>* data) {
   for (int r = 0; r < env.rows(); ++r) {
+    const int ar = env.rows() - r - 1;
     for (int c = 0; c < env.cols(); ++c) {
-      const int ar = env.rows() - r - 1;
-      if (env(r, c) > 0) {
-        (*data)(ar, c) = kWallColor;
+      const auto life = env(r, c);
+      const auto color = Convert<PixelType::RGBAU8>(GetMappedColor3f(
+          colors,
+          static_cast<double>(life) / std::numeric_limits<uint8_t>::max()));
+      if (life > 0) {
+        (*data)(ar, c) = color;
       } else {
         (*data)(ar, c) = {0, 0, 0, 255};
       }
@@ -59,8 +65,11 @@ void Demo(int level_number) {
   // Loop
   bool done = false;
   auto* data = canvas.data();
+  CHECK_GE(FLAGS_color_map, 0);
+  CHECK_LT(FLAGS_color_map, kAllColorMaps.size());
+  const auto color_map = kAllColorMaps[FLAGS_color_map];
   while (!done) {
-    RenderEnvironment(environment, data);
+    RenderEnvironment(environment, color_map, data);
     done = canvas.Tick().quit;
   }
 }

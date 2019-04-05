@@ -211,6 +211,7 @@ cc_binary(
         ":level_generators",
         "//src/image_viewer:animated_canvas",
         "//base:init",
+        "//src/color_maps",
         ":convert",
     ],
 )
