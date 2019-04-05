@@ -8,17 +8,12 @@ class ScrollingManager {
   ScrollingManager(int buffer_height, int viewport_height);
   void UpdateHeight(int screen_bottom);
 
-  // Only the first `num_visible_buffers()` of this array are valid indices.
-  const absl::FixedArray<int>& visible_buffers() const {
-    return visible_buffers_;
+  int lowest_visible_buffer() const {
+    return lowest_visible_buffer_;
   }
 
-  int num_visible_buffers() const {
-    return num_visible_buffers_;
-  }
-
-  int max_visible_buffers() const {
-    return visible_buffers_.size();
+  int highest_visible_buffer() const {
+    return highest_visible_buffer_;
   }
 
  private:
@@ -31,6 +26,6 @@ class ScrollingManager {
 
   // State
   int screen_bottom_;
-  int num_visible_buffers_;
-  absl::FixedArray<int> visible_buffers_;
+  int lowest_visible_buffer_;
+  int highest_visible_buffer_;
 };

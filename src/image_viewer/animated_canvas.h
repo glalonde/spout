@@ -13,7 +13,8 @@ class AnimatedCanvas {
 
   Image<PixelType::RGBAU8>* data();
 
-  ControllerInput Tick();
+  // Optionally returns the amount of time spent since the previous tick.
+  ControllerInput Tick(Duration* dt = nullptr);
 
   double fps() const;
 

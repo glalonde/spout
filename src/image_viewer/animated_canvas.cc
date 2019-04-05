@@ -14,14 +14,18 @@ Image<PixelType::RGBAU8>* AnimatedCanvas::data() {
   return viewer_.data();
 }
 
-ControllerInput AnimatedCanvas::Tick() {
+ControllerInput AnimatedCanvas::Tick(Duration* dt) {
   viewer_.SetDataChanged();
   auto input = viewer_.Update();
   std::this_thread::sleep_until(next_frame_finish_);
   const auto now = ClockType::now();
-  fps_.Tick(now - current_frame_finish_);
+  const auto delta = now - current_frame_finish_;
+  fps_.Tick(delta);
   current_frame_finish_ = now;
   next_frame_finish_ = current_frame_finish_ + target_cycle_time_;
+  if (dt) {
+    *dt = delta;
+  }
   return input;
 }
 

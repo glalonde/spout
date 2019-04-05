@@ -225,19 +225,6 @@ cc_binary(
     ],
 )
 
-cc_binary(
-    name = "scrolling_demo",
-    srcs = ["scrolling_demo.cc"],
-    deps = [
-        ":convert",
-        ":level_generators",
-        "//base:init",
-        "//base:wall_timer",
-        "//src/color_maps",
-        "//src/image_viewer:animated_canvas",
-    ],
-)
-
 cc_library(
     name = "scrolling_manager",
     srcs = ["scrolling_manager.cc"],
@@ -253,5 +240,18 @@ cc_test(
     deps = [
         ":scrolling_manager",
         "//base:googletest",
+    ],
+)
+
+cc_binary(
+    name = "scrolling_demo",
+    srcs = ["scrolling_demo.cc"],
+    deps = [
+        ":convert",
+        "//base:init",
+        "//base:wall_timer",
+        "//src/color_maps",
+        "//src/image_viewer:animated_canvas",
+        ":scrolling_manager",
     ],
 )
