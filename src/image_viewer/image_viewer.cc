@@ -62,15 +62,14 @@ class ImageViewer::Impl {
   }
 
   ControllerInput Update() {
-    ControllerInput input;
-    HandleEvents(&input);
+    HandleEvents(&input_);
     if (data_changed_) {
       UpdateTexture();
     }
     if (ShouldRedraw()) {
       Render();
     }
-    return input;
+    return input_;
   }
 
   void Render() {
@@ -251,6 +250,7 @@ class ImageViewer::Impl {
   bool data_changed_;
   bool window_changed_;
 
+  ControllerInput input_;
   SDL_Event event_;
   SDL_Window* window_;
   SDL_GLContext gl_context_;

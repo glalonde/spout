@@ -248,6 +248,7 @@ cc_binary(
     srcs = ["scrolling_demo.cc"],
     deps = [
         ":convert",
+        ":random",
         "//base:init",
         "//base:wall_timer",
         "//src/color_maps",

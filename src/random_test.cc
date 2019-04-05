@@ -65,10 +65,7 @@ GTEST_TEST(PerlinNoise, Viewer) {
 
   Image<double> perlin_vals(rows, cols);
   std::mt19937 gen(0);
-  PerlinNoise(10, &gen, perlin_vals);
-  perlin_vals *= .5;
-  perlin_vals += .5;
-
+  PerlinNoise(0.0, 1.0, 10, &gen, perlin_vals);
   const ColorMap color_map = ColorMap::kParula;
   for (int r = 0; r < rows; ++r) {
     for (int c = 0; c < cols; ++c) {

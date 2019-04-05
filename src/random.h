@@ -39,8 +39,9 @@ void SetRandomUniform(const typename Derived::Scalar& min,
 
 // Returns noise values from [-1, 1]
 template <class GenType, class Derived>
-void PerlinNoise(int cell_size, GenType* rand_gen,
-                 Eigen::DenseBase<Derived> const& vals) {
+void PerlinNoise(typename Derived::Scalar min_val,
+                 typename Derived::Scalar max_val, int cell_size,
+                 GenType* rand_gen, Eigen::DenseBase<Derived> const& vals) {
   // Coarse grained sampling grid to set the "frequency" of the noise.
   const int grid_rows =
       static_cast<int>(std::ceil(vals.rows() / cell_size)) + 1;
@@ -95,4 +96,17 @@ void PerlinNoise(int cell_size, GenType* rand_gen,
       mutable_vals(r, c) = sample_location(r, c);
     }
   }
+
+  CHECK_LE(min_val, max_val);
+  // Scale and shift to match the desired range of [min_val, max_val]
+  //
+  // See: http://digitalfreepen.com/2017/06/20/range-perlin-noise.html
+  static const typename Derived::Scalar native_range(2.0 * std::sqrt(.5));
+  const auto range_multiplier = (max_val - min_val) / native_range;
+  mutable_vals *= range_multiplier;
+  const auto shift = min_val - (-range_multiplier * std::sqrt(.5));
+
+  // TODO: Better way to add a scalar to a dense base???
+  mutable_vals = mutable_vals.unaryExpr(
+      [&shift](typename Derived::Scalar v) { return v + shift; });
 }
