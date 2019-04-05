@@ -3,6 +3,7 @@
 
 #include "base/format.h"
 #include "base/init.h"
+#include "base/wall_timer.h"
 #include "src/color_maps/color_maps.h"
 #include "src/convert.h"
 #include "src/image_viewer/animated_canvas.h"

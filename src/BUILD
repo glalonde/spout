@@ -200,6 +200,7 @@ cc_library(
     hdrs = ["level_generators.h"],
     deps = [
         ":random",
+        ":perlin_noise",
         ":image",
     ],
 )
@@ -210,8 +211,31 @@ cc_binary(
     deps = [
         ":level_generators",
         "//src/image_viewer:animated_canvas",
+        "//base:wall_timer",
         "//base:init",
         "//src/color_maps",
+        ":convert",
+    ],
+)
+
+cc_library(
+    name = "perlin_noise",
+    hdrs = ["perlin_noise.h"],
+    deps = [
+        ":interpolation",
+        ":image",
+        ":random",
+    ],
+)
+
+cc_test(
+    name = "perlin_noise_test",
+    srcs = ["perlin_noise_test.cc"],
+    deps = [
+        ":perlin_noise",
+        "//src/image_viewer:image_viewer",
+        "//src/color_maps",
+        "//base:googletest",
         ":convert",
     ],
 )
