@@ -12,13 +12,15 @@ static Eigen::Matrix<int, 4, 8> kFromOctant0 =
      1, 0, 0, 1, 1, 0, 0, -1, -1, 0, 1, 0, 0, 1, -1, 0, 0, -1)
         .finished();
 
-static Eigen::Matrix<int, 2, 8> kStepX =
-    (Eigen::Matrix<int, 2, 8>() << 1, 0, 0, -1, -1, 0, 0, 1, 0, 1, 1, 0, 0, -1,
+template<class IntType>
+static Eigen::Matrix<IntType, 2, 8> kStepX =
+    (Eigen::Matrix<IntType, 2, 8>() << 1, 0, 0, -1, -1, 0, 0, 1, 0, 1, 1, 0, 0, -1,
      -1, 0)
         .finished();
 
-static Eigen::Matrix<int, 2, 8> kStepY =
-    (Eigen::Matrix<int, 2, 8>() << 0, 1, -1, 0, 0, -1, 1, 0, 1, 0, 0, 1, -1, 0,
+template<class IntType>
+static Eigen::Matrix<IntType, 2, 8> kStepY =
+    (Eigen::Matrix<IntType, 2, 8>() << 0, 1, -1, 0, 0, -1, 1, 0, 1, 0, 0, 1, -1, 0,
      0, -1)
         .finished();
 
@@ -88,8 +90,8 @@ void SubPixelBresenhamNormal(const Vector2d& pos, const Vector2d& vel,
   Vector2d end_pos_tf = pos_tf + vel_tf * dt;
   Vector2i end_pos_i = end_pos_tf.array().floor().matrix().cast<int>();
   int cells = (end_pos_i - pos_i).lpNorm<1>();
-  Vector2i x_step = kStepX.col(octant);
-  Vector2i y_step = kStepY.col(octant);
+  Vector2i x_step = kStepX<int>.col(octant);
+  Vector2i y_step = kStepY<int>.col(octant);
   Vector2d start_remainder = pos_tf - pos_i.cast<double>();
   pos_i = pos.cast<int>();
 

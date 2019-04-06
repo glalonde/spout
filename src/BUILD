@@ -27,6 +27,18 @@ cc_library(
 )
 
 cc_library(
+    name = "so2",
+    hdrs = ["so2.h"],
+    deps = [":eigen_types"],
+)
+
+cc_test(
+    name = "so2_test",
+    srcs = ["so2_test.cc"],
+    deps = [":so2", "//base:googletest"],
+)
+
+cc_library(
     name = "random",
     hdrs = ["random.h"],
     deps = [
@@ -254,5 +266,14 @@ cc_binary(
         "//src/color_maps",
         "//src/image_viewer:animated_canvas",
         ":scrolling_manager",
+    ],
+)
+
+cc_binary(
+    name = "particle_parallelism_test",
+    srcs = ["particle_parallelism_test.cc"],
+    deps = [
+        ":eigen_types",
+        "//base",
     ],
 )
