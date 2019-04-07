@@ -35,7 +35,10 @@ cc_library(
 cc_test(
     name = "so2_test",
     srcs = ["so2_test.cc"],
-    deps = [":so2", "//base:googletest"],
+    deps = [
+        ":so2",
+        "//base:googletest",
+    ],
 )
 
 cc_library(
@@ -262,11 +265,11 @@ cc_binary(
     deps = [
         ":convert",
         ":random",
+        ":scrolling_manager",
         "//base:init",
         "//base:wall_timer",
         "//src/color_maps",
         "//src/image_viewer:animated_canvas",
-        ":scrolling_manager",
     ],
 )
 
@@ -274,7 +277,31 @@ cc_library(
     name = "mobile_object",
     hdrs = ["mobile_object.h"],
     deps = [
-        "//base",
         ":so2",
+        "//base",
+    ],
+)
+
+cc_library(
+    name = "drawing_utils",
+    hdrs = ["drawing_utils.h"],
+    deps = [
+        ":image",
+    ],
+)
+
+cc_binary(
+    name = "ship_demo",
+    srcs = ["ship_demo.cc"],
+    deps = [
+        ":bresenham",
+        ":convert",
+        ":drawing_utils",
+        ":mobile_object",
+        ":random",
+        "//base:format",
+        "//base:init",
+        "//src/fonts:font_renderer",
+        "//src/image_viewer:animated_canvas",
     ],
 )

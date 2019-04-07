@@ -45,6 +45,14 @@ using Vector4i = Vector4<int32_t>;
 using Eigen::Vector4d;
 using Eigen::Vector4f;
 
+// 5-vector using Scalar
+template <class Scalar>
+using Vector5 = Vector<Scalar, 5>;
+
+using Vector5d = Vector5<double>;
+using Vector5f = Vector5<float>;
+using Vector5b = Vector5<bool>;
+
 // 6-vector using Scalar
 template <class Scalar>
 using Vector6 = Vector<Scalar, 6>;

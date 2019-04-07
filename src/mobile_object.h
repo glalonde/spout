@@ -36,11 +36,25 @@ class Ship {
  public:
   Ship(MobileObject particle, double orientation)
       : particle_(particle), orientation_(orientation){};
+
   void Rotate(double orientation) {
     orientation_ *= SO2d(orientation);
   }
+
   void Accelerate(double delta_v) {
-    particle_.mutable_state().segment<2>(2) += delta_v * orientation_.data();
+    particle_.mutable_state()->segment<2>(2) += delta_v * orientation_.data();
+  }
+
+  const SO2d& orientation() const {
+    return orientation_;
+  }
+
+  const MobileObject& particle() const {
+    return particle_;
+  }
+
+  MobileObject* mutable_particle() {
+    return &particle_;
   }
 
  private:

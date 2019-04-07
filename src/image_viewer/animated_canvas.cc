@@ -6,7 +6,8 @@ AnimatedCanvas::AnimatedCanvas(int window_width, int window_height,
     : target_cycle_time_(FromHz(target_fps)),
       viewer_(window_width, window_height),
       fps_(FromSeconds(1.0), target_fps),
-      next_frame_finish_(ClockType::now()) {
+      current_frame_finish_(ClockType::now()),
+      next_frame_finish_(current_frame_finish_) {
   viewer_.SetTextureSize(texture_width, texture_height);
 }
 

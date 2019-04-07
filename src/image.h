@@ -14,3 +14,10 @@ using RGBF64 = Vector3<double>;
 using RGBAF32 = Vector4<float>;
 using RGBAF64 = Vector4<double>;
 }  // namespace PixelType
+
+
+// Check if row and col is a valid pixel on the image
+template<class T>
+bool IsInImage(int row, int col, const Image<T>& image) {
+  return row >= 0 && col >= 0 && row < image.rows() && col < image.cols();
+}
