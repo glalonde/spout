@@ -1,8 +1,14 @@
 #pragma once
 #include "src/eigen_types.h"
+#include "src/so2.h"
 
 // x, y, dx, dy, ttl
 using Particle = Vector5d;
+
+// The components that can just be added directly:
+// (delta dx, delta dy, delta ttl)
+// x and y are updated through bresenham
+// as are dx and dy.
 using DeltaParticle = Vector3d;
 
 class MobileObject {
@@ -30,20 +36,14 @@ class Ship {
  public:
   Ship(MobileObject particle, double orientation)
       : particle_(particle), orientation_(orientation){};
-  void Rotate(std::complex<double> orientation) {
-    orientation_ += radians;
-    if (orientation_ > M_PI) {
-      orientation_ -= 2 * M_PI;
-    } else if (orientation < M_PI) {
-      orientation_ += 2 * M_PI;
-    }
+  void Rotate(double orientation) {
+    orientation_ *= SO2d(orientation);
   }
   void Accelerate(double delta_v) {
-    particle_.mutable_state() += delta_v * 
-
+    particle_.mutable_state().segment<2>(2) += delta_v * orientation_.data();
   }
 
  private:
   MobileObject particle_;
-  std::complex<double> orientation_;
+  SO2d orientation_;
 };

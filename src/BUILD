@@ -208,6 +208,7 @@ cc_binary(
     deps = [
         ":bresenham",
         ":convert",
+        ":random",
         "//base:format",
         "//base:init",
         "//src/fonts:font_renderer",
@@ -269,11 +270,11 @@ cc_binary(
     ],
 )
 
-cc_binary(
-    name = "particle_parallelism_test",
-    srcs = ["particle_parallelism_test.cc"],
+cc_library(
+    name = "mobile_object",
+    hdrs = ["mobile_object.h"],
     deps = [
-        ":eigen_types",
         "//base",
+        ":so2",
     ],
 )

@@ -7,6 +7,7 @@
 #include "src/convert.h"
 #include "src/fonts/font_renderer.h"
 #include "src/image_viewer/animated_canvas.h"
+#include "src/random.h"
 
 DEFINE_int32(num_particles, 100, "Number of particles");
 
@@ -60,15 +61,17 @@ void AddFpsText(double fps, const PixelType::RGBAU8& color,
 
 template <class T>
 void AddNoise(const T& wall_value, double percent_filled, Image<T>* data) {
-  const int num_filled = static_cast<int>(data->size() * percent_filled);
-  CHECK_LT(num_filled, data->size());
-  CHECK_GE(num_filled, 0);
-  std::random_device rd;
-  std::mt19937 gen(rd());
-  std::uniform_int_distribution<> dis(0, data->size());
-  for (int i = 0; i < num_filled; ++i) {
-    (*data)(dis(gen)) = wall_value;
-  }
+  std::mt19937 gen(0);
+  Image<double> perlin_vals(data->rows(), data->cols());
+  PerlinNoise(0.0, 1.0, data->cols() / 10, &gen, perlin_vals);
+  (*data) = perlin_vals.unaryExpr(
+      [percent_filled, wall_value](double noise_val) -> T {
+        if (noise_val <= percent_filled) {
+          return wall_value;
+        } else {
+          return T(0);
+        }
+      });
 }
 
 void Demo(int num_particles) {
@@ -82,8 +85,8 @@ void Demo(int num_particles) {
   // Set up environment
   Image<uint8_t> environment(grid_dims[1], grid_dims[0]);
   environment.setConstant(0);
+  AddNoise(kWall, .2, &environment);
   AddWalls(kWall, &environment);
-  AddNoise(kWall, .1, &environment);
 
   // Set up particles
   AlignedBox<double, 4> particle_space;
@@ -95,7 +98,6 @@ void Demo(int num_particles) {
   for (int i = 0; i < num_particles; ++i) {
     particles[i] = particle_space.sample();
   }
-
 
   Vector2d pos;
   Vector2d vel;

@@ -1,4 +1,5 @@
 #pragma once
+#include "base/logging.h"
 #include "src/eigen_types.h"
 
 // Barebones SO2 group aka. 2D planar rotations.
@@ -6,12 +7,22 @@
 template<class T>
 struct SO2 {
  public:
+  // Default constructor is 0.0 radians
   SO2() : SO2(T(1), T(0)) {}
+
+  // Constructor from scalar radians value.
   SO2(T radians) : SO2(std::cos(radians), std::sin(radians)) {}
-  SO2(T cos, T sin) : data_(cos, sin) {}
+
+  // Component constructor. Warning: If this isn't normalized everything is
+  // wrong.
+  SO2(T cos, T sin) : data_(cos, sin) {
+    DCHECK(is_normalized()) << "This needs to be normalized";
+  }
+
   SO2(const SO2& other) = default;
 
   // Compose two rotations with multiplication
+  // This is how you add rotations without a `+` operator.
   template <class U>
   SO2<T>& operator*=(const SO2<U>& z) {
     const T new_cos = cos() * z.cos() - sin() * z.sin();
@@ -25,14 +36,10 @@ struct SO2 {
     return *this;
   }
 
+  // This is how you subtract rotations without a `-` operator.
   SO2<T> inverse() const {
     return SO2(cos(), -sin());
   }
-
-  const Vector2<T>& data() const {
-    return data_;
-  }
-
   const T& cos() const {
     return data_.x();
   }
@@ -46,8 +53,18 @@ struct SO2 {
     data_.normalize();
   }
 
+  // Turn into a scalar angle. Not cheap.
   T radians() const {
     return std::atan2(sin(), cos());
+  }
+
+  const Vector2<T>& data() const {
+    return data_;
+  }
+
+  bool is_normalized() const {
+    return std::abs(data_.squaredNorm() - 1.0) <
+           std::numeric_limits<T>::epsilon();
   }
 
  private:
