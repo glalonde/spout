@@ -9,56 +9,19 @@
 #include "src/random.h"
 #include "src/scrolling_manager.h"
 
-// Viewport width == level width
-class ScrollingCanvas {
- public:
-  ScrollingCanvas(Vector2i level_dimensions /* width, height */,
-                  int viewport_height)
-      : level_dimensions_(level_dimensions),
-        manager_(level_dimensions.y(), viewport_height) {}
-
-  void SetHeight(int screen_bottom) {
-    manager_.UpdateHeight(screen_bottom);
-  }
-
-  void Render(Image<PixelType::RGBAU8>* viewport) {
-    while (manager_.highest_visible_buffer() + 1 >= buffers_.size()) {
-      MakeLevelBuffer(buffers_.size());
-    }
-    int viewport_bottom = 0;
-    int start_row;
-    int num_rows;
-    for (int i = manager_.lowest_visible_buffer();
-         i <= manager_.highest_visible_buffer(); ++i) {
-      // Copy data
-      manager_.VisibleRows(i, &start_row, &num_rows);
-      viewport->block(viewport_bottom, 0, num_rows, viewport->cols()) =
-          buffers_[i].block(start_row, 0, num_rows, viewport->cols());
-      viewport_bottom += num_rows;
+void MakePerlinNoiseLevel(int i /* level number */, std::mt19937* rand_gen,
+                          Image<PixelType::RGBAU8>* level_buffer) {
+  const ColorMap color_map = kAllColorMaps[i % kAllColorMaps.size()];
+  Image<double> perlin_vals(level_buffer->rows(), level_buffer->cols());
+  PerlinNoise(0.0, 1.0, level_buffer->cols() / 5, rand_gen, perlin_vals);
+  for (int r = 0; r < level_buffer->rows(); ++r) {
+    for (int c = 0; c < level_buffer->cols(); ++c) {
+      const auto color = Convert<PixelType::RGBAU8>(
+          GetMappedColor3f(color_map, perlin_vals(r, c)));
+      (*level_buffer)(r, c) = color;
     }
   }
-
- private:
-  void MakeLevelBuffer(int i) {
-    CHECK_EQ(buffers_.size(), i);
-    buffers_.emplace_back(level_dimensions_.y(), level_dimensions_.x());
-    const ColorMap color_map = kAllColorMaps[i % kAllColorMaps.size()];
-    Image<double> perlin_vals(level_dimensions_.y(), level_dimensions_.x());
-    PerlinNoise(0.0, 1.0, level_dimensions_.x() / 5, &rand_gen_, perlin_vals);
-    for (int r = 0; r < level_dimensions_.y(); ++r) {
-      for (int c = 0; c < level_dimensions_.x(); ++c) {
-        const auto color = Convert<PixelType::RGBAU8>(
-            GetMappedColor3f(color_map, perlin_vals(r, c)));
-        buffers_.back()(r, c) = color;
-      }
-    }
-  }
-
-  Vector2i level_dimensions_;
-  std::mt19937 rand_gen_;
-  ScrollingManager manager_;
-  std::vector<Image<PixelType::RGBAU8>> buffers_;
-};
+}
 
 void Demo() {
   // Set up canvas
@@ -70,10 +33,18 @@ void Demo() {
   AnimatedCanvas canvas(window_dims[0], window_dims[1], grid_dims[0],
                         grid_dims[1], kFps);
 
+  std::mt19937 rand_gen(0);
+  auto level_gen = [rand_gen = std::move(rand_gen)](
+                       int level_number,
+                       Image<PixelType::RGBAU8>* level_buffer) mutable {
+    MakePerlinNoiseLevel(level_number, &rand_gen, level_buffer);
+  };
+
   // Viewport is half of a level size, so we will be able to see 1 or 2 level
   // buffers at a time only.
   int level_height = grid_dims.y() * 2;
-  ScrollingCanvas scroller({grid_dims.x(), level_height}, grid_dims[1]);
+  ScrollingCanvas scroller({grid_dims.x(), level_height}, grid_dims[1],
+                           std::move(level_gen));
   LOG(INFO) << "Level height: " << level_height;
 
   // Loop

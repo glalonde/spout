@@ -1,7 +1,10 @@
 #pragma once
 
 #include "base/logging.h"
+#include "src/image.h"
 
+// This class keeps track of which rows from which buffers are visible in the
+// viewport.
 class ScrollingManager {
  public:
   // Number of rows in each buffer and number of rows in the viewport
@@ -55,4 +58,40 @@ class ScrollingManager {
   int screen_bottom_;
   int lowest_visible_buffer_;
   int highest_visible_buffer_;
+};
+
+// Viewport width == level width
+template <class T>
+class ScrollingCanvas {
+ public:
+  ScrollingCanvas(Vector2i level_dimensions /* width, height */,
+                  int viewport_height,
+                  std::function<void(int i, Image<T>*)> level_gen_function);
+
+  void SetHeight(int screen_bottom);
+
+  void Render(Image<T>* viewport);
+
+  // Cell accessor
+  const T& operator()(int row, int col) const {
+    int local_row;
+    int buffer_index = GetBufferIndex(row, &local_row);
+    DCHECK_LT(buffer_index, buffers_.size());
+    return buffers_[buffer_index](local_row, col);
+  }
+
+  int GetBufferIndex(int row, int* buffer_offset) const {
+    int buffer_index = row / level_dimensions_[1];
+    *buffer_offset = row - buffer_index * level_dimensions_[1];
+    return buffer_index;
+  }
+
+ private:
+  void MakeLevelBuffer(int i);
+
+  Vector2i level_dimensions_;
+  ScrollingManager manager_;
+
+  std::function<void(int i, Image<T>*)> level_gen_;
+  std::vector<Image<T>> buffers_;
 };

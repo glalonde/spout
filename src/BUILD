@@ -26,6 +26,15 @@ cc_library(
     deps = ["@eigen"],
 )
 
+cc_test(
+    name = "eigen_types_test",
+    srcs = ["eigen_types_test.cc"],
+    deps = [
+        ":eigen_types",
+        "//base:googletest",
+    ],
+)
+
 cc_library(
     name = "so2",
     hdrs = ["so2.h"],
@@ -247,6 +256,7 @@ cc_library(
     hdrs = ["scrolling_manager.h"],
     deps = [
         "//base",
+        ":image",
     ],
 )
 
@@ -314,5 +324,23 @@ cc_binary(
         "//base:format",
         "//base:init",
         "//src/image_viewer:animated_canvas",
+    ],
+)
+
+cc_library(
+    name = "buffer_stack",
+    hdrs = ["buffer_stack.h"],
+    deps = [
+        ":image",
+        "//base:logging",
+    ],
+)
+
+cc_test(
+    name = "buffer_stack_test",
+    srcs = ["buffer_stack_test.cc"],
+    deps = [
+        ":buffer_stack",
+        "//base:googletest",
     ],
 )
