@@ -290,18 +290,29 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "demo_utils",
+    hdrs = ["demo_utils.h"],
+    deps = [
+        ":convert",
+        ":image",
+        "//src/color_maps",
+        "//src/fonts:font_renderer",
+    ],
+)
+
 cc_binary(
     name = "ship_demo",
     srcs = ["ship_demo.cc"],
     deps = [
         ":bresenham",
         ":convert",
+        ":demo_utils",
         ":drawing_utils",
         ":mobile_object",
         ":random",
         "//base:format",
         "//base:init",
-        "//src/fonts:font_renderer",
         "//src/image_viewer:animated_canvas",
     ],
 )
