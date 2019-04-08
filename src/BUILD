@@ -306,6 +306,7 @@ cc_library(
     deps = [
         ":convert",
         ":image",
+        ":random",
         "//src/color_maps",
         "//src/fonts:font_renderer",
     ],
@@ -342,5 +343,23 @@ cc_test(
     deps = [
         ":buffer_stack",
         "//base:googletest",
+    ],
+)
+
+cc_binary(
+    name = "ship_scrolling_demo",
+    srcs = ["ship_scrolling_demo.cc"],
+    deps = [
+        ":bresenham",
+        ":scrolling_manager",
+        ":convert",
+        ":demo_utils",
+        ":drawing_utils",
+        ":mobile_object",
+        ":random",
+        ":buffer_stack",
+        "//base:format",
+        "//base:init",
+        "//src/image_viewer:animated_canvas",
     ],
 )

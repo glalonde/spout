@@ -79,8 +79,10 @@ uint8_t GetOctant(const Vector2<Scalar>& vec) {
 
 template <class T>
 void SubPixelBresenhamNormal(const Vector2d& pos, const Vector2d& vel,
-                             const double dt, const Image<T>& buffer,
+                             const double dt,
+                             const T& buffer,
                              Vector2d* pos_out, Vector2d* vel_out) {
+  using CellType = typename T::Scalar;
   uint8_t octant = GetOctant(vel);
   Vector2d pos_tf = TransformToOctant0(octant, pos);
   Vector2d vel_tf = TransformToOctant0(octant, vel);
@@ -105,7 +107,7 @@ void SubPixelBresenhamNormal(const Vector2d& pos, const Vector2d& vel,
       // Exit this pixel via the top.
       pos_i += y_step;
       --error;
-      if (buffer(pos_i.y(), pos_i.x()) > T(0)) {
+      if (buffer(pos_i.y(), pos_i.x()) > CellType(0)) {
         pos_i -= y_step;
         y_step *= -1;
         octant = kOctantFlipOverX[octant];
@@ -114,11 +116,11 @@ void SubPixelBresenhamNormal(const Vector2d& pos, const Vector2d& vel,
       // Exit this pixel via the right.
       pos_i += x_step;
       error += slope;
-      if (buffer(pos_i.y(), pos_i.x()) > T(0)) {
+      if (buffer(pos_i.y(), pos_i.x()) > CellType(0)) {
         pos_i -= x_step;
         x_step *= -1;
         octant = kOctantFlipOverY[octant];
-      }
+        }
     }
     --cells;
   }

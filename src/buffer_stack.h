@@ -3,9 +3,11 @@
 #include "base/logging.h"
 #include "src/eigen_types.h"
 
+
 template <class BufferType>
 class BufferStack {
  public:
+  using Scalar = typename BufferType::Scalar;
   BufferStack(int rows /* each buffer should have the same shape */)
       : rows_(rows) {}
 
@@ -22,6 +24,16 @@ class BufferStack {
 
   const BufferType& GetBuffer(int global_row, int* local_row) const {
     return buffers_[GetBufferIndex(global_row, local_row)];
+  }
+
+  const std::vector<BufferType>& buffers() const {
+    return buffers_;
+  }
+
+  const Scalar& operator()(int row, int col) const {
+    int local_row;
+    const auto& buffer = GetBuffer(row, &local_row);
+    return buffer(local_row, col);
   }
 
  private:

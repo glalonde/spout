@@ -1,7 +1,10 @@
 #pragma once
 
 #include "src/convert.h"
+#include "src/fonts/font_renderer.h"
 #include "src/image.h"
+#include "src/random.h"
+#include "src/buffer_stack.h"
 
 static constexpr uint8_t kWall = std::numeric_limits<uint8_t>::max();
 static const PixelType::RGBAU8 kWallColor = {0, 0, 255, 255};
@@ -25,15 +28,25 @@ void RenderEnvironment(const Image<uint8_t>& env,
 }
 
 template <class T>
-void AddWalls(const T& wall_value, Image<T>* data) {
+void AddSideWalls(const T& wall_value, Image<T>* data) {
   // Set left and right to walls
   for (int r = 0; r < data->rows(); ++r) {
     (*data)(r, 0) = wall_value;
     (*data)(r, data->cols() - 1) = wall_value;
   }
+}
+
+template <class T>
+void AddBottomWall(const T& wall_value, Image<T>* data) {
   // Set top and bottom to walls
   for (int c = 0; c < data->cols(); ++c) {
     (*data)(0, c) = wall_value;
+  }
+}
+
+template <class T>
+void AddTopWall(const T& wall_value, Image<T>* data) {
+  for (int c = 0; c < data->cols(); ++c) {
     (*data)(data->rows() - 1, c) = wall_value;
   }
 }
@@ -46,10 +59,10 @@ void AddFpsText(double fps, const PixelType::RGBAU8& color,
 }
 
 template <class T>
-void AddNoise(const T& wall_value, double percent_filled, Image<T>* data) {
-  std::mt19937 gen(0);
+void AddNoise(const T& wall_value, double percent_filled, std::mt19937* gen,
+              Image<T>* data) {
   Image<double> perlin_vals(data->rows(), data->cols());
-  PerlinNoise(0.0, 1.0, data->cols() / 10, &gen, perlin_vals);
+  PerlinNoise(0.0, 1.0, data->cols() / 10, gen, perlin_vals);
   (*data) = perlin_vals.unaryExpr(
       [percent_filled, wall_value](double noise_val) -> T {
         if (noise_val <= percent_filled) {
