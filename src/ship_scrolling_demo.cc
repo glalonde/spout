@@ -10,8 +10,10 @@
 #include "src/mobile_object.h"
 #include "src/scrolling_manager.h"
 
-void RenderShip(const Ship& ship, Image<PixelType::RGBAU8>* data) {
+void RenderShip(const ScrollingManager& scroller, const Ship& ship,
+                Image<PixelType::RGBAU8>* data) {
   Vector2i tail_start = ship.particle().state().head<2>().cast<int>();
+  tail_start.y() -= scroller.viewport_bottom();
   static constexpr double kTailLength = -10.0;
   static constexpr double kShipAngle = M_PI / 5.0;
   static const SO2d kHalfShipAngle(kShipAngle / 2.0);
@@ -104,22 +106,23 @@ void Demo() {
   // Set up canvas
   const double kFps = 60.0;
   const Vector2i window_dims(800, 800);
-  const Vector2i grid_dims = window_dims / 4;
+  const Vector2i viewport_dims = window_dims / 4;
   std::mt19937 rando(0);
-  AnimatedCanvas canvas(window_dims[0], window_dims[1], grid_dims[0],
-                        grid_dims[1], kFps);
+  AnimatedCanvas canvas(window_dims[0], window_dims[1], viewport_dims[0],
+                        viewport_dims[1], kFps);
+  int level_height = viewport_dims.y() * 2;
 
   // Set up environment
-  BufferStack<Image<uint8_t>> environment(grid_dims[1]);
+  BufferStack<Image<uint8_t>> environment(level_height);
   auto add_next_level = [&]() {
     const int next_level_number = environment.buffers().size();
-    Image<uint8_t> first_level(grid_dims[1], grid_dims[0]);
+    Image<uint8_t> first_level(level_height, viewport_dims[0]);
     MakeLevel(next_level_number, &rando, &first_level);
     environment.EmplaceBuffer(std::move(first_level));
   };
   add_next_level();
 
-  ScrollingManager scroller(grid_dims[1], window_dims[1]);
+  ScrollingManager scroller(level_height, viewport_dims[1]);
 
   // Set up ship.
   auto ship_start = FindEmptySpot(environment.buffers().front());
@@ -134,12 +137,12 @@ void Demo() {
   while (!input.quit) {
     {
       // Update the viewport to respond to changes in the ships position.
-      int viewport_mid = (scroller.viewport_height() + grid_dims[1] / 2);
+      int viewport_mid = (scroller.viewport_bottom() + viewport_dims[1] / 2);
       int ship_row = static_cast<int>(ship.particle().state().y());
       int scrolling_error = ship_row - viewport_mid;
       if (scrolling_error != 0) {
         int new_height =
-            std::clamp(scroller.viewport_height() + scrolling_error, 0,
+            std::clamp(scroller.viewport_bottom() + scrolling_error, 0,
                        std::numeric_limits<int>::max());
         scroller.UpdateHeight(new_height);
       }
@@ -155,7 +158,7 @@ void Demo() {
     // Render
     RenderEnvironment(environment, scroller, data);
     AddFpsText(canvas.fps(), text_color, data);
-    RenderShip(ship, data);
+    RenderShip(scroller, ship, data);
     input = canvas.Tick(&tick_time);
     // Update game logic
     UpdateShip(ToSeconds<double>(tick_time), input, environment, &ship);

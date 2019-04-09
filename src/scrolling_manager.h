@@ -48,8 +48,8 @@ class ScrollingManager {
 
   // Returns the row in global coordinates visible at the bottom of the
   // viewport.
-  int viewport_height() const {
-    return viewport_height_;
+  int viewport_bottom() const {
+    return screen_bottom_;
   }
 
  private:
