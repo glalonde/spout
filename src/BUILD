@@ -269,20 +269,6 @@ cc_test(
     ],
 )
 
-cc_binary(
-    name = "scrolling_demo",
-    srcs = ["scrolling_demo.cc"],
-    deps = [
-        ":convert",
-        ":random",
-        ":scrolling_manager",
-        "//base:init",
-        "//base:wall_timer",
-        "//src/color_maps",
-        "//src/image_viewer:animated_canvas",
-    ],
-)
-
 cc_library(
     name = "mobile_object",
     hdrs = ["mobile_object.h"],

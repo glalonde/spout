@@ -19,7 +19,7 @@ Output Convert(const Input& input);
 template <>
 PixelType::RGBU8 Convert<PixelType::RGBU8, PixelType::RGBAU8>(
     const PixelType::RGBAU8& input) {
-  return input.head<3>(0);
+  return input.head<3>();
 }
 
 template <>

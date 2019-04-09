@@ -75,8 +75,11 @@ void Demo() {
   // Set up environment
   Image<uint8_t> environment(grid_dims[1], grid_dims[0]);
   environment.setConstant(0);
-  AddNoise(kWall, .2, &environment);
-  AddWalls(kWall, &environment);
+  std::mt19937 gen(0);
+  AddNoise(kWall, .2, &gen, &environment);
+  AddSideWalls(kWall, &environment);
+  AddTopWall(kWall, &environment);
+  AddBottomWall(kWall, &environment);
 
   // Set up ship.
   auto ship_start = FindEmptySpot(environment);

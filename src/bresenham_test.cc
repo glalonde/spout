@@ -63,8 +63,8 @@ GTEST_TEST(BresenhamTest, SmokeVis) {
 
   bool done = false;
   auto* data = canvas.data();
-  while (!done) {
-    SubPixelBresenhamNormal(pos, vel, dt, &environment, &pos, &vel);
+  while (!done && !kIsUnitTest) {
+    SubPixelBresenhamNormal(pos, vel, dt, environment, &pos, &vel);
     RenderEnvironment(environment, data);
     RenderParticle(pos, data);
     done = canvas.Tick().quit;

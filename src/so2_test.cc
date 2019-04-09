@@ -27,7 +27,9 @@ GTEST_TEST(SO2Test, Smoke) {
   EXPECT_TRUE(r4.is_normalized());
   EXPECT_TRUE(r5.is_normalized());
 
-  SO2d r6(2.0, 1.0);
+  SO2d r6;
+  auto* coeffs = const_cast<Vector2d*>(&r6.data());
+  *coeffs = Vector2d(2.0, 1.0);
   EXPECT_FALSE(r6.is_normalized());
   r6.Normalize();
   EXPECT_TRUE(r6.is_normalized());
