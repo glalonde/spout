@@ -255,8 +255,8 @@ cc_library(
     srcs = ["scrolling_manager.cc"],
     hdrs = ["scrolling_manager.h"],
     deps = [
-        "//base",
         ":image",
+        "//base",
     ],
 )
 
@@ -351,13 +351,13 @@ cc_binary(
     srcs = ["ship_scrolling_demo.cc"],
     deps = [
         ":bresenham",
-        ":scrolling_manager",
+        ":buffer_stack",
         ":convert",
         ":demo_utils",
         ":drawing_utils",
         ":mobile_object",
         ":random",
-        ":buffer_stack",
+        ":scrolling_manager",
         "//base:format",
         "//base:init",
         "//src/image_viewer:animated_canvas",

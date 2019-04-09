@@ -109,9 +109,9 @@ void Demo(int num_particles) {
   while (!done) {
     RenderEnvironment(environment, data);
     for (int i = 0; i < num_particles; ++i) {
-      SubPixelBresenhamNormal(particles[i].segment<2>(0),
-                              particles[i].segment<2>(2), dt, &environment,
-                              &pos, &vel);
+      DestructingBresenham(particles[i].segment<2>(0),
+                           particles[i].segment<2>(2), dt, 1.0, &environment,
+                           &pos, &vel);
       particles[i].segment<2>(0) = pos;
       particles[i].segment<2>(2) = vel;
       particles[i][3] += dt * ddy;

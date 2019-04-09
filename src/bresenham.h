@@ -1,4 +1,5 @@
 #pragma once
+#include <algorithm>
 #include "src/eigen_types.h"
 #include "src/image.h"
 
@@ -121,6 +122,85 @@ void SubPixelBresenhamNormal(const Vector2d& pos, const Vector2d& vel,
         x_step *= -1;
         octant = kOctantFlipOverY[octant];
         }
+    }
+    --cells;
+  }
+  end_remainder = TransformFromOctant0(octant, end_remainder);
+  *pos_out = Vector2d(.5, .5) + pos_i.cast<double>() + end_remainder;
+  *vel_out = TransformFromOctant0(octant, vel_tf);
+}
+
+template <class T>
+void DestructingBresenham(const Vector2d& pos, const Vector2d& vel,
+                          const double dt, const double damage_rate, T* buffer,
+                          Vector2d* pos_out, Vector2d* vel_out) {
+  using CellType = typename T::Scalar;
+  uint8_t octant = GetOctant(vel);
+  Vector2d pos_tf = TransformToOctant0(octant, pos);
+  Vector2d vel_tf = TransformToOctant0(octant, vel);
+  const double slope = vel_tf.y() / vel_tf.x();
+  Vector2i pos_i = pos_tf.array().floor().matrix().cast<int>();
+  Vector2d end_pos_tf = pos_tf + vel_tf * dt;
+  Vector2i end_pos_i = end_pos_tf.array().floor().matrix().cast<int>();
+  int cells = (end_pos_i - pos_i).lpNorm<1>();
+  Vector2i x_step = kStepX<int>.col(octant);
+  Vector2i y_step = kStepY<int>.col(octant);
+  Vector2d start_remainder = pos_tf - pos_i.cast<double>();
+  pos_i = pos.cast<int>();
+
+  // End remainder is relative to the center of the final pixel.
+  Vector2d end_remainder =
+      end_pos_tf - (end_pos_i.cast<double>() + Vector2d(.5, .5));
+
+  auto is_on_buffer = [&buffer](int row, int col) -> bool {
+    return row >= 0 && col >= 0 && row < buffer->rows() && col < buffer->cols();
+  };
+
+  auto damage_cell = [&vel, damage_rate](CellType* cell) {
+    const CellType damage_amount = std::clamp(
+        static_cast<int>(damage_rate * vel.norm()), 0, static_cast<int>(*cell));
+    *cell -= damage_amount;
+  };
+
+  // Doesn't really help the problem, since it doesn't change the particle at
+  // all.
+  if (!is_on_buffer(pos_i.y(), pos_i.x())) {
+    *pos_out = pos;
+    *vel_out = vel;
+    return;
+  }
+
+  // This the "y-error" entering the next column
+  double error = (1.0 - start_remainder.x()) * slope + start_remainder.y() - 1;
+  while (cells > 0) {
+    if (error > 0) {
+      // Exit this pixel via the top.
+      pos_i += y_step;
+      --error;
+      const bool off_buffer = !is_on_buffer(pos_i.y(), pos_i.x());
+      if (off_buffer || (*buffer)(pos_i.y(), pos_i.x()) > CellType(0)) {
+        if (!off_buffer) {
+          damage_cell(&(*buffer)(pos_i.y(), pos_i.x()));
+        }
+        // Bounce
+        pos_i -= y_step;
+        y_step *= -1;
+        octant = kOctantFlipOverX[octant];
+      }
+    } else {
+      // Exit this pixel via the right.
+      pos_i += x_step;
+      error += slope;
+      const bool off_buffer = !is_on_buffer(pos_i.y(), pos_i.x());
+      if (off_buffer || (*buffer)(pos_i.y(), pos_i.x()) > CellType(0)) {
+        if (!off_buffer) {
+          damage_cell(&(*buffer)(pos_i.y(), pos_i.x()));
+        }
+        // Bounce
+        pos_i -= x_step;
+        x_step *= -1;
+        octant = kOctantFlipOverY[octant];
+      }
     }
     --cells;
   }
