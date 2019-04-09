@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include "base/logging.h"
 #include "src/image.h"
 

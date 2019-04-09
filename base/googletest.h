@@ -1,6 +1,7 @@
 #pragma once
 
 #include <gtest/gtest.h>
+#include <cstring>
 #include "base/init.h"
 #include "base/logging.h"
 

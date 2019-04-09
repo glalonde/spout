@@ -304,6 +304,7 @@ cc_library(
     name = "demo_utils",
     hdrs = ["demo_utils.h"],
     deps = [
+        ":buffer_stack",
         ":convert",
         ":image",
         ":random",

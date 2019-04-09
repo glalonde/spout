@@ -27,7 +27,10 @@ Image<PixelType::RGBAU8> MakeColorMapImage() {
 
 int main(int argc, char* argv[]) {
   Init(argc, argv);
-  ImageViewer sdl(MakeColorMapImage());
-  sdl.Loop();
+  const auto data = MakeColorMapImage();
+  ImageViewer viewer(data.cols(), data.rows());
+  *viewer.data() = data;
+  while (!viewer.Update().quit) {
+  }
   return 0;
 }
