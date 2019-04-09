@@ -1,0 +1,17 @@
+dist: xenial
+language: c++
+
+before_install:
+  - sudo add-apt-repository ppa:webupd8team/java -y
+  - echo "deb [arch=amd64] http://storage.googleapis.com/bazel-apt stable jdk1.8" | sudo tee -a /etc/apt/sources.list
+  - curl https://bazel.build/bazel-release.pub.gpg | sudo apt-key add -
+  - sudo apt-get update
+  - sudo apt-get install oracle-java8-installer -y
+  - sudo apt-get install bazel -y
+  - sudo apt-get install binutils-dev
+  - sudo apt-get install libsdl2-dev 
+  - sudo apt-get install libgoogle-perftools-dev 
+
+script:
+  - bazel test -c opt //...
+  - bazel test -c dbg //...
