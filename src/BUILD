@@ -256,6 +256,7 @@ cc_library(
     hdrs = ["scrolling_manager.h"],
     deps = [
         ":image",
+        ":buffer_stack",
         "//base",
     ],
 )

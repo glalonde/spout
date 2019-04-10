@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include "base/logging.h"
+#include "src/buffer_stack.h"
 #include "src/image.h"
 
 // This class keeps track of which rows from which buffers are visible in the
@@ -65,4 +66,57 @@ class ScrollingManager {
   int screen_bottom_;
   int lowest_visible_buffer_;
   int highest_visible_buffer_;
+};
+
+// Wrapper to make sure buffers are generated as scrolling indicates them.
+template <class T>
+class ScrollingCanvas {
+ public:
+  ScrollingCanvas(int buffer_height, int buffer_width, int viewport_height,
+                  std::function<void(int, Image<T>*)> buffer_gen)
+      : buffer_height_(buffer_height),
+        buffer_width_(buffer_width),
+        scroller_(buffer_height, viewport_height),
+        tiles_(buffer_height),
+        buffer_gen_(std::move(buffer_gen)) {
+    SetScreenBottom(0);
+  }
+
+  // Set the viewport height absolutely
+  void SetScreenBottom(int screen_bottom) {
+    screen_bottom =
+        std::clamp(screen_bottom, 0, std::numeric_limits<int>::max());
+    scroller_.UpdateHeight(screen_bottom);
+    // Generate new buffers if necessary
+    while (tiles_.buffers().size() < (scroller_.highest_visible_buffer() + 2)) {
+      const int next_buffer_number = tiles_.buffers().size();
+      Image<T> next_buffer(buffer_height_, buffer_width_);
+      buffer_gen_(next_buffer_number, &next_buffer);
+      tiles_.EmplaceBuffer(std::move(next_buffer));
+    }
+  }
+
+  // Set the viewport height relative to the previous position
+  void Scroll(int delta_rows) {
+    if (delta_rows != 0) {
+      SetScreenBottom(scroller_.viewport_bottom() + delta_rows);
+    }
+  }
+
+  // Visibility information
+  const ScrollingManager& scrolling_manager() const {
+    return scroller_;
+  }
+
+  // The core data
+  const BufferStack<Image<T>>& tiles() const {
+    return tiles_;
+  }
+
+ private:
+  int buffer_height_;
+  int buffer_width_;
+  ScrollingManager scroller_;
+  BufferStack<Image<T>> tiles_;
+  std::function<void(int, Image<T>*)> buffer_gen_;
 };

@@ -63,7 +63,7 @@ struct SO2 {
   }
 
   bool is_normalized() const {
-    return std::abs(data_.squaredNorm() - 1.0) <
+    return std::abs(data_.squaredNorm() - 1.0) <=
            std::numeric_limits<T>::epsilon();
   }
 

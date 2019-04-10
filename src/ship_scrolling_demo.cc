@@ -113,16 +113,14 @@ void Demo() {
   int level_height = viewport_dims.y() * 2;
 
   // Set up environment
-  BufferStack<Image<uint8_t>> environment(level_height);
-  auto add_next_level = [&]() {
-    const int next_level_number = environment.buffers().size();
-    Image<uint8_t> first_level(level_height, viewport_dims[0]);
-    MakeLevel(next_level_number, &rando, &first_level);
-    environment.EmplaceBuffer(std::move(first_level));
+  auto make_next_level = [&rando](int level_num, Image<uint8_t>* data) {
+    MakeLevel(level_num, &rando, data);
   };
-  add_next_level();
-
-  ScrollingManager scroller(level_height, viewport_dims[1]);
+  ScrollingCanvas<uint8_t> scrolling_canvas(level_height, viewport_dims[0],
+                                            viewport_dims[1],
+                                            std::move(make_next_level));
+  const auto& scroller = scrolling_canvas.scrolling_manager();
+  const auto& environment = scrolling_canvas.tiles();
 
   // Set up ship.
   auto ship_start = FindEmptySpot(environment.buffers().front());
@@ -135,25 +133,10 @@ void Demo() {
   ControllerInput input;
   Duration tick_time;
   while (!input.quit) {
-    {
-      // Update the viewport to respond to changes in the ships position.
-      int viewport_mid = (scroller.viewport_bottom() + viewport_dims[1] / 2);
-      int ship_row = static_cast<int>(ship.particle().state().y());
-      int scrolling_error = ship_row - viewport_mid;
-      if (scrolling_error != 0) {
-        int new_height =
-            std::clamp(scroller.viewport_bottom() + scrolling_error, 0,
-                       std::numeric_limits<int>::max());
-        scroller.UpdateHeight(new_height);
-      }
-    }
-    {
-      // Generate new buffers if necessary
-      while (environment.buffers().size() <
-             (scroller.highest_visible_buffer() + 2)) {
-        add_next_level();
-      }
-    }
+    // Update the viewport to respond to changes in the ships position.
+    int viewport_mid = (scroller.viewport_bottom() + viewport_dims[1] / 2);
+    int ship_row = static_cast<int>(ship.particle().state().y());
+    scrolling_canvas.Scroll(ship_row - viewport_mid);
 
     // Render
     RenderEnvironment(environment, scroller, data);
