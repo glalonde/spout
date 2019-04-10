@@ -28,28 +28,12 @@ RUN apt-get -q update \
         libc++abi-8-dev;
 
 # Mesa software rendering stuff
-RUN add-apt-repository "ppa:oibaf/graphics-drivers"
 RUN apt-get -q update \
     && apt-get install --fix-missing -qy \
-        xvfb \
-        x11-utils \
         mesa-common-dev \
         mesa-utils \
         freeglut3-dev \
         libglu1-mesa-dev;
-
-# Copy our entrypoint into the container.
-COPY ./entrypoint.sh /usr/local/bin/entrypoint.sh
-
-# Setup our environment variables.
-ENV XVFB_WHD="1920x1080x24"\
-    DISPLAY=":99" \
-    LIBGL_ALWAYS_SOFTWARE="1" \
-    GALLIUM_DRIVER="llvmpipe" \
-    LP_NO_RAST="false" \
-    LP_DEBUG="" \
-    LP_PERF="" \
-    LP_NUM_THREADS="0"
 
 # Bazel
 RUN apt-get -q update \
@@ -72,6 +56,3 @@ RUN apt-get -q update \
         vim \
         libsdl2-dev \
         libgoogle-perftools-dev;
-
-# Set the default command.
-ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
