@@ -3,7 +3,7 @@
 #include "base/time.h"
 #include "src/fps_estimator.h"
 #include "src/image.h"
-#include "src/image_viewer/image_viewer.h"
+#include "graphics/image_viewer.h"
 
 // Mutate `data` then call `Tick`
 class AnimatedCanvas {

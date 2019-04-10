@@ -1,6 +1,6 @@
 #pragma once
 #include <string>
-#include "src/opengl.h"
+#include "graphics/opengl.h"
 
 GLuint LoadShader(const std::string& shader_path, GLuint shader_type);
 

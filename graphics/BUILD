@@ -16,6 +16,49 @@ filegroup(
 )
 
 cc_library(
+    name = "opengl",
+    hdrs = ["opengl.h"],
+    linkopts = [
+        "-lSDL2",
+        "-lGL",
+        "-lGLU",
+    ],
+    deps = [
+        "//third_party/glad",
+    ],
+)
+
+cc_library(
+    name = "load_shader",
+    srcs = ["load_shader.cc"],
+    hdrs = ["load_shader.h"],
+    deps = [
+        ":opengl",
+        "//base:file",
+    ],
+)
+
+cc_test(
+    name = "load_shader_test",
+    srcs = ["load_shader_test.cc"],
+    data = [":testdata"],
+    local = 1,
+    deps = [
+        ":load_shader",
+        "//base:googletest",
+    ],
+)
+
+cc_library(
+    name = "check_opengl_errors",
+    hdrs = ["check_opengl_errors.h"],
+    deps = [
+        ":opengl",
+        "//base:logging",
+    ],
+)
+
+cc_library(
     name = "image_viewer",
     srcs = ["image_viewer.cc"],
     hdrs = ["image_viewer.h"],
@@ -23,12 +66,12 @@ cc_library(
     deps = [
         "//base:format",
         "//base:logging",
-        "//src:check_opengl_errors",
+        ":check_opengl_errors",
         "//src:controller_input",
         "//src:eigen_types",
         "//src:image",
-        "//src:load_shader",
-        "//src:opengl",
+        ":load_shader",
+        ":opengl",
     ],
 )
 

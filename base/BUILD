@@ -3,6 +3,7 @@ package(default_visibility = ["//visibility:public"])
 cc_library(
     name = "logging",
     hdrs = ["logging.h"],
+    copts = ["-DHAVE_UNWIND_H"],
     deps = [
         "@com_github_gflags_gflags//:gflags",
         "@com_google_glog//:glog",

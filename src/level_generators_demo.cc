@@ -6,7 +6,7 @@
 #include "base/wall_timer.h"
 #include "src/color_maps/color_maps.h"
 #include "src/convert.h"
-#include "src/image_viewer/animated_canvas.h"
+#include "graphics/animated_canvas.h"
 #include "src/level_generators.h"
 
 DEFINE_int32(level_number, 1, "Level number");

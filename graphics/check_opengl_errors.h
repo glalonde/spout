@@ -1,6 +1,6 @@
 #pragma once
 #include "base/logging.h"
-#include "src/opengl.h"
+#include "graphics/opengl.h"
 
 inline bool CheckGLErrors() {
   GLenum e = glGetError();

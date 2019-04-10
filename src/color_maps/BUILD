@@ -39,6 +39,6 @@ cc_binary(
         ":color_maps",
         "//base:init",
         "//src:convert",
-        "//src/image_viewer",
+        "//graphics:image_viewer",
     ],
 )

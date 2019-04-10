@@ -1,4 +1,4 @@
-#include "src/image_viewer/animated_canvas.h"
+#include "graphics/animated_canvas.h"
 
 AnimatedCanvas::AnimatedCanvas(int window_width, int window_height,
                                int texture_width, int texture_height,

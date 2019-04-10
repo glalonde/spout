@@ -3,10 +3,10 @@
 
 #include "base/format.h"
 #include "base/init.h"
+#include "graphics/animated_canvas.h"
 #include "src/bresenham.h"
 #include "src/demo_utils.h"
 #include "src/drawing_utils.h"
-#include "src/image_viewer/animated_canvas.h"
 #include "src/mobile_object.h"
 #include "src/scrolling_manager.h"
 

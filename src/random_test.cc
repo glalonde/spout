@@ -3,7 +3,7 @@
 #include "base/googletest.h"
 #include "src/color_maps/color_maps.h"
 #include "src/convert.h"
-#include "src/image_viewer/image_viewer.h"
+#include "graphics/image_viewer.h"
 
 GTEST_TEST(EigenTest, SetRandomDistribution) {
   std::mt19937 gen(0);

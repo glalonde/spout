@@ -1,7 +1,7 @@
 #include "base/init.h"
 #include "src/color_maps/color_maps.h"
 #include "src/convert.h"
-#include "src/image_viewer/image_viewer.h"
+#include "graphics/image_viewer.h"
 
 Image<PixelType::RGBAU8> MakeColorVec(ColorMap map, int size) {
   Image<PixelType::RGBAU8> out(size, 1);

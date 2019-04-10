@@ -4,15 +4,6 @@ cc_library(
     name = "sdl",
     linkopts = [
         "-lSDL2",
-        "-lGL",
-    ],
-)
-
-cc_binary(
-    name = "sdl_example",
-    srcs = ["sdl_example.cc"],
-    deps = [
-        ":sdl",
     ],
 )
 
@@ -69,7 +60,7 @@ cc_test(
         ":random",
         "//base:googletest",
         "//src/color_maps",
-        "//src/image_viewer",
+        "//graphics:image_viewer",
     ],
 )
 
@@ -107,53 +98,10 @@ cc_test(
     ],
 )
 
-cc_library(
-    name = "opengl",
-    hdrs = ["opengl.h"],
-    linkopts = [
-        "-lSDL2",
-        "-lGL",
-        "-lGLU",
-    ],
-    deps = [
-        "//third_party/glad",
-    ],
-)
-
-cc_library(
-    name = "load_shader",
-    srcs = ["load_shader.cc"],
-    hdrs = ["load_shader.h"],
-    deps = [
-        ":opengl",
-        "//base:file",
-    ],
-)
-
-cc_test(
-    name = "load_shader_test",
-    srcs = ["load_shader_test.cc"],
-    data = [":testdata"],
-    local = 1,
-    deps = [
-        ":load_shader",
-        "//base:googletest",
-    ],
-)
-
 cc_test(
     name = "print_env",
     srcs = ["print_env.cc"],
     deps = [
-        "//base:logging",
-    ],
-)
-
-cc_library(
-    name = "check_opengl_errors",
-    hdrs = ["check_opengl_errors.h"],
-    deps = [
-        ":opengl",
         "//base:logging",
     ],
 )
@@ -210,7 +158,7 @@ cc_test(
     deps = [
         ":bresenham",
         "//base:googletest",
-        "//src/image_viewer:animated_canvas",
+        "//graphics:animated_canvas",
     ],
 )
 
@@ -224,7 +172,7 @@ cc_binary(
         "//base:format",
         "//base:init",
         "//src/fonts:font_renderer",
-        "//src/image_viewer:animated_canvas",
+        "//graphics:animated_canvas",
     ],
 )
 
@@ -246,7 +194,7 @@ cc_binary(
         "//base:init",
         "//base:wall_timer",
         "//src/color_maps",
-        "//src/image_viewer:animated_canvas",
+        "//graphics:animated_canvas",
     ],
 )
 
@@ -312,7 +260,7 @@ cc_binary(
         ":random",
         "//base:format",
         "//base:init",
-        "//src/image_viewer:animated_canvas",
+        "//graphics:animated_canvas",
     ],
 )
 
@@ -348,6 +296,6 @@ cc_binary(
         ":scrolling_manager",
         "//base:format",
         "//base:init",
-        "//src/image_viewer:animated_canvas",
+        "//graphics:animated_canvas",
     ],
 )

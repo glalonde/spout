@@ -6,7 +6,7 @@
 #include "src/bresenham.h"
 #include "src/demo_utils.h"
 #include "src/drawing_utils.h"
-#include "src/image_viewer/animated_canvas.h"
+#include "graphics/animated_canvas.h"
 #include "src/mobile_object.h"
 
 void RenderShip(const Ship& ship, Image<PixelType::RGBAU8>* data) {

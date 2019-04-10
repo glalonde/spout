@@ -2,10 +2,10 @@
 #include <array>
 
 #include "base/format.h"
-#include "src/check_opengl_errors.h"
-#include "src/image_viewer/image_viewer.h"
-#include "src/load_shader.h"
-#include "src/opengl.h"
+#include "graphics/check_opengl_errors.h"
+#include "graphics/image_viewer.h"
+#include "graphics/load_shader.h"
+#include "graphics/opengl.h"
 
 class ImageViewer::Impl {
  public:
@@ -166,9 +166,8 @@ class ImageViewer::Impl {
 
   void InitRenderShader() {
     render_program_ = glCreateProgram();
-    GLuint vert = LoadShader("src/image_viewer/shader.vert", GL_VERTEX_SHADER);
-    GLuint frag =
-        LoadShader("src/image_viewer/shader.frag", GL_FRAGMENT_SHADER);
+    GLuint vert = LoadShader("graphics/shader.vert", GL_VERTEX_SHADER);
+    GLuint frag = LoadShader("graphics/shader.frag", GL_FRAGMENT_SHADER);
     glAttachShader(render_program_, vert);
     glAttachShader(render_program_, frag);
     glBindFragDataLocation(render_program_, 0, "out_color");

@@ -1,4 +1,4 @@
-#include "src/load_shader.h"
+#include "graphics/load_shader.h"
 #include "base/googletest.h"
 
 class OpenGLTest : public ::testing::Test {
@@ -44,9 +44,9 @@ TEST_F(OpenGLTest, Smoke) {
 }
 
 TEST_F(OpenGLTest, LoadShader) {
-  LoadShader("src/testdata/test_shader.vert", GL_VERTEX_SHADER);
-  LoadShader("src/testdata/test_shader.frag", GL_FRAGMENT_SHADER);
-  LoadShader("src/testdata/draw_particles.cs", GL_COMPUTE_SHADER);
+  LoadShader("graphics/testdata/test_shader.vert", GL_VERTEX_SHADER);
+  LoadShader("graphics/testdata/test_shader.frag", GL_FRAGMENT_SHADER);
+  LoadShader("graphics/testdata/draw_particles.cs", GL_COMPUTE_SHADER);
 }
 
 GTEST_MAIN();

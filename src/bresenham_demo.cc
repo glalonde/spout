@@ -6,7 +6,7 @@
 #include "src/bresenham.h"
 #include "src/convert.h"
 #include "src/fonts/font_renderer.h"
-#include "src/image_viewer/animated_canvas.h"
+#include "graphics/animated_canvas.h"
 #include "src/random.h"
 
 DEFINE_int32(num_particles, 100, "Number of particles");

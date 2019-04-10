@@ -2,7 +2,7 @@
 
 #include "base/googletest.h"
 #include "src/bresenham.h"
-#include "src/image_viewer/animated_canvas.h"
+#include "graphics/animated_canvas.h"
 
 static constexpr uint8_t kWall = std::numeric_limits<uint8_t>::max();
 static const PixelType::RGBAU8 kWallColor = {0, 0, 255, 255};

@@ -6,7 +6,7 @@
 #include "src/color_maps/color_maps.h"
 #include "src/convert.h"
 #include "src/fonts/font_renderer.h"
-#include "src/image_viewer/animated_canvas.h"
+#include "graphics/animated_canvas.h"
 
 DEFINE_int32(width, 256, "display width");
 DEFINE_int32(height, 256, "display height");

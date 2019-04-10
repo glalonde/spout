@@ -1,7 +1,7 @@
 #include "base/file.h"
 #include "base/init.h"
 #include "src/image_io.h"
-#include "src/image_viewer/image_viewer.h"
+#include "graphics/image_viewer.h"
 
 DEFINE_string(image_path, "", "Image path");
 
