@@ -5,31 +5,22 @@
 template <class T>
 class CircularBuffer {
  public:
-  CircularBuffer(int capacity) : write_index_(0) {
-    data_.reserve(capacity);
-  }
+  // Initialized with every value.
+  CircularBuffer(int capacity, const T& init_value)
+      : write_index_(0), data_(capacity, init_value) {}
 
   // Return a ptr to the element that will be overwritten in the next Push
   // call. Returns nullptr if the container is not at capacity yet (and thus
   // nothing will be overwritten)
   const T* NextOverwritten() {
-    if (data_.size() < data_.capacity()) {
-      return nullptr;
-    } else {
-      return &data_[write_index_];
-    }
+    return &data_[write_index_];
   }
 
   void Push(T value) {
-    if (data_.size() < data_.capacity()) {
-      // Nothing overwritten
-      data_.emplace_back(std::move(value));
-    } else {
-      data_[write_index_] = std::move(value);
-      ++write_index_;
-      if (write_index_ >= data_.capacity()) {
-        write_index_ = 0;
-      }
+    data_[write_index_] = std::move(value);
+    ++write_index_;
+    if (write_index_ >= data_.capacity()) {
+      write_index_ = 0;
     }
   }
 

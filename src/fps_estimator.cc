@@ -10,9 +10,7 @@ double FPSEstimator::CurrentEstimate() const {
 
 double FPSEstimator::Tick(Duration delta) {
   sum_ += delta;
-  if (const auto* maybe_removed = deltas_.NextOverwritten()) {
-    sum_ -= *maybe_removed;
-  }
+  sum_ -= *deltas_.NextOverwritten();
   deltas_.Push(delta);
   current_estimate_ = deltas_.data().size() / ToSeconds<double>(sum_);
   return current_estimate_;
@@ -23,5 +21,5 @@ CircularBuffer<Duration> FPSEstimator::InitBuffer(
     Duration window, double estimated_max_frequency) {
   const int estimated_number = static_cast<int>(
       std::ceil(ToSeconds<double>(window) * estimated_max_frequency));
-  return CircularBuffer<Duration>(estimated_number);
+  return CircularBuffer<Duration>(estimated_number, Duration(0));
 }

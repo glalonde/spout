@@ -14,7 +14,8 @@ class Emitter {
         emission_period_(1.0 / emission_rate),
         particle_life_(particle_life),
         rand_gen_(random_seed),
-        particles_(static_cast<int>(std::ceil(emission_rate * particle_life))),
+        particles_(static_cast<int>(std::ceil(emission_rate * particle_life)),
+                   Vector5d()),
         emission_progress_(0) {
     CHECK_LT(min_speed, max_speed);
   }
