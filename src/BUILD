@@ -59,8 +59,8 @@ cc_test(
         ":image",
         ":random",
         "//base:googletest",
-        "//src/color_maps",
         "//graphics:image_viewer",
+        "//src/color_maps",
     ],
 )
 
@@ -155,6 +155,7 @@ cc_library(
 cc_test(
     name = "bresenham_test",
     srcs = ["bresenham_test.cc"],
+    tags = ["exclusive"],
     deps = [
         ":bresenham",
         "//base:googletest",
@@ -171,8 +172,8 @@ cc_binary(
         ":random",
         "//base:format",
         "//base:init",
-        "//src/fonts:font_renderer",
         "//graphics:animated_canvas",
+        "//src/fonts:font_renderer",
     ],
 )
 
@@ -193,8 +194,8 @@ cc_binary(
         ":level_generators",
         "//base:init",
         "//base:wall_timer",
-        "//src/color_maps",
         "//graphics:animated_canvas",
+        "//src/color_maps",
     ],
 )
 
@@ -203,8 +204,8 @@ cc_library(
     srcs = ["scrolling_manager.cc"],
     hdrs = ["scrolling_manager.h"],
     deps = [
-        ":image",
         ":buffer_stack",
+        ":image",
         "//base",
     ],
 )
@@ -278,6 +279,26 @@ cc_test(
     srcs = ["buffer_stack_test.cc"],
     deps = [
         ":buffer_stack",
+        "//base:googletest",
+    ],
+)
+
+cc_library(
+    name = "emitter",
+    hdrs = ["emitter.h"],
+    deps = [
+        ":eigen_types",
+        ":so2",
+        "//base:circular_buffer",
+        "//base:logging",
+    ],
+)
+
+cc_test(
+    name = "emitter_test",
+    srcs = ["emitter_test.cc"],
+    deps = [
+        ":emitter",
         "//base:googletest",
     ],
 )

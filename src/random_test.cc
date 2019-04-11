@@ -55,29 +55,4 @@ GTEST_TEST(EigenTest, SetRandomUniformInt) {
   }
 }
 
-GTEST_TEST(PerlinNoise, Viewer) {
-  int cols = 640;
-  int rows = 480;
-
-  ImageViewer viewer(cols, rows);
-  viewer.SetTextureSize(cols, rows);
-  auto* data = viewer.data();
-
-  Image<double> perlin_vals(rows, cols);
-  std::mt19937 gen(0);
-  PerlinNoise(0.0, 1.0, 10, &gen, perlin_vals);
-  const ColorMap color_map = ColorMap::kParula;
-  for (int r = 0; r < rows; ++r) {
-    for (int c = 0; c < cols; ++c) {
-      const auto cl = GetMappedColor3f(color_map, perlin_vals(r, c));
-      const auto color = Convert<PixelType::RGBAU8>(cl);
-      (*data)(r, c) = color;
-    }
-  }
-  viewer.SetDataChanged();
-
-  while (!kIsUnitTest && !viewer.Update().quit) {
-  }
-}
-
 GTEST_MAIN();

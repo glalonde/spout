@@ -64,14 +64,14 @@ cc_library(
     hdrs = ["image_viewer.h"],
     data = [":shaders"],
     deps = [
+        ":check_opengl_errors",
+        ":load_shader",
+        ":opengl",
         "//base:format",
         "//base:logging",
-        ":check_opengl_errors",
         "//src:controller_input",
         "//src:eigen_types",
         "//src:image",
-        ":load_shader",
-        ":opengl",
     ],
 )
 
