@@ -51,6 +51,13 @@ void AddTopWall(const T& wall_value, Image<T>* data) {
   }
 }
 
+template <class T>
+void AddAllWalls(const T& wall_value, Image<T>* data) {
+  AddTopWall(wall_value, data);
+  AddBottomWall(wall_value, data);
+  AddSideWalls(wall_value, data);
+}
+
 void AddFpsText(double fps, const PixelType::RGBAU8& color,
                 Image<PixelType::RGBAU8>* data) {
   std::string fps_string = FormatString("%.0f", fps);

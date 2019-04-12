@@ -170,6 +170,7 @@ cc_binary(
         ":bresenham",
         ":convert",
         ":random",
+        ":demo_utils",
         "//base:format",
         "//base:init",
         "//graphics:animated_canvas",
@@ -318,5 +319,21 @@ cc_binary(
         "//base:format",
         "//base:init",
         "//graphics:animated_canvas",
+    ],
+)
+
+cc_binary(
+    name = "emitter_demo",
+    srcs = ["emitter_demo.cc"],
+    deps = [
+        ":emitter",
+        ":bresenham",
+        ":convert",
+        ":demo_utils",
+        ":random",
+        "//base:format",
+        "//base:init",
+        "//graphics:animated_canvas",
+        "//src/fonts:font_renderer",
     ],
 )

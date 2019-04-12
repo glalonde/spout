@@ -36,6 +36,10 @@ class CircularBuffer {
     return data_;
   }
 
+  std::vector<T>* mutable_data() {
+    return &data_;
+  }
+
  private:
   int write_index_;
   std::vector<T> data_;
