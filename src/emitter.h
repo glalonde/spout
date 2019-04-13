@@ -5,16 +5,18 @@
 #include "src/eigen_types.h"
 #include "src/so2.h"
 
+// Emits randomized particles at a specified rate.
 class Emitter {
  public:
   Emitter(double angular_stdev, double min_speed, double max_speed,
-          double emission_rate, double particle_life, int random_seed = 0)
+          double emission_rate, double min_life, double max_life,
+          int random_seed = 0)
       : angular_dist_(0, angular_stdev),
         speed_dist_(min_speed, max_speed),
+        life_dist_(min_life, max_life),
         emission_period_(1.0 / emission_rate),
-        particle_life_(particle_life),
         rand_gen_(random_seed),
-        particles_(static_cast<int>(std::ceil(emission_rate * particle_life)),
+        particles_(static_cast<int>(std::ceil(emission_rate * max_life)),
                    Vector5d()),
         emission_progress_(0) {
     CHECK_LT(min_speed, max_speed);
@@ -69,13 +71,14 @@ class Emitter {
     const SO2d emission_angle = angle * SO2d(angular_dist_(rand_gen_));
     out.segment<2>(2) =
         emission_angle.data() * speed_dist_(rand_gen_) + velocity_offset;
-    out[4] = particle_life_;
+    out[4] = life_dist_(rand_gen_);
     particles_.Push(out);
   }
 
   const CircularBuffer<Vector5d>& particles() const {
     return particles_;
   }
+
   CircularBuffer<Vector5d>* mutable_particles() {
     return &particles_;
   }
@@ -84,6 +87,7 @@ class Emitter {
   // Emitter properties
   std::normal_distribution<double> angular_dist_;
   std::uniform_real_distribution<double> speed_dist_;
+  std::uniform_real_distribution<double> life_dist_;
   double emission_period_;
   double particle_life_;
 

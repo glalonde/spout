@@ -15,7 +15,9 @@ struct SO2 {
 
   // Component constructor. Warning: If this isn't normalized everything is
   // wrong.
-  SO2(T cos, T sin) : data_(cos, sin) {
+  SO2(T cos, T sin) : SO2(Vector2<T>(cos, sin)) {}
+
+  SO2(Vector2<T> data) : data_(std::move(data)) {
     DCHECK(is_normalized()) << "This needs to be normalized";
   }
 
@@ -40,6 +42,7 @@ struct SO2 {
   SO2<T> inverse() const {
     return SO2(cos(), -sin());
   }
+
   const T& cos() const {
     return data_.x();
   }
@@ -76,6 +79,21 @@ inline SO2<T> operator*(const SO2<T>& x, const SO2<T>& y) {
   SO2<T> r = x;
   r *= y;
   return r;
+}
+
+template <class T>
+inline SO2<T> Rotate180(const SO2<T>& x) {
+  return SO2<T>(-x.data());
+}
+
+template <class T>
+inline SO2<T> CCWRotate90(const SO2<T>& x) {
+  return SO2<T>(-x.sin(), x.cos());
+}
+
+template <class T>
+inline SO2<T> CWRotate90(const SO2<T>& x) {
+  return SO2<T>(x.sin(), -x.cos());
 }
 
 using SO2f = SO2<float>;

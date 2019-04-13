@@ -2,7 +2,7 @@
 #include "base/googletest.h"
 
 GTEST_TEST(EmitterTest, Smoke) {
-  Emitter e(1.0, 10.0, 50.0, 20.0, 200);
+  Emitter e(1.0, 10.0, 50.0, 20.0, 3, 5);
 
   const double dt = .1;
   const SO2d start_angle(0.0);

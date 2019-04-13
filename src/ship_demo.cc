@@ -77,9 +77,7 @@ void Demo() {
   environment.setConstant(0);
   std::mt19937 gen(0);
   AddNoise(kWall, .2, &gen, &environment);
-  AddSideWalls(kWall, &environment);
-  AddTopWall(kWall, &environment);
-  AddBottomWall(kWall, &environment);
+  AddAllWalls(kWall, &environment);
 
   // Set up ship.
   auto ship_start = FindEmptySpot(environment);

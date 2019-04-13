@@ -101,14 +101,27 @@ void SubPixelBresenhamNormal(const Vector2d& pos, const Vector2d& vel,
   Vector2d end_remainder =
       end_pos_tf - (end_pos_i.cast<double>() + Vector2d(.5, .5));
 
+  auto is_on_buffer = [&buffer](int row, int col) -> bool {
+    return row >= 0 && col >= 0 && row < buffer.rows() && col < buffer.cols();
+  };
+
+  // Doesn't really help the problem, since it doesn't change the particle at
+  // all.
+  if (!is_on_buffer(pos_i.y(), pos_i.x())) {
+    *pos_out = pos;
+    *vel_out = vel;
+    return;
+  }
+
   // This the "y-error" entering the next column
   double error = (1.0 - start_remainder.x()) * slope + start_remainder.y() - 1;
   while (cells > 0) {
     if (error > 0) {
       // Exit this pixel via the top.
       pos_i += y_step;
+      const bool off_buffer = !is_on_buffer(pos_i.y(), pos_i.x());
       --error;
-      if (buffer(pos_i.y(), pos_i.x()) > CellType(0)) {
+      if (off_buffer || buffer(pos_i.y(), pos_i.x()) > CellType(0)) {
         pos_i -= y_step;
         y_step *= -1;
         octant = kOctantFlipOverX[octant];
@@ -116,12 +129,13 @@ void SubPixelBresenhamNormal(const Vector2d& pos, const Vector2d& vel,
     } else {
       // Exit this pixel via the right.
       pos_i += x_step;
+      const bool off_buffer = !is_on_buffer(pos_i.y(), pos_i.x());
       error += slope;
-      if (buffer(pos_i.y(), pos_i.x()) > CellType(0)) {
+      if (off_buffer || buffer(pos_i.y(), pos_i.x()) > CellType(0)) {
         pos_i -= x_step;
         x_step *= -1;
         octant = kOctantFlipOverY[octant];
-        }
+      }
     }
     --cells;
   }

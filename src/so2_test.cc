@@ -37,4 +37,11 @@ GTEST_TEST(SO2Test, Smoke) {
               std::numeric_limits<double>::epsilon());
 }
 
+GTEST_TEST(SO2Test, Fixed) {
+  SO2d r1(0);
+  EXPECT_DOUBLE_EQ(CWRotate90(r1).radians(), -M_PI / 2.0);
+  EXPECT_DOUBLE_EQ(CCWRotate90(r1).radians(), M_PI / 2.0);
+  EXPECT_DOUBLE_EQ(Rotate180(SO2d(M_PI / 2.0)).radians(), -M_PI / 2.0);
+}
+
 GTEST_MAIN();
