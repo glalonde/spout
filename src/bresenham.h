@@ -108,6 +108,7 @@ void SubPixelBresenhamNormal(const Vector2d& pos, const Vector2d& vel,
   // Doesn't really help the problem, since it doesn't change the particle at
   // all.
   if (!is_on_buffer(pos_i.y(), pos_i.x())) {
+    LOG(ERROR) << "Particle not on buffers";
     *pos_out = pos;
     *vel_out = vel;
     return;

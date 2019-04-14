@@ -339,3 +339,23 @@ cc_binary(
         "//src/fonts:font_renderer",
     ],
 )
+
+cc_binary(
+    name = "game_demo",
+    srcs = ["game_demo.cc"],
+    deps = [
+        ":bresenham",
+        ":buffer_stack",
+        ":scrolling_manager",
+        ":convert",
+        ":demo_utils",
+        ":drawing_utils",
+        ":emitter",
+        ":mobile_object",
+        ":random",
+        "//base:format",
+        "//base:init",
+        "//graphics:animated_canvas",
+        "//src/fonts:font_renderer",
+    ],
+)

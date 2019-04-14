@@ -11,11 +11,12 @@ template <class BufferType>
 class BufferStack {
  public:
   using Scalar = typename BufferType::Scalar;
-  BufferStack(int rows /* each buffer should have the same shape */)
-      : rows_(rows) {}
+  BufferStack(int rows /* each buffer should have the same shape */, int cols)
+      : rows_(rows), cols_(cols) {}
 
   void EmplaceBuffer(BufferType buffer) {
     DCHECK_EQ(buffer.rows(), rows_);
+    DCHECK_EQ(buffer.cols(), cols_);
     buffers_.emplace_back(std::move(buffer));
   }
 
@@ -31,6 +32,10 @@ class BufferStack {
     return buffers_[GetBufferIndex(global_row, local_row)];
   }
 
+  BufferType& GetMutableBuffer(int global_row, int* local_row) {
+    return buffers_[GetBufferIndex(global_row, local_row)];
+  }
+
   // Const accessor
   const std::vector<BufferType>& buffers() const {
     return buffers_;
@@ -43,7 +48,22 @@ class BufferStack {
     return buffer(local_row, col);
   }
 
+  Scalar& operator()(int row, int col) {
+    int local_row;
+    auto& buffer = GetMutableBuffer(row, &local_row);
+    return buffer(local_row, col);
+  }
+
+  int rows() const {
+    return buffers_.size() * rows_;
+  }
+
+  int cols() const {
+    return cols_;
+  }
+
  private:
   int rows_;
+  int cols_;
   std::vector<BufferType> buffers_;
 };

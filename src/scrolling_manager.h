@@ -77,7 +77,7 @@ class ScrollingCanvas {
       : buffer_height_(buffer_height),
         buffer_width_(buffer_width),
         scroller_(buffer_height, viewport_height),
-        tiles_(buffer_height),
+        tiles_(buffer_height, buffer_width),
         buffer_gen_(std::move(buffer_gen)) {
     SetScreenBottom(0);
   }
@@ -111,6 +111,10 @@ class ScrollingCanvas {
   // The core data
   const BufferStack<Image<T>>& tiles() const {
     return tiles_;
+  }
+
+  BufferStack<Image<T>>* mutable_tiles() {
+    return &tiles_;
   }
 
  private:

@@ -1,5 +1,5 @@
-#include <thread>
 #include <random>
+#include <thread>
 
 #include "base/format.h"
 #include "base/init.h"
@@ -7,21 +7,20 @@
 #include "src/bresenham.h"
 #include "src/convert.h"
 #include "src/demo_utils.h"
+#include "src/drawing_utils.h"
 #include "src/emitter.h"
 #include "src/fonts/font_renderer.h"
-#include "src/drawing_utils.h"
-#include "src/random.h"
 #include "src/mobile_object.h"
+#include "src/random.h"
+#include "src/scrolling_manager.h"
 
 DEFINE_int32(emission_rate, 100, "Number of particles per second");
 
-void RenderParticle(const Vector2d& pos, Image<PixelType::RGBAU8>* data) {
-  Vector2i pos_i = pos.cast<int>();
-  (*data)(pos_i[1], pos_i[0]) = kParticleColor;
-}
-
-void RenderShip(const Ship& ship, Image<PixelType::RGBAU8>* data) {
+// Most of the major parts glued together
+void RenderShip(const ScrollingManager& scroller, const Ship& ship,
+                Image<PixelType::RGBAU8>* data) {
   Vector2i tail_start = ship.particle().state().head<2>().cast<int>();
+  tail_start.y() -= scroller.viewport_bottom();
   static constexpr double kTailLength = -10.0;
   static constexpr double kShipAngle = M_PI / 5.0;
   static const SO2d kHalfShipAngle(kShipAngle / 2.0);
@@ -38,18 +37,59 @@ void RenderShip(const Ship& ship, Image<PixelType::RGBAU8>* data) {
            kShipColor, data);
 }
 
-constexpr double kShipRotationRate = 15.0;
-constexpr double kShipAcceleration = 200.0;
-constexpr double kGravity = -kShipAcceleration / 5.0;
+void RenderEnvironment(const BufferStack<Image<uint8_t>>& env,
+                       const ScrollingManager& scroller,
+                       Image<PixelType::RGBAU8>* data) {
+  // Convert scalar environment pixel values into colors
+  auto pixel_transform = [](uint8_t v) -> PixelType::RGBAU8 {
+    if (v == kWall) {
+      return kWallColor;
+    } else {
+      // Black
+      return {0, 0, 0, 255};
+    }
+  };
 
+  // Copy blocks of values out of the environment buffer, transform them into
+  // the viewport space, and also transform the values into the color space.
+  int viewport_bottom = 0;
+  int start_row;
+  int num_rows;
+  const auto& buffers = env.buffers();
+  for (int i = scroller.lowest_visible_buffer();
+       i <= scroller.highest_visible_buffer(); ++i) {
+    // Copy data
+    scroller.VisibleRows(i, &start_row, &num_rows);
+    data->block(viewport_bottom, 0, num_rows, data->cols()) =
+        buffers[i]
+            .block(start_row, 0, num_rows, data->cols())
+            .unaryExpr(pixel_transform);
+    viewport_bottom += num_rows;
+  }
+}
+
+constexpr double kShipRotationRate = 10.0;
+constexpr double kShipAcceleration = 200.0;
+constexpr double kGravity = -kShipAcceleration / 4.0;
+
+// Particle motion, collision, environment destruction and particle rendering
 void UpdateParticles(const double dt, const double ddy,
+                     const ScrollingManager& scroller,
                      CircularBuffer<Vector5d>* particles,
-                     Image<uint8_t>* environment,
+                     BufferStack<Image<uint8_t>>* environment,
                      Image<PixelType::RGBAU8>* data) {
+  auto draw_particle = [&scroller, data](const Vector5d& particle) {
+    Vector2i pos_i = particle.head<2>().cast<int>();
+    pos_i[1] -= scroller.viewport_bottom();
+    if (pos_i.y() >= 0 && pos_i.y() < data->rows() && pos_i.x() >= 0 &&
+        pos_i.x() < data->cols()) {
+      (*data)(pos_i[1], pos_i[0]) = kParticleColor;
+    }
+  };
   const int num_particles = particles->Capacity();
   auto& mutable_particles = *particles->mutable_data();
   for (int i = 0; i < num_particles; ++i) {
-    auto& current = mutable_particles[i]; 
+    auto& current = mutable_particles[i];
     if (current[4] /* ttl */ <= 0) {
       continue;
     }
@@ -61,12 +101,21 @@ void UpdateParticles(const double dt, const double ddy,
     current.segment<2>(2) = vel;
     current[3] += dt * ddy;
     current[4] -= dt;
-    RenderParticle(current.segment<2>(0), data);
+
+    draw_particle(current);
   }
 }
 
+void MakeLevel(int i, std::mt19937* gen, Image<uint8_t>* level_buffer) {
+  AddNoise(kWall, .2, gen, level_buffer);
+  if (i <= 0) {
+    AddBottomWall(kWall, level_buffer);
+  }
+  AddSideWalls(kWall, level_buffer);
+}
+
 void UpdateShip(const double dt, const ControllerInput& input,
-                const Image<uint8_t>& env, Ship* ship) {
+                const BufferStack<Image<uint8_t>>& env, Ship* ship) {
   // Updates velocity and time to live.
   DeltaParticle dp = DeltaParticle(0, kGravity, -1.0) * dt;
   ship->mutable_particle()->ApplyDelta(dp);
@@ -101,22 +150,26 @@ void UpdateShip(const double dt, const ControllerInput& input,
 void Demo(double emission_rate) {
   // Set up canvas
   const double kFps = 60.0;
-  const Vector2i window_dims(640, 480);
-  const Vector2i grid_dims = window_dims / 4;
-  AnimatedCanvas canvas(window_dims[0], window_dims[1], grid_dims[0],
-                        grid_dims[1], kFps);
-
-  std::mt19937 rand_gen(0);
+  const Vector2i window_dims(800, 800);
+  const Vector2i viewport_dims = window_dims / 4;
+  std::mt19937 rando(0);
+  AnimatedCanvas canvas(window_dims[0], window_dims[1], viewport_dims[0],
+                        viewport_dims[1], kFps);
+  int level_height = viewport_dims.y() * 2;
 
   // Set up environment
-  Image<uint8_t> environment(grid_dims[1], grid_dims[0]);
-  environment.setConstant(0);
-  AddNoise(kWall, .2, &rand_gen, &environment);
-  AddAllWalls(kWall, &environment);
+  auto make_next_level = [&rando](int level_num, Image<uint8_t>* data) {
+    MakeLevel(level_num, &rando, data);
+  };
+  ScrollingCanvas<uint8_t> scrolling_canvas(level_height, viewport_dims[0],
+                                            viewport_dims[1],
+                                            std::move(make_next_level));
+  const auto& scroller = scrolling_canvas.scrolling_manager();
+  const auto& environment = scrolling_canvas.tiles();
 
   // Make emitter
-  const double angular_stdev = .2;
-  const double min_speed = 30.0;
+  const double angular_stdev = .4;
+  const double min_speed = 45.0;
   const double max_speed = 70.0;
   const double min_life = 2;
   const double max_life = 3;
@@ -124,7 +177,7 @@ void Demo(double emission_rate) {
             max_life);
 
   // Set up ship.
-  auto ship_start = FindEmptySpot(environment);
+  auto ship_start = FindEmptySpot(environment.buffers().front());
   CHECK(ship_start) << "Environment is full?";
   Vector2d init_pos = ship_start->cast<double>() + Vector2d(.5, .5);
   Ship ship(MobileObject({init_pos.x(), init_pos.y(), 0, 0, 0}), M_PI / 2.0);
@@ -144,13 +197,19 @@ void Demo(double emission_rate) {
                      previous_state.head<2>(), current_state.head<2>(),
                      previous_state.segment<2>(2), current_state.segment<2>(2));
     }
-    RenderEnvironment(environment, data);
     UpdateShip(n_seconds, input, environment, &ship);
+
+    // Update the viewport to respond to changes in the ships position.
+    int viewport_mid = (scroller.viewport_bottom() + viewport_dims[1] / 2);
+    int ship_row = static_cast<int>(ship.particle().state().y());
+    scrolling_canvas.Scroll(ship_row - viewport_mid);
+
+    RenderEnvironment(environment, scroller, data);
     previous_orientation = current_orientation;
     previous_state = current_state;
-    RenderShip(ship, data);
-    UpdateParticles(n_seconds, kGravity, e.mutable_particles(), &environment,
-                    data);
+    RenderShip(scroller, ship, data);
+    UpdateParticles(n_seconds, kGravity, scroller, e.mutable_particles(),
+                    scrolling_canvas.mutable_tiles(), data);
     AddFpsText(canvas.fps(), text_color, data);
     input = canvas.Tick(&dt);
   }
