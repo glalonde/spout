@@ -119,8 +119,8 @@ void Demo(double emission_rate) {
   const double angular_stdev = .2;
   const double min_speed = 30.0;
   const double max_speed = 70.0;
-  const double min_life = 3;
-  const double max_life = 6;
+  const double min_life = 2;
+  const double max_life = 3;
   Emitter e(angular_stdev, min_speed, max_speed, emission_rate, min_life,
             max_life);
 
@@ -130,7 +130,7 @@ void Demo(double emission_rate) {
   Vector2d init_pos = ship_start->cast<double>() + Vector2d(.5, .5);
   Ship ship(MobileObject({init_pos.x(), init_pos.y(), 0, 0, 0}), M_PI / 2.0);
 
-  SO2d previous_orientation = ship.orientation();
+  SO2d previous_orientation = Rotate180(ship.orientation());
   Vector5d previous_state = ship.particle().state();
 
   auto* data = canvas.data();
@@ -138,7 +138,7 @@ void Demo(double emission_rate) {
   ControllerInput input;
   while (!input.quit) {
     const double n_seconds = ToSeconds<double>(dt);
-    const auto& current_orientation = ship.orientation();
+    const auto& current_orientation = Rotate180(ship.orientation());
     const auto& current_state = ship.particle().state();
     if (input.up) {
       e.EmitOverTime(n_seconds, previous_orientation, current_orientation,
