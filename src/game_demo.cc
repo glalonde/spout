@@ -5,6 +5,7 @@
 #include "base/init.h"
 #include "graphics/animated_canvas.h"
 #include "src/bresenham.h"
+#include "src/color_maps/color_maps.h"
 #include "src/convert.h"
 #include "src/demo_utils.h"
 #include "src/drawing_utils.h"
@@ -72,22 +73,27 @@ constexpr double kShipRotationRate = 10.0;
 constexpr double kShipAcceleration = 200.0;
 constexpr double kGravity = -kShipAcceleration / 4.0;
 
+template <class T, ColorMap Map, int Size>
+std::array<T, Size> MakeColorLut() {
+  std::array<T, Size> out;
+  for (int i = 0; i < Size; ++i) {
+    const double p = static_cast<double>(i) / (Size - 1);
+    out[i] = Convert<T>(EvaluateColorMap<Map>(p));
+  }
+  return out;
+}
+
 // Particle motion, collision, environment destruction and particle rendering
 void UpdateParticles(const double dt, const double ddy,
                      const ScrollingManager& scroller,
                      CircularBuffer<Vector5d>* particles,
                      BufferStack<Image<uint8_t>>* environment,
+                     Image<uint8_t>* particle_density,
                      Image<PixelType::RGBAU8>* data) {
-  auto draw_particle = [&scroller, data](const Vector5d& particle) {
-    Vector2i pos_i = particle.head<2>().cast<int>();
-    pos_i[1] -= scroller.viewport_bottom();
-    if (pos_i.y() >= 0 && pos_i.y() < data->rows() && pos_i.x() >= 0 &&
-        pos_i.x() < data->cols()) {
-      (*data)(pos_i[1], pos_i[0]) = kParticleColor;
-    }
-  };
+  particle_density->setConstant(0);
   const int num_particles = particles->Capacity();
   auto& mutable_particles = *particles->mutable_data();
+  static constexpr int kMaxDensity = 32;
   for (int i = 0; i < num_particles; ++i) {
     auto& current = mutable_particles[i];
     if (current[4] /* ttl */ <= 0) {
@@ -102,7 +108,28 @@ void UpdateParticles(const double dt, const double ddy,
     current[3] += dt * ddy;
     current[4] -= dt;
 
-    draw_particle(current);
+    // Count particle
+    Vector2i pos_i = pos.cast<int>();
+    pos_i[1] -= scroller.viewport_bottom();
+    if (pos_i.y() >= 0 && pos_i.y() < data->rows() && pos_i.x() >= 0 &&
+        pos_i.x() < data->cols()) {
+      if ((*particle_density)(pos_i[1], pos_i[0]) < (kMaxDensity - 1)) {
+        (*particle_density)(pos_i[1], pos_i[0]) =
+            std::min((*particle_density)(pos_i[1], pos_i[0]) + 1, kMaxDensity);
+      }
+    }
+  }
+
+  // Transform the particle density image into colors (This should be done on
+  // the GPU)
+  static std::array<PixelType::RGBAU8, kMaxDensity> color_lut =
+      MakeColorLut<PixelType::RGBAU8, ColorMap::kMagma, kMaxDensity>();
+
+  for (int i = 0; i < particle_density->size(); ++i) {
+    const auto& count = (*particle_density)(i);
+    if (count > 0) {
+      (*data)(i) = color_lut[count];
+    }
   }
 }
 
@@ -150,8 +177,8 @@ void UpdateShip(const double dt, const ControllerInput& input,
 void Demo(double emission_rate) {
   // Set up canvas
   const double kFps = 60.0;
-  const Vector2i window_dims(800, 800);
-  const Vector2i viewport_dims = window_dims / 4;
+  const Vector2i window_dims(1366 / 2, 768 / 2);
+  const Vector2i viewport_dims = window_dims / 2;
   std::mt19937 rando(0);
   AnimatedCanvas canvas(window_dims[0], window_dims[1], viewport_dims[0],
                         viewport_dims[1], kFps);
@@ -166,13 +193,14 @@ void Demo(double emission_rate) {
                                             std::move(make_next_level));
   const auto& scroller = scrolling_canvas.scrolling_manager();
   const auto& environment = scrolling_canvas.tiles();
+  Image<uint8_t> particle_density(viewport_dims[1], viewport_dims[0]);
 
   // Make emitter
-  const double angular_stdev = .4;
-  const double min_speed = 45.0;
-  const double max_speed = 70.0;
-  const double min_life = 2;
-  const double max_life = 3;
+  const double angular_stdev = .1;
+  const double min_speed = 150.0;
+  const double max_speed = 200.0;
+  const double min_life = 1;
+  const double max_life = 2;
   Emitter e(angular_stdev, min_speed, max_speed, emission_rate, min_life,
             max_life);
 
@@ -207,9 +235,9 @@ void Demo(double emission_rate) {
     RenderEnvironment(environment, scroller, data);
     previous_orientation = current_orientation;
     previous_state = current_state;
-    RenderShip(scroller, ship, data);
     UpdateParticles(n_seconds, kGravity, scroller, e.mutable_particles(),
-                    scrolling_canvas.mutable_tiles(), data);
+                    scrolling_canvas.mutable_tiles(), &particle_density, data);
+    RenderShip(scroller, ship, data);
     AddFpsText(canvas.fps(), text_color, data);
     input = canvas.Tick(&dt);
   }
