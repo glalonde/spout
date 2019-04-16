@@ -353,6 +353,7 @@ cc_binary(
         ":emitter",
         ":mobile_object",
         ":random",
+        "//base:scoped_profiler",
         "//base:format",
         "//base:init",
         "//graphics:animated_canvas",

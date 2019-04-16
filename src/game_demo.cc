@@ -3,6 +3,7 @@
 
 #include "base/format.h"
 #include "base/init.h"
+#include "base/scoped_profiler.h"
 #include "graphics/animated_canvas.h"
 #include "src/bresenham.h"
 #include "src/color_maps/color_maps.h"
@@ -73,11 +74,17 @@ constexpr double kShipRotationRate = 10.0;
 constexpr double kShipAcceleration = 200.0;
 constexpr double kGravity = -kShipAcceleration / 4.0;
 
+// Make a color look up table for the number of particles.
+// The transition function allows you to use a nonlinear scale.
+// for a linear scale just use a passthrough: [](double x) { return x;}
 template <class T, ColorMap Map, int Size>
-std::array<T, Size> MakeColorLut() {
+std::array<T, Size> MakeColorLut(
+    const std::function<double(double)>& transition_function) {
   std::array<T, Size> out;
   for (int i = 0; i < Size; ++i) {
-    const double p = static_cast<double>(i) / (Size - 1);
+    const double p = transition_function(static_cast<double>(i) / (Size - 1));
+    CHECK_GE(p, 0.0);
+    CHECK_LE(p, 1.0);
     out[i] = Convert<T>(EvaluateColorMap<Map>(p));
   }
   return out;
@@ -123,7 +130,13 @@ void UpdateParticles(const double dt, const double ddy,
   // Transform the particle density image into colors (This should be done on
   // the GPU)
   static std::array<PixelType::RGBAU8, kMaxDensity> color_lut =
-      MakeColorLut<PixelType::RGBAU8, ColorMap::kMagma, kMaxDensity>();
+      MakeColorLut<PixelType::RGBAU8, ColorMap::kMagma, kMaxDensity>(
+          [](double x) {
+            static constexpr double kMinColor = .1;
+            static constexpr double kStartingSlope = 5;
+            return std::tanh(kStartingSlope * x) * (1.0 - kMinColor) +
+                   kMinColor;
+          });
 
   for (int i = 0; i < particle_density->size(); ++i) {
     const auto& count = (*particle_density)(i);
@@ -175,9 +188,10 @@ void UpdateShip(const double dt, const ControllerInput& input,
 }
 
 void Demo(double emission_rate) {
+  ScopedProfiler prof;
   // Set up canvas
   const double kFps = 60.0;
-  const Vector2i window_dims(1366 / 2, 768 / 2);
+  const Vector2i window_dims(1366, 768);
   const Vector2i viewport_dims = window_dims / 2;
   std::mt19937 rando(0);
   AnimatedCanvas canvas(window_dims[0], window_dims[1], viewport_dims[0],
@@ -196,7 +210,7 @@ void Demo(double emission_rate) {
   Image<uint8_t> particle_density(viewport_dims[1], viewport_dims[0]);
 
   // Make emitter
-  const double angular_stdev = .1;
+  const double angular_stdev = .15;
   const double min_speed = 150.0;
   const double max_speed = 200.0;
   const double min_life = 1;
