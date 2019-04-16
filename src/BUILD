@@ -178,6 +178,19 @@ cc_binary(
     ],
 )
 
+cc_binary(
+    name = "bresenham_benchmark",
+    srcs = ["bresenham_benchmark.cc"],
+    deps = [
+        ":random",
+        ":so2",
+        ":bresenham",
+        ":demo_utils",
+        "//base",
+        "@com_github_google_benchmark//:benchmark_main",
+    ],
+)
+
 cc_library(
     name = "level_generators",
     hdrs = ["level_generators.h"],

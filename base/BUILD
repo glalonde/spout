@@ -148,3 +148,12 @@ cc_library(
         "@com_google_absl//absl/container:inlined_vector",
     ],
 )
+
+cc_binary(
+    name = "benchmark_example",
+    srcs = ["benchmark_example.cc"],
+    deps = [
+        ":logging",
+        "@com_github_google_benchmark//:benchmark_main",
+    ],
+)
