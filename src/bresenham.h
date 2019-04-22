@@ -223,3 +223,106 @@ void DestructingBresenham(const Vector2d& pos, const Vector2d& vel,
   *pos_out = Vector2d(.5, .5) + pos_i.cast<double>() + end_remainder;
   *vel_out = TransformFromOctant0(octant, vel_tf);
 }
+
+template <class T>
+void BresenhamExperiment(const Vector2i& pos, const Vector2i& vel,
+                         const int cell_size /* fixed point resolution */,
+                         const double dt, const T& buffer, Vector2i* pos_out,
+                         Vector2i* vel_out) {
+  using CellType = typename T::Scalar;
+  uint8_t octant = GetOctant(vel);
+
+  auto convert_pos = [cell_size](const Vector2i& pos) -> Vector2i {
+    return (pos.cast<double>() / cell_size).array().floor().matrix().cast<int>();
+  };
+
+  const Vector2i kHalfCell = Vector2i::Constant(cell_size / 2);
+
+  // Always positive
+  {
+    Vector2i start_cell_mid = pos / cell_size * cell_size + kHalfCell;
+    Vector2i start_remainder = pos - start_cell_mid;
+    Vector2i remainder_tf = TransformToOctant0(octant, start_remainder);
+    Vector2i vel_tf = TransformToOctant0(octant, vel);
+    Vector2i end_pos_tf = remainder_tf + (vel_tf.cast<double>() * dt).cast<int>();
+  }
+  LOG(INFO) << convert_pos(pos_tf).transpose() << ", "
+            << convert_pos(end_pos_tf).transpose();
+  Vector2i dist = end_pos_tf - pos_tf;
+  /*
+  Vector2i start_remainder =
+      pos_tf -
+      (pos_tf.cast<double>() / cell_size).array().floor().matrix().cast<int>();
+      */
+  /*
+  Vector2i end_remainder = end_pos_tf -
+                           (end_pos_tf.cast<double>() / cell_size)
+                               .array()
+                               .floor()
+                               .matrix()
+                               .cast<int>() +
+                           kHalfCell;
+                           */
+
+  // Convert to the low res grid:
+  // Because pos_tf is guaranteed to be positive, this rounds downwards
+  Vector2i dist_i = convert_pos(end_pos_tf) - convert_pos(pos_tf);
+  int x_step_i = (dist_i.x() > 0 ? 1 : -1);
+  int y_step_i = (dist_i.y() > 0 ? 1 : -1);
+  int num_cells = dist_i.x() + dist_i.y();
+
+  // Track the real world low-res position at each iteration.
+  Vector2i pos_i = pos / cell_size;
+  int error = dist.x() - dist.y();// + start_remainder.x() - start_remainder.y();
+
+  auto is_on_buffer = [&buffer](int row, int col) -> bool {
+    return row >= 0 && col >= 0 && row < buffer.rows() && col < buffer.cols();
+  };
+
+  if (!is_on_buffer(pos_i.y(), pos_i.x())) {
+    *pos_out = pos;
+    *vel_out = vel;
+    return;
+  }
+  LOG(INFO) << num_cells;
+
+  while (num_cells > 0) {
+    LOG(INFO) << "Position: " << pos_i.transpose();
+    if ((2 * error + dist.y()) > (dist.x() - 2 * error)) {
+      LOG(INFO) << "H";
+      // Horizontal step
+      error -= dist.y();
+      pos_i.x() += x_step_i;
+
+      // Bounce horizontally
+      const bool off_buffer = !is_on_buffer(pos_i.y(), pos_i.x());
+      if (off_buffer || buffer(pos_i.y(), pos_i.x()) > CellType(0)) {
+        LOG(INFO) << "bounce";
+        pos_i.x() -= x_step_i;
+        x_step_i *= -1;
+        octant = kOctantFlipOverY[octant];
+      }
+    } else {
+      LOG(INFO) << "V";
+      // Vertical step
+      error += dist.x();
+      pos_i.y() += y_step_i;
+
+      // Bounce vertically
+      const bool off_buffer = !is_on_buffer(pos_i.y(), pos_i.x());
+      LOG(INFO) << pos_i.transpose() << ", " << off_buffer;
+      LOG(INFO) << buffer.rows() << ", " << buffer.cols();
+      if (off_buffer || buffer(pos_i.y(), pos_i.x()) > CellType(0)) {
+        LOG(INFO) << "bounce";
+        pos_i.y() -= y_step_i;
+        y_step_i *= -1;
+        octant = kOctantFlipOverX[octant];
+      }
+    }
+    --num_cells;
+  }
+
+  // end_remainder = TransformFromOctant0(octant, end_remainder);
+  *pos_out = pos_i;// + kHalfCell + end_remainder;
+  *vel_out = TransformFromOctant0(octant, vel_tf);
+}

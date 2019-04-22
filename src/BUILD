@@ -179,6 +179,21 @@ cc_binary(
 )
 
 cc_binary(
+    name = "exp_demo",
+    srcs = ["exp_demo.cc"],
+    deps = [
+        ":bresenham",
+        ":convert",
+        ":demo_utils",
+        ":random",
+        "//base:format",
+        "//base:init",
+        "//graphics:animated_canvas",
+        "//src/fonts:font_renderer",
+    ],
+)
+
+cc_binary(
     name = "bresenham_benchmark",
     srcs = ["bresenham_benchmark.cc"],
     deps = [
