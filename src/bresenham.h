@@ -49,28 +49,36 @@ Vector2<Scalar> TransformFromOctant0(uint8_t octant,
   return vec_out;
 }
 
+/* >  >   >
+ *  \2|1/
+ *  3\|/0
+ *^--------^
+ *  4/|\7
+ *  /5|6\
+ * <  >  >
+ */
 template <class Scalar>
 uint8_t GetOctant(const Vector2<Scalar>& vec) {
-  if (vec.x() > 0) {
-    if (vec.y() > 0) {
-      if (vec.x() > vec.y()) {
+  if (vec.x() >= 0) {
+    if (vec.y() >= 0) {
+      if (vec.x() >= vec.y()) {
         return 0;
       } else {
         return 1;
       }
-    } else if (vec.x() > -vec.y()) {
+    } else if (vec.x() >= -vec.y()) {
       return 7;
     } else {
       return 6;
     }
   } else {
-    if (vec.y() > 0) {
+    if (vec.y() >= 0) {
       if (-vec.x() > vec.y()) {
         return 3;
       } else {
         return 2;
       }
-    } else if (-vec.x() > -vec.y()) {
+    } else if (-vec.x() >= -vec.y()) {
       return 4;
     } else {
       return 5;
@@ -222,4 +230,89 @@ void DestructingBresenham(const Vector2d& pos, const Vector2d& vel,
   end_remainder = TransformFromOctant0(octant, end_remainder);
   *pos_out = Vector2d(.5, .5) + pos_i.cast<double>() + end_remainder;
   *vel_out = TransformFromOctant0(octant, vel_tf);
+}
+
+template <class T>
+void BresenhamExperiment(const Vector2i& pos, const Vector2i& vel,
+                         const int cell_size /* fixed point resolution */,
+                         const double dt, const T& buffer, Vector2i* pos_out,
+                         Vector2i* vel_out) {
+  using CellType = typename T::Scalar;
+  const Vector2i kHalfCell = Vector2i::Constant(cell_size / 2);
+  // Signed integer division and floor
+  auto floor_div = [](int a, int b) {
+    int d = a / b;
+    int r = a % b;
+    return r ? (d - ((a < 0) ^ (b < 0))) : d;
+  };
+
+  auto get_cell = [cell_size, &floor_div](const Vector2i& vec) -> Vector2i {
+    return vec.unaryExpr(
+        [&cell_size, &floor_div](int v) { return floor_div(v, cell_size); });
+  };
+
+  // Hot spot
+  Vector2i end_pos = pos + (vel.cast<double>() * dt).cast<int>();
+  Vector2i delta = (end_pos - pos).cwiseAbs();
+  Vector2i step(pos.x() < end_pos.x() ? 1 : -1, pos.y() < end_pos.y() ? 1 : -1);
+  // Hot spot
+  Vector2i pos_i = get_cell(pos);
+  // Hot spot
+  Vector2i end_pos_i = get_cell(end_pos);
+  Vector2i delta_i = end_pos_i - pos_i;
+  Vector2i start_remainder = pos_i * cell_size + kHalfCell - pos;
+  start_remainder = start_remainder.cwiseProduct(step);
+  *vel_out = vel;
+
+  int error = delta.x() * start_remainder.y() - delta.y() * start_remainder.x();
+  Vector2i end_remainder = end_pos - end_pos_i * cell_size;
+
+  auto is_on_buffer = [&buffer](int row, int col) -> bool {
+    auto ans =
+        row >= 0 && col >= 0 && row < buffer.rows() && col < buffer.cols();
+    return ans;
+  };
+
+  if (!is_on_buffer(pos_i.y(), pos_i.x())) {
+    *pos_out = pos;
+    *vel_out = vel;
+    return;
+  }
+
+  int num_cells = delta_i.lpNorm<1>();
+  delta *= cell_size;
+
+  while (num_cells > 0) {
+    const int error_horizontal = error - delta.y();
+    const int error_vertical = error + delta.x();
+    if (error_vertical > -error_horizontal) {
+      // Horizontal step
+      error = error_horizontal;
+      pos_i.x() += step.x();
+      // Bounce horizontally
+      const bool off_buffer = !is_on_buffer(pos_i.y(), pos_i.x());
+      if (off_buffer || buffer(pos_i.y(), pos_i.x()) > CellType(0)) {
+        pos_i.x() -= step.x();
+        step.x() *= -1;
+        vel_out->x() *= -1;
+        end_remainder.y() = cell_size - end_remainder.y();
+      }
+    } else {
+      // Vertical step
+      error = error_vertical;
+      pos_i.y() += step.y();
+
+      // Bounce vertically
+      const bool off_buffer = !is_on_buffer(pos_i.y(), pos_i.x());
+      if (off_buffer || buffer(pos_i.y(), pos_i.x()) > CellType(0)) {
+        pos_i.y() -= step.y();
+        end_remainder.x() = cell_size - end_remainder.x();
+        step.y() *= -1;
+        vel_out->y() *= -1;
+      }
+    }
+    --num_cells;
+  }
+  // Hot spot
+  *pos_out = pos_i * cell_size + end_remainder;
 }

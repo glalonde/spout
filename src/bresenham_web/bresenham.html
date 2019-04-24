@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html>
+<body>
+
+<body style='margin:0px'><canvas id=c>
+Your browser does not support the HTML5 canvas tag.</canvas>
+
+<script>
+
+var ctx = c.getContext('2d');
+c.width = innerWidth;
+c.height = innerHeight;
+onmousemove = function(e){
+  e = e || window.event;
+  pixel_size = 30
+  ctx.clearRect(0,0,c.width,c.height);
+  end_x = c.width/2;
+  end_y = c.height/2
+  start_x = e.pageX;
+  start_y = e.pageY;
+  brezLine(pixel_size, start_x, start_y,end_x, end_y);
+  ctx.beginPath();
+  ctx.strokeStyle = "#FF0000";
+  ctx.moveTo(start_x, start_y);
+  ctx.lineTo(end_x, end_y);
+  ctx.stroke();
+}
+
+function brezLine(pixel_size,  x0,  y0,  x1,  y1) {
+  dx = Math.abs(x1 - x0);
+  dy = -Math.abs(y1 - y0);
+  function round_down(v) {
+    return Math.floor(v / pixel_size) * pixel_size;
+  };
+  function center(v) {
+    return round_down(v) + pixel_size/2;
+  };
+
+  x_step = (x0 < x1 ? +1 : -1);
+  y_step = (y0 < y1 ? +1 : -1);
+  xi = Math.floor(x0 / pixel_size);
+  yi = Math.floor(y0 / pixel_size);
+  xf = Math.floor(x1 / pixel_size);
+  yf = Math.floor(y1 / pixel_size);
+  n_cells = Math.abs(xf - xi) + Math.abs(yf - yi);
+  rem_x = center(x0) - x0;
+  rem_y = center(y0) - y0;
+  // Flip the initial error into the right quadrant
+  rem_y *= y_step;
+  rem_x *= x_step;
+  error = dy * rem_x + dx * rem_y;
+  
+  ctx.fillRect(xi * pixel_size, yi * pixel_size, pixel_size, pixel_size);
+  while (n_cells > 0) {
+    h_error = error + dy * pixel_size;
+    v_error = error + dx * pixel_size;
+    if (v_error > -h_error) {
+      xi += x_step;
+      error = h_error;
+    } else {
+      yi += y_step;
+      error = v_error;
+    }
+    ctx.fillRect(xi * pixel_size, yi * pixel_size, pixel_size, pixel_size);
+   --n_cells;
+  }
+};
+
+</script>
+</body>
+</html>

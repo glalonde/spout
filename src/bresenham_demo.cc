@@ -15,7 +15,6 @@ DEFINE_int32(num_particles, 100, "Number of particles");
 void RenderParticle(const Vector2d& pos, Image<PixelType::RGBAU8>* data) {
   // (x, y) -> (col, height - row)
   Vector2i pos_i = pos.cast<int>();
-  pos_i[1] = pos_i[1];
   (*data)(pos_i[1], pos_i[0]) = kParticleColor;
 }
 
