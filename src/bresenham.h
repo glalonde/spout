@@ -251,10 +251,13 @@ void BresenhamExperiment(const Vector2i& pos, const Vector2i& vel,
         [&cell_size, &floor_div](int v) { return floor_div(v, cell_size); });
   };
 
+  // Hot spot
   Vector2i end_pos = pos + (vel.cast<double>() * dt).cast<int>();
   Vector2i delta = (end_pos - pos).cwiseAbs();
   Vector2i step(pos.x() < end_pos.x() ? 1 : -1, pos.y() < end_pos.y() ? 1 : -1);
+  // Hot spot
   Vector2i pos_i = get_cell(pos);
+  // Hot spot
   Vector2i end_pos_i = get_cell(end_pos);
   Vector2i delta_i = end_pos_i - pos_i;
   Vector2i start_remainder = pos_i * cell_size + kHalfCell - pos;
@@ -277,10 +280,11 @@ void BresenhamExperiment(const Vector2i& pos, const Vector2i& vel,
   }
 
   int num_cells = delta_i.lpNorm<1>();
+  delta *= cell_size;
 
   while (num_cells > 0) {
-    int error_horizontal = error - delta.y() * cell_size;
-    int error_vertical = error + delta.x() * cell_size;
+    const int error_horizontal = error - delta.y();
+    const int error_vertical = error + delta.x();
     if (error_vertical > -error_horizontal) {
       // Horizontal step
       error = error_horizontal;
@@ -309,5 +313,6 @@ void BresenhamExperiment(const Vector2i& pos, const Vector2i& vel,
     }
     --num_cells;
   }
+  // Hot spot
   *pos_out = pos_i * cell_size + end_remainder;
 }

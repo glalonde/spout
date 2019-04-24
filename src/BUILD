@@ -179,6 +179,22 @@ cc_binary(
 )
 
 cc_binary(
+    name = "bresenham_profile",
+    srcs = ["bresenham_profile.cc"],
+    deps = [
+        ":bresenham",
+        ":convert",
+        ":demo_utils",
+        ":random",
+        "//base:format",
+        "//base:scoped_profiler",
+        "//base:wall_timer",
+        "//base:init",
+        "//src/fonts:font_renderer",
+    ],
+)
+
+cc_binary(
     name = "exp_demo",
     srcs = ["exp_demo.cc"],
     deps = [
