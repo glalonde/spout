@@ -197,10 +197,10 @@ cc_binary(
     name = "bresenham_benchmark",
     srcs = ["bresenham_benchmark.cc"],
     deps = [
-        ":random",
-        ":so2",
         ":bresenham",
         ":demo_utils",
+        ":random",
+        ":so2",
         "//base",
         "@com_github_google_benchmark//:benchmark_main",
     ],
@@ -374,17 +374,27 @@ cc_binary(
     deps = [
         ":bresenham",
         ":buffer_stack",
-        ":scrolling_manager",
         ":convert",
         ":demo_utils",
         ":drawing_utils",
         ":emitter",
         ":mobile_object",
         ":random",
-        "//base:scoped_profiler",
+        ":scrolling_manager",
         "//base:format",
         "//base:init",
+        "//base:scoped_profiler",
         "//graphics:animated_canvas",
         "//src/fonts:font_renderer",
+    ],
+)
+
+cc_binary(
+    name = "get_cell_benchmark",
+    srcs = ["get_cell_benchmark.cc"],
+    deps = [
+        ":random",
+        "//base",
+        "@com_github_google_benchmark//:benchmark_main",
     ],
 )

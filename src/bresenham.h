@@ -49,28 +49,36 @@ Vector2<Scalar> TransformFromOctant0(uint8_t octant,
   return vec_out;
 }
 
+/* >  >   >
+ *  \2|1/
+ *  3\|/0
+ *^--------^
+ *  4/|\7
+ *  /5|6\
+ * <  >  >
+ */
 template <class Scalar>
 uint8_t GetOctant(const Vector2<Scalar>& vec) {
-  if (vec.x() > 0) {
-    if (vec.y() > 0) {
-      if (vec.x() > vec.y()) {
+  if (vec.x() >= 0) {
+    if (vec.y() >= 0) {
+      if (vec.x() >= vec.y()) {
         return 0;
       } else {
         return 1;
       }
-    } else if (vec.x() > -vec.y()) {
+    } else if (vec.x() >= -vec.y()) {
       return 7;
     } else {
       return 6;
     }
   } else {
-    if (vec.y() > 0) {
+    if (vec.y() >= 0) {
       if (-vec.x() > vec.y()) {
         return 3;
       } else {
         return 2;
       }
-    } else if (-vec.x() > -vec.y()) {
+    } else if (-vec.x() >= -vec.y()) {
       return 4;
     } else {
       return 5;
@@ -230,53 +238,36 @@ void BresenhamExperiment(const Vector2i& pos, const Vector2i& vel,
                          const double dt, const T& buffer, Vector2i* pos_out,
                          Vector2i* vel_out) {
   using CellType = typename T::Scalar;
-  uint8_t octant = GetOctant(vel);
-
-  auto convert_pos = [cell_size](const Vector2i& pos) -> Vector2i {
-    return (pos.cast<double>() / cell_size).array().floor().matrix().cast<int>();
+  const Vector2i kHalfCell = Vector2i::Constant(cell_size / 2);
+  // Signed integer division and floor
+  auto floor_div = [](int a, int b) {
+    int d = a / b;
+    int r = a % b;
+    return r ? (d - ((a < 0) ^ (b < 0))) : d;
   };
 
-  const Vector2i kHalfCell = Vector2i::Constant(cell_size / 2);
+  auto get_cell = [cell_size, &floor_div](const Vector2i& vec) -> Vector2i {
+    return vec.unaryExpr(
+        [&cell_size, &floor_div](int v) { return floor_div(v, cell_size); });
+  };
 
-  // Always positive
-  {
-    Vector2i start_cell_mid = pos / cell_size * cell_size + kHalfCell;
-    Vector2i start_remainder = pos - start_cell_mid;
-    Vector2i remainder_tf = TransformToOctant0(octant, start_remainder);
-    Vector2i vel_tf = TransformToOctant0(octant, vel);
-    Vector2i end_pos_tf = remainder_tf + (vel_tf.cast<double>() * dt).cast<int>();
-  }
-  LOG(INFO) << convert_pos(pos_tf).transpose() << ", "
-            << convert_pos(end_pos_tf).transpose();
-  Vector2i dist = end_pos_tf - pos_tf;
-  /*
-  Vector2i start_remainder =
-      pos_tf -
-      (pos_tf.cast<double>() / cell_size).array().floor().matrix().cast<int>();
-      */
-  /*
-  Vector2i end_remainder = end_pos_tf -
-                           (end_pos_tf.cast<double>() / cell_size)
-                               .array()
-                               .floor()
-                               .matrix()
-                               .cast<int>() +
-                           kHalfCell;
-                           */
+  Vector2i end_pos = pos + (vel.cast<double>() * dt).cast<int>();
+  Vector2i delta = (end_pos - pos).cwiseAbs();
+  Vector2i step(pos.x() < end_pos.x() ? 1 : -1, pos.y() < end_pos.y() ? 1 : -1);
+  Vector2i pos_i = get_cell(pos);
+  Vector2i end_pos_i = get_cell(end_pos);
+  Vector2i delta_i = end_pos_i - pos_i;
+  Vector2i start_remainder = pos_i * cell_size + kHalfCell - pos;
+  start_remainder = start_remainder.cwiseProduct(step);
+  *vel_out = vel;
 
-  // Convert to the low res grid:
-  // Because pos_tf is guaranteed to be positive, this rounds downwards
-  Vector2i dist_i = convert_pos(end_pos_tf) - convert_pos(pos_tf);
-  int x_step_i = (dist_i.x() > 0 ? 1 : -1);
-  int y_step_i = (dist_i.y() > 0 ? 1 : -1);
-  int num_cells = dist_i.x() + dist_i.y();
-
-  // Track the real world low-res position at each iteration.
-  Vector2i pos_i = pos / cell_size;
-  int error = dist.x() - dist.y();// + start_remainder.x() - start_remainder.y();
+  int error = delta.x() * start_remainder.y() - delta.y() * start_remainder.x();
+  Vector2i end_remainder = end_pos - end_pos_i * cell_size;
 
   auto is_on_buffer = [&buffer](int row, int col) -> bool {
-    return row >= 0 && col >= 0 && row < buffer.rows() && col < buffer.cols();
+    auto ans =
+        row >= 0 && col >= 0 && row < buffer.rows() && col < buffer.cols();
+    return ans;
   };
 
   if (!is_on_buffer(pos_i.y(), pos_i.x())) {
@@ -284,45 +275,39 @@ void BresenhamExperiment(const Vector2i& pos, const Vector2i& vel,
     *vel_out = vel;
     return;
   }
-  LOG(INFO) << num_cells;
+
+  int num_cells = delta_i.lpNorm<1>();
 
   while (num_cells > 0) {
-    LOG(INFO) << "Position: " << pos_i.transpose();
-    if ((2 * error + dist.y()) > (dist.x() - 2 * error)) {
-      LOG(INFO) << "H";
+    int error_horizontal = error - delta.y() * cell_size;
+    int error_vertical = error + delta.x() * cell_size;
+    if (error_vertical > -error_horizontal) {
       // Horizontal step
-      error -= dist.y();
-      pos_i.x() += x_step_i;
-
+      error = error_horizontal;
+      pos_i.x() += step.x();
       // Bounce horizontally
       const bool off_buffer = !is_on_buffer(pos_i.y(), pos_i.x());
       if (off_buffer || buffer(pos_i.y(), pos_i.x()) > CellType(0)) {
-        LOG(INFO) << "bounce";
-        pos_i.x() -= x_step_i;
-        x_step_i *= -1;
-        octant = kOctantFlipOverY[octant];
+        pos_i.x() -= step.x();
+        step.x() *= -1;
+        vel_out->x() *= -1;
+        end_remainder.y() = cell_size - end_remainder.y();
       }
     } else {
-      LOG(INFO) << "V";
       // Vertical step
-      error += dist.x();
-      pos_i.y() += y_step_i;
+      error = error_vertical;
+      pos_i.y() += step.y();
 
       // Bounce vertically
       const bool off_buffer = !is_on_buffer(pos_i.y(), pos_i.x());
-      LOG(INFO) << pos_i.transpose() << ", " << off_buffer;
-      LOG(INFO) << buffer.rows() << ", " << buffer.cols();
       if (off_buffer || buffer(pos_i.y(), pos_i.x()) > CellType(0)) {
-        LOG(INFO) << "bounce";
-        pos_i.y() -= y_step_i;
-        y_step_i *= -1;
-        octant = kOctantFlipOverX[octant];
+        pos_i.y() -= step.y();
+        end_remainder.x() = cell_size - end_remainder.x();
+        step.y() *= -1;
+        vel_out->y() *= -1;
       }
     }
     --num_cells;
   }
-
-  // end_remainder = TransformFromOctant0(octant, end_remainder);
-  *pos_out = pos_i;// + kHalfCell + end_remainder;
-  *vel_out = TransformFromOctant0(octant, vel_tf);
+  *pos_out = pos_i * cell_size + end_remainder;
 }

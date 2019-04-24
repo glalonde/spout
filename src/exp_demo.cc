@@ -10,6 +10,8 @@
 #include "src/random.h"
 #include "src/demo_utils.h"
 
+DEFINE_bool(run_demo, false, "run demo?");
+
 void RenderParticle(const Vector2i& pos, const int cell_size,
                     Image<PixelType::RGBAU8>* data) {
   // (x, y) -> (col, height - row)
@@ -35,7 +37,8 @@ void Demo() {
 
   Vector4i particle = Vector4i::Zero();
   particle.head<2>() = grid_dims / 2 * kCellSize;
-  particle.tail<2>().x() = -10;
+  particle.tail<2>().x() = 60.0 * kCellSize;
+  particle.tail<2>().y() = 32.0 * kCellSize;
 
   Vector2i pos;
   Vector2i vel;
@@ -50,7 +53,7 @@ void Demo() {
                         kCellSize, dt, environment, &pos, &vel);
     particle.segment<2>(0) = pos;
     particle.segment<2>(2) = vel;
-    particle[3] += (dt * ddy * kCellSize);
+    // particle[3] += (dt * ddy * kCellSize);
     RenderParticle(pos, kCellSize, data);
     AddFpsText(canvas.fps(), text_color, data);
     done = canvas.Tick().quit;
@@ -64,19 +67,31 @@ void Test() {
   environment.setConstant(0);
 
   Vector4i particle = Vector4i::Zero();
-  particle.head<2>() = Vector2i(100, 50) * kCellSize + Vector2i(50, 50);
-  particle.tail<2>().x() = 60.0 * kCellSize;
+  particle.head<2>() =
+      Vector2i(0, 50) * kCellSize + Vector2i(kCellSize / 2, kCellSize / 2);
 
-  Vector2i pos;
-  Vector2i vel;
-  BresenhamExperiment(particle.segment<2>(0), particle.segment<2>(2), kCellSize,
-                      1.0 / 60.0, environment, &pos, &vel);
-  particle.segment<2>(0) = pos;
-  particle.segment<2>(2) = vel;
+  particle.tail<2>().x() = .06 * kCellSize;
+  particle.tail<2>().y() = -.16 * kCellSize;
+
+  auto step = [&]() {
+    LOG(INFO) << "STEPPPPPPPP";
+    LOG(INFO) << "Start: " << particle.transpose();
+    Vector2i pos;
+    Vector2i vel;
+    BresenhamExperiment(particle.segment<2>(0), particle.segment<2>(2),
+                        kCellSize, 1.0, environment, &pos, &vel);
+    particle.segment<2>(0) = pos;
+    particle.segment<2>(2) = vel;
+    LOG(INFO) << "End: " << particle.transpose();
+  };
+  step();
 }
 
 int main(int argc, char** argv) {
   Init(argc, argv);
   Test();
+  if (FLAGS_run_demo) {
+    Demo();
+  }
   return 0;
 }
