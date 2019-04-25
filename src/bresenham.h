@@ -3,41 +3,37 @@
 #include "src/eigen_types.h"
 #include "src/image.h"
 
+static Eigen::Matrix<int, 4, 8> kToOctant0 =
+    (Eigen::Matrix<int, 4, 8>() << 1, 0, 0, -1, -1, 0, 0, 1, 0, 1, 1, 0, 0, -1,
+     -1, 0, 0, 1, -1, 0, 0, -1, 1, 0, 1, 0, 0, 1, -1, 0, 0, -1)
+        .finished();
+
+static Eigen::Matrix<int, 4, 8> kFromOctant0 =
+    (Eigen::Matrix<int, 4, 8>() << 1, 0, 0, -1, -1, 0, 0, 1, 0, 1, -1, 0, 0, -1,
+     1, 0, 0, 1, 1, 0, 0, -1, -1, 0, 1, 0, 0, 1, -1, 0, 0, -1)
+        .finished();
+
+template<class IntType>
+static Eigen::Matrix<IntType, 2, 8> kStepX =
+    (Eigen::Matrix<IntType, 2, 8>() << 1, 0, 0, -1, -1, 0, 0, 1, 0, 1, 1, 0, 0, -1,
+     -1, 0)
+        .finished();
+
+template<class IntType>
+static Eigen::Matrix<IntType, 2, 8> kStepY =
+    (Eigen::Matrix<IntType, 2, 8>() << 0, 1, -1, 0, 0, -1, 1, 0, 1, 0, 0, 1, -1, 0,
+     0, -1)
+        .finished();
+
 static Vector<uint8_t, 8> kOctantFlipOverX =
     (Vector<uint8_t, 8>() << 7, 2, 1, 4, 3, 6, 5, 0).finished();
 static Vector<uint8_t, 8> kOctantFlipOverY =
     (Vector<uint8_t, 8>() << 3, 6, 5, 0, 7, 2, 1, 4).finished();
 
-static std::array<Vector4i, 8> kToOctant0 = {{{1, 0, 0, 1},
-                                              {0, 1, 1, 0},
-                                              {0, 1, -1, 0},
-                                              {-1, 0, 0, 1},
-                                              {-1, 0, 0, -1},
-                                              {0, -1, -1, 0},
-                                              {0, -1, 1, 0},
-                                              {1, 0, 0, -1}}};
-
-static std::array<Vector4i, 8> kFromOctant0 = {{{1, 0, 0, 1},
-                                                {0, 1, 1, 0},
-                                                {0, -1, 1, 0},
-                                                {-1, 0, 0, 1},
-                                                {-1, 0, 0, -1},
-                                                {0, -1, -1, 0},
-                                                {0, 1, -1, 0},
-                                                {1, 0, 0, -1}}};
-
-template <class IntType>
-static std::array<Vector2<IntType>, 8> kStepX = {
-    {{1, 0}, {0, 1}, {0, 1}, {-1, 0}, {-1, 0}, {0, -1}, {0, -1}, {1, 0}}};
-
-template <class IntType>
-static std::array<Vector2<IntType>, 8> kStepY = {
-    {{0, 1}, {1, 0}, {-1, 0}, {0, 1}, {0, -1}, {-1, 0}, {1, 0}, {0, -1}}};
-
 template <class Scalar>
 Vector2<Scalar> TransformToOctant0(uint8_t octant, const Vector2<Scalar>& vec) {
   Vector2<Scalar> vec_out;
-  const auto& tform = kToOctant0[octant];
+  const auto& tform = kToOctant0.col(octant);
   vec_out.x() = vec.x() * tform[0] + vec.y() * tform[1];
   vec_out.y() = vec.x() * tform[2] + vec.y() * tform[3];
   return vec_out;
@@ -47,34 +43,42 @@ template <class Scalar>
 Vector2<Scalar> TransformFromOctant0(uint8_t octant,
                                      const Vector2<Scalar>& vec) {
   Vector2<Scalar> vec_out;
-  const auto& tform = kFromOctant0[octant];
+  const auto& tform = kFromOctant0.col(octant);
   vec_out.x() = vec.x() * tform[0] + vec.y() * tform[1];
   vec_out.y() = vec.x() * tform[2] + vec.y() * tform[3];
   return vec_out;
 }
 
+/* >  >   >
+ *  \2|1/
+ *  3\|/0
+ *^--------^
+ *  4/|\7
+ *  /5|6\
+ * <  >  >
+ */
 template <class Scalar>
 uint8_t GetOctant(const Vector2<Scalar>& vec) {
-  if (vec.x() > 0) {
-    if (vec.y() > 0) {
-      if (vec.x() > vec.y()) {
+  if (vec.x() >= 0) {
+    if (vec.y() >= 0) {
+      if (vec.x() >= vec.y()) {
         return 0;
       } else {
         return 1;
       }
-    } else if (vec.x() > -vec.y()) {
+    } else if (vec.x() >= -vec.y()) {
       return 7;
     } else {
       return 6;
     }
   } else {
-    if (vec.y() > 0) {
+    if (vec.y() >= 0) {
       if (-vec.x() > vec.y()) {
         return 3;
       } else {
         return 2;
       }
-    } else if (-vec.x() > -vec.y()) {
+    } else if (-vec.x() >= -vec.y()) {
       return 4;
     } else {
       return 5;
@@ -96,8 +100,8 @@ void SubPixelBresenhamNormal(const Vector2d& pos, const Vector2d& vel,
   Vector2d end_pos_tf = pos_tf + vel_tf * dt;
   Vector2i end_pos_i = end_pos_tf.array().floor().matrix().cast<int>();
   int cells = (end_pos_i - pos_i).lpNorm<1>();
-  Vector2i x_step = kStepX<int>[octant];
-  Vector2i y_step = kStepY<int>[octant];
+  Vector2i x_step = kStepX<int>.col(octant);
+  Vector2i y_step = kStepY<int>.col(octant);
   Vector2d start_remainder = pos_tf - pos_i.cast<double>();
   pos_i = pos.cast<int>();
 
@@ -162,8 +166,8 @@ void DestructingBresenham(const Vector2d& pos, const Vector2d& vel,
   Vector2d end_pos_tf = pos_tf + vel_tf * dt;
   Vector2i end_pos_i = end_pos_tf.array().floor().matrix().cast<int>();
   int cells = (end_pos_i - pos_i).lpNorm<1>();
-  Vector2i x_step = kStepX<int>[octant];
-  Vector2i y_step = kStepY<int>[octant];
+  Vector2i x_step = kStepX<int>.col(octant);
+  Vector2i y_step = kStepY<int>.col(octant);
   Vector2d start_remainder = pos_tf - pos_i.cast<double>();
   pos_i = pos.cast<int>();
 
@@ -233,30 +237,40 @@ void BresenhamExperiment(const Vector2i& pos, const Vector2i& vel,
                          const int cell_size /* fixed point resolution */,
                          const double dt, const T& buffer, Vector2i* pos_out,
                          Vector2i* vel_out) {
-  uint8_t octant = GetOctant(vel);
-
-  // Always positive
-  Vector2i pos_tf = TransformToOctant0(octant, pos);
-  Vector2i vel_tf = TransformToOctant0(octant, vel);
-  Vector2i end_pos_tf = pos_tf + (vel_tf * dt).cast<int>();
-  Vector2i dist = end_pos_tf - pos_tf;
-  Vector2i start_remainder = pos_tf - (pos_tf / cell_size);
+  using CellType = typename T::Scalar;
   const Vector2i kHalfCell = Vector2i::Constant(cell_size / 2);
-  Vector2i end_remainder = end_pos_tf - (end_pos_tf / cell_size + kHalfCell);
+  // Signed integer division and floor
+  auto floor_div = [](int a, int b) {
+    int d = a / b;
+    int r = a % b;
+    return r ? (d - ((a < 0) ^ (b < 0))) : d;
+  };
 
-  // Convert to the low res grid:
-  // Because pos_tf is guaranteed to be positive, this rounds downwards
-  Vector2i dist_i = (end_pos_tf / cell_size - pos_tf / cell_size);
-  const int x_step_i = (dist_i.x() > 0 ? 1 : -1);
-  const int y_step_i = (dist_i.y() > 0 ? 1 : -1);
-  int num_cells = dist_i.x() + dist_i.y();
+  auto get_cell = [cell_size, &floor_div](const Vector2i& vec) -> Vector2i {
+    return vec.unaryExpr(
+        [&cell_size, &floor_div](int v) { return floor_div(v, cell_size); });
+  };
 
-  // Track the real world low-res position at each iteration.
-  Vector2i pos_i = pos / cell_size;
-  int error = dist.x() - dist.y() + start_remainder.x() - start_remainder.y();
+  // Hot spot
+  Vector2i end_pos = pos + (vel.cast<double>() * dt).cast<int>();
+  Vector2i delta = (end_pos - pos).cwiseAbs();
+  Vector2i step(pos.x() < end_pos.x() ? 1 : -1, pos.y() < end_pos.y() ? 1 : -1);
+  // Hot spot
+  Vector2i pos_i = get_cell(pos);
+  // Hot spot
+  Vector2i end_pos_i = get_cell(end_pos);
+  Vector2i delta_i = end_pos_i - pos_i;
+  Vector2i start_remainder = pos_i * cell_size + kHalfCell - pos;
+  start_remainder = start_remainder.cwiseProduct(step);
+  *vel_out = vel;
+
+  int error = delta.x() * start_remainder.y() - delta.y() * start_remainder.x();
+  Vector2i end_remainder = end_pos - end_pos_i * cell_size;
 
   auto is_on_buffer = [&buffer](int row, int col) -> bool {
-    return row >= 0 && col >= 0 && row < buffer.rows() && col < buffer.cols();
+    auto ans =
+        row >= 0 && col >= 0 && row < buffer.rows() && col < buffer.cols();
+    return ans;
   };
 
   if (!is_on_buffer(pos_i.y(), pos_i.x())) {
@@ -265,36 +279,40 @@ void BresenhamExperiment(const Vector2i& pos, const Vector2i& vel,
     return;
   }
 
-  while (num_cells > 0) {
-    if ((2 * error + dist.y()) > (dist.x() - 2 * error)) {
-      // Horizontal step
-      error -= dist.y();
-      pos_i.x() += x_step_i;
+  int num_cells = delta_i.lpNorm<1>();
+  delta *= cell_size;
 
+  while (num_cells > 0) {
+    const int error_horizontal = error - delta.y();
+    const int error_vertical = error + delta.x();
+    if (error_vertical > -error_horizontal) {
+      // Horizontal step
+      error = error_horizontal;
+      pos_i.x() += step.x();
       // Bounce horizontally
       const bool off_buffer = !is_on_buffer(pos_i.y(), pos_i.x());
       if (off_buffer || buffer(pos_i.y(), pos_i.x()) > CellType(0)) {
-        pos_i.x() -= x_step_i;
-        x_step_i *= -1;
-        octant = kOctantFlipOverY[octant];
+        pos_i.x() -= step.x();
+        step.x() *= -1;
+        vel_out->x() *= -1;
+        end_remainder.y() = cell_size - end_remainder.y();
       }
     } else {
       // Vertical step
-      error += dist.x();
-      pos_i.y() += y_step_i;
+      error = error_vertical;
+      pos_i.y() += step.y();
 
       // Bounce vertically
       const bool off_buffer = !is_on_buffer(pos_i.y(), pos_i.x());
       if (off_buffer || buffer(pos_i.y(), pos_i.x()) > CellType(0)) {
-        pos_i.y() -= y_step_i;
-        y_step_i *= -1;
-        octant = kOctantFlipOverX[octant];
+        pos_i.y() -= step.y();
+        end_remainder.x() = cell_size - end_remainder.x();
+        step.y() *= -1;
+        vel_out->y() *= -1;
       }
     }
     --num_cells;
   }
-
-  end_remainder = TransformFromOctant0(octant, end_remainder);
-  *pos_out = pos_i + kHalfCell + end_remainder;
-  *vel_out = TransformFromOctant0(octant, vel_tf);
+  // Hot spot
+  *pos_out = pos_i * cell_size + end_remainder;
 }
