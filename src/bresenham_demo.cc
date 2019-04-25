@@ -12,15 +12,21 @@
 
 DEFINE_int32(num_particles, 100, "Number of particles");
 
-void RenderParticle(const Vector2d& pos, Image<PixelType::RGBAU8>* data) {
+void RenderParticle(const Vector2u32& pos, Image<PixelType::RGBAU8>* data) {
+  auto get_cell = [](const Vector2u32& vec) -> Vector2i {
+    return vec.unaryExpr([](uint32_t v) -> int {
+      return static_cast<int>(GetLowRes<8>(v)) - kAnchor<uint32_t, 8>;
+    });
+  };
   // (x, y) -> (col, height - row)
-  Vector2i pos_i = pos.cast<int>();
+  Vector2i pos_i = get_cell(pos);
   (*data)(pos_i[1], pos_i[0]) = kParticleColor;
 }
 
 void Demo(int num_particles) {
   // Set up canvas
   const double kFps = 60.0;
+  const int cell_size = kCellSize<uint32_t, 8>;
   const Vector2i window_dims(800, 800);
   const Vector2i grid_dims = window_dims / 4;
   AnimatedCanvas canvas(window_dims[0], window_dims[1], grid_dims[0],
@@ -31,36 +37,33 @@ void Demo(int num_particles) {
   // Set up environment
   Image<uint8_t> environment(grid_dims[1], grid_dims[0]);
   environment.setConstant(0);
-  AddNoise(kWall, .2, &rand_gen, &environment);
   AddAllWalls(kWall, &environment);
 
   // Set up particles
-  AlignedBox<double, 4> particle_space;
-  {
-    particle_space.max() << 50, 50, 30, 30;
-    particle_space.min() << 50, 50, -30, -30;
-  }
-  std::vector<Vector4d> particles(num_particles);
+  auto dist = UniformRandomDistribution<int>(-30 * cell_size, 30 * cell_size);
+  std::vector<std::pair<Vector2u32, Vector2i>> particles(num_particles);
   for (int i = 0; i < num_particles; ++i) {
-    particles[i] = particle_space.sample();
+    particles[i].first =
+        Vector2u32::Constant(SetLowRes<8>(kAnchor<uint32_t, 8>));
+    particles[i].first += Vector2u32::Constant(50 * cell_size);
+    particles[i].second = Vector2i(dist(rand_gen), dist(rand_gen));
   }
 
-  Vector2d pos;
-  Vector2d vel;
+  Vector2u32 pos;
+  Vector2i vel;
   double dt = ToSeconds<double>(FromHz(kFps));
-  const double ddy = -9.81;
+  const double ddy = -9.81 * cell_size;
 
   bool done = false;
   auto* data = canvas.data();
   while (!done) {
     RenderEnvironment(environment, data);
     for (int i = 0; i < num_particles; ++i) {
-      DestructingBresenham(particles[i].segment<2>(0),
-                           particles[i].segment<2>(2), dt, 1.0, &environment,
-                           &pos, &vel);
-      particles[i].segment<2>(0) = pos;
-      particles[i].segment<2>(2) = vel;
-      particles[i][3] += dt * ddy;
+      BresenhamExperimentLowRes(particles[i].first, particles[i].second, dt,
+                                environment, &pos, &vel);
+      particles[i].first = pos;
+      particles[i].second = vel;
+      particles[i].second[1] += static_cast<int>(dt * ddy);
       RenderParticle(pos, data);
     }
     AddFpsText(canvas.fps(), text_color, data);

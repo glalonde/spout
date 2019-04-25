@@ -25,6 +25,7 @@ using Eigen::Vector2d;
 using Eigen::Vector2f;
 using Eigen::Vector2i;
 using Vector2u16 = Vector2<uint16_t>;
+using Vector2u32 = Vector2<uint32_t>;
 
 // 3-vector using Scalar
 template <class Scalar>

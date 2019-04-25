@@ -2,6 +2,7 @@
 #include <algorithm>
 #include "src/eigen_types.h"
 #include "src/image.h"
+#include "src/int_grid.h"
 
 static Eigen::Matrix<int, 4, 8> kToOctant0 =
     (Eigen::Matrix<int, 4, 8>() << 1, 0, 0, -1, -1, 0, 0, 1, 0, 1, 1, 0, 0, -1,
@@ -315,4 +316,94 @@ void BresenhamExperiment(const Vector2i& pos, const Vector2i& vel,
   }
   // Hot spot
   *pos_out = pos_i * cell_size + end_remainder;
+}
+
+template <class T>
+void BresenhamExperimentLowRes(const Vector2u32& pos, const Vector2i& vel,
+                               const double dt, const T& buffer,
+                               Vector2u32* pos_out, Vector2i* vel_out) {
+  using CellType = typename T::Scalar;
+
+  auto get_cell = [](const Vector2u32& vec) -> Vector2i {
+    return vec.unaryExpr([](uint32_t v) -> int {
+      return static_cast<int>(GetLowRes<8>(v)) - kAnchor<uint32_t, 8>;
+    });
+  };
+
+  auto get_remainder = [](const Vector2u32& vec) -> Vector2u32 {
+    return vec.unaryExpr(
+        [](uint32_t v) -> uint32_t { return GetHighRes<8>(v); });
+  };
+
+  Vector2i signed_delta = (vel.cast<double>() * dt).cast<int>();
+
+  Vector2u32 end_pos(static_cast<int>(pos.x()) + signed_delta.x(),
+                     static_cast<int>(pos.y()) + signed_delta.y());
+
+  Vector2i delta = signed_delta.cwiseAbs();
+  Vector2i step(signed_delta.x() > 0 ? 1 : -1, signed_delta.y() > 0 ? 1 : -1);
+  Vector2i pos_i = get_cell(pos);
+  Vector2i end_pos_i = get_cell(end_pos);
+  Vector2i delta_i = end_pos_i - pos_i;
+
+  Vector2i start_remainder =
+      Vector2u32::Constant(kHalfCell<uint32_t, 8>).template cast<int>() -
+      get_remainder(pos).template cast<int>();
+  start_remainder = start_remainder.cwiseProduct(step);
+  *vel_out = vel;
+
+  int error = delta.x() * start_remainder.y() - delta.y() * start_remainder.x();
+  Vector2i end_remainder = get_remainder(end_pos).template cast<int>();
+
+  auto is_on_buffer = [&buffer](int row, int col) -> bool {
+    auto ans =
+        row >= 0 && col >= 0 && row < buffer.rows() && col < buffer.cols();
+    return ans;
+  };
+
+  if (!is_on_buffer(pos_i.y(), pos_i.x())) {
+    *pos_out = pos;
+    *vel_out = vel;
+    return;
+  }
+
+  int num_cells = delta_i.lpNorm<1>();
+  delta *= kCellSize<uint32_t, 8>;
+
+  while (num_cells > 0) {
+    const int error_horizontal = error - delta.y();
+    const int error_vertical = error + delta.x();
+    if (error_vertical > -error_horizontal) {
+      // Horizontal step
+      error = error_horizontal;
+      pos_i.x() += step.x();
+      // Bounce horizontally
+      const bool off_buffer = !is_on_buffer(pos_i.y(), pos_i.x());
+      if (off_buffer || buffer(pos_i.y(), pos_i.x()) > CellType(0)) {
+        pos_i.x() -= step.x();
+        step.x() *= -1;
+        vel_out->x() *= -1;
+        end_remainder.y() = kCellSize<uint32_t, 8> - end_remainder.y();
+      }
+    } else {
+      // Vertical step
+      error = error_vertical;
+      pos_i.y() += step.y();
+
+      // Bounce vertically
+      const bool off_buffer = !is_on_buffer(pos_i.y(), pos_i.x());
+      if (off_buffer || buffer(pos_i.y(), pos_i.x()) > CellType(0)) {
+        pos_i.y() -= step.y();
+        end_remainder.x() = kCellSize<uint32_t, 8> - end_remainder.x();
+        step.y() *= -1;
+        vel_out->y() *= -1;
+      }
+    }
+    --num_cells;
+  }
+  *pos_out = pos_i.unaryExpr([](int v) -> uint32_t {
+    return SetLowRes<8>(static_cast<uint32_t>(v + kAnchor<uint32_t, 8>));
+  });
+  pos_out->x() += end_remainder.x();
+  pos_out->y() += end_remainder.y();
 }

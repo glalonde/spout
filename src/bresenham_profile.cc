@@ -11,6 +11,51 @@
 
 DEFINE_int32(num_particles, 100, "Number of particles");
 DEFINE_bool(floating_point, false, "Use floating point?");
+DEFINE_bool(low_res, false, "Use floating point?");
+
+void DemoLowResInteger(int num_particles) {
+  const double kFps = 60.0;
+  const int cell_size = kCellSize<uint32_t, 8>;
+  const Vector2i window_dims(800, 800);
+  const Vector2i grid_dims = window_dims / 4;
+
+  std::mt19937 rand_gen(0);
+
+  // Set up environment
+  Image<uint8_t> environment(grid_dims[1], grid_dims[0]);
+  environment.setConstant(0);
+  AddAllWalls(kWall, &environment);
+
+  // Set up particles
+  auto dist = UniformRandomDistribution<int>(-30 * cell_size, 30 * cell_size);
+  std::vector<std::pair<Vector2u32, Vector2i>> particles(num_particles);
+  for (int i = 0; i < num_particles; ++i) {
+    particles[i].first =
+        Vector2u32::Constant(SetLowRes<8>(kAnchor<uint32_t, 8>));
+    particles[i].first += Vector2u32::Constant(50 * cell_size);
+    particles[i].second = Vector2i(dist(rand_gen), dist(rand_gen));
+  }
+
+  Vector2u32 pos;
+  Vector2i vel;
+  double dt = ToSeconds<double>(FromHz(kFps));
+  const double ddy = -9.81 * cell_size;
+  WallTimer timer;
+  timer.Start();
+  ScopedProfiler prof;
+  int num_iters = 0;
+  while (timer.ElapsedDuration() < FromSeconds<double>(10.0)) {
+    for (int i = 0; i < num_particles; ++i) {
+      BresenhamExperimentLowRes(particles[i].first, particles[i].second, dt,
+                                environment, &pos, &vel);
+      particles[i].first = pos;
+      particles[i].second = vel;
+      particles[i].second[1] += static_cast<int>(dt * ddy);
+    }
+    ++num_iters;
+  }
+  LOG(INFO) << "Completed " << num_iters << " iterations.";
+}
 
 void DemoInteger(int num_particles) {
   const double kFps = 60.0;
@@ -100,6 +145,8 @@ int main(int argc, char** argv) {
   Init(argc, argv);
   if (FLAGS_floating_point) {
     DemoFloatingPoint(FLAGS_num_particles);
+  } else if (FLAGS_low_res) {
+    DemoLowResInteger(FLAGS_num_particles);
   } else {
     DemoInteger(FLAGS_num_particles);
   }

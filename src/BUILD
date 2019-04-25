@@ -148,6 +148,7 @@ cc_library(
     deps = [
         ":eigen_types",
         ":image",
+        ":int_grid",
         "//base:logging",
     ],
 )
@@ -202,6 +203,7 @@ cc_binary(
         ":convert",
         ":demo_utils",
         ":random",
+        ":int_grid",
         "//base:format",
         "//base:init",
         "//graphics:animated_canvas",
@@ -412,5 +414,21 @@ cc_binary(
         ":random",
         "//base",
         "@com_github_google_benchmark//:benchmark_main",
+    ],
+)
+
+cc_library(
+    name = "int_grid",
+    hdrs = ["int_grid.h"],
+    deps = [
+    ],
+)
+
+cc_test(
+    name = "int_grid_test",
+    srcs = ["int_grid_test.cc"],
+    deps = [
+        ":int_grid",
+        "//base:googletest",
     ],
 )

@@ -3,19 +3,25 @@
 
 #include "base/format.h"
 #include "base/init.h"
+#include "graphics/animated_canvas.h"
 #include "src/bresenham.h"
 #include "src/convert.h"
-#include "src/fonts/font_renderer.h"
-#include "graphics/animated_canvas.h"
-#include "src/random.h"
 #include "src/demo_utils.h"
+#include "src/fonts/font_renderer.h"
+#include "src/int_grid.h"
+#include "src/random.h"
 
 DEFINE_bool(run_demo, false, "run demo?");
 
-void RenderParticle(const Vector2i& pos, const int cell_size,
-                    Image<PixelType::RGBAU8>* data) {
+void RenderParticle(const Vector2u32& pos, Image<PixelType::RGBAU8>* data) {
+  auto get_cell = [](const Vector2u32& vec) -> Vector2i {
+    return vec.unaryExpr([](uint32_t v) -> int {
+      return static_cast<int>(GetLowRes<8>(v)) - kAnchor<uint32_t, 8>;
+    });
+  };
   // (x, y) -> (col, height - row)
-  Vector2i pos_i = pos / cell_size;
+  Vector2i pos_i = get_cell(pos);
+  LOG(INFO) << pos_i.transpose();
   (*data)(pos_i[1], pos_i[0]) = kParticleColor;
 }
 
@@ -29,19 +35,22 @@ void Demo() {
 
   std::mt19937 rand_gen(0);
 
-  const int kCellSize = 100;
+  const int cell_size = kCellSize<uint32_t, 8>;
   // Set up environment
   Image<uint8_t> environment(grid_dims[1], grid_dims[0]);
   environment.setConstant(0);
   AddAllWalls(kWall, &environment);
 
-  Vector4i particle = Vector4i::Zero();
-  particle.head<2>() = grid_dims / 2 * kCellSize;
-  particle.tail<2>().x() = 60.0 * kCellSize;
-  particle.tail<2>().y() = 32.0 * kCellSize;
+  Vector2u32 pos;
+  pos.x() =
+      SetLowRes<8>(kAnchor<uint32_t, 8>) + (grid_dims.x() / 2 * cell_size);
+  pos.y() =
+      SetLowRes<8>(kAnchor<uint32_t, 8>) + (grid_dims.y() / 2 * cell_size);
+  LOG(INFO) << "Starting position: " << pos.transpose();
+  Vector2i vel = Vector2i(-32, -60) * cell_size;
 
-  Vector2i pos;
-  Vector2i vel;
+  Vector2u32 pos_next;
+  Vector2i vel_next;
   double dt = ToSeconds<double>(FromHz(kFps));
   const double ddy = -9.81;
 
@@ -49,47 +58,18 @@ void Demo() {
   auto* data = canvas.data();
   while (!done) {
     RenderEnvironment(environment, data);
-    BresenhamExperiment(particle.segment<2>(0), particle.segment<2>(2),
-                        kCellSize, dt, environment, &pos, &vel);
-    particle.segment<2>(0) = pos;
-    particle.segment<2>(2) = vel;
+    BresenhamExperimentLowRes(pos, vel, dt, environment, &pos_next, &vel_next);
+    pos = pos_next;
+    vel = vel_next;
     // particle[3] += (dt * ddy * kCellSize);
-    RenderParticle(pos, kCellSize, data);
+    RenderParticle(pos, data);
     AddFpsText(canvas.fps(), text_color, data);
     done = canvas.Tick().quit;
   }
 }
 
-void Test() {
-  const int kCellSize = 100;
-  // Set up environment
-  Image<uint8_t> environment(100, 200);
-  environment.setConstant(0);
-
-  Vector4i particle = Vector4i::Zero();
-  particle.head<2>() =
-      Vector2i(0, 50) * kCellSize + Vector2i(kCellSize / 2, kCellSize / 2);
-
-  particle.tail<2>().x() = .06 * kCellSize;
-  particle.tail<2>().y() = -.16 * kCellSize;
-
-  auto step = [&]() {
-    LOG(INFO) << "STEPPPPPPPP";
-    LOG(INFO) << "Start: " << particle.transpose();
-    Vector2i pos;
-    Vector2i vel;
-    BresenhamExperiment(particle.segment<2>(0), particle.segment<2>(2),
-                        kCellSize, 1.0, environment, &pos, &vel);
-    particle.segment<2>(0) = pos;
-    particle.segment<2>(2) = vel;
-    LOG(INFO) << "End: " << particle.transpose();
-  };
-  step();
-}
-
 int main(int argc, char** argv) {
   Init(argc, argv);
-  Test();
   if (FLAGS_run_demo) {
     Demo();
   }
