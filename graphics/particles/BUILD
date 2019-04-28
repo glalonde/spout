@@ -29,5 +29,6 @@ cc_binary(
         "//src:controller_input",
         "//src:eigen_types",
         "//src:random",
+        "//src/color_maps",
     ],
 )

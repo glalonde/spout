@@ -4,6 +4,7 @@
 #include "graphics/check_opengl_errors.h"
 #include "graphics/load_shader.h"
 #include "graphics/opengl.h"
+#include "src/color_maps/color_maps.h"
 #include "src/controller_input.h"
 #include "src/eigen_types.h"
 #include "src/random.h"
@@ -42,6 +43,12 @@ class SDLContainer {
   void Render() {
     UpdateTexture();
     glUseProgram(render_program_);
+
+    // Bind in the color lookup table
+    glActiveTexture(GL_TEXTURE0 + 1);
+    glBindTexture(GL_TEXTURE_1D, color_lut_handle_);
+    // glBindSampler(1, linearFiltering);
+
     glBindVertexArray(vertex_array_);
     glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
     SDL_GL_SwapWindow(window_);
@@ -102,6 +109,7 @@ class SDLContainer {
 
     MakeParticleBuffer();
     MakeTexture();
+    MakeColorTable();
     InitComputeShader();
     InitRenderShader();
     LOG(INFO) << "Finished init";
@@ -203,6 +211,36 @@ class SDLContainer {
     CHECK(CheckGLErrors());
   }
 
+  // Make a color gradient texture to sample.
+  void MakeColorTable(const int n_steps = 256) {
+    // Make a uint32 texture to hold the counts of each particle in that
+    // position.
+    glGenTextures(1, &color_lut_handle_);
+    glActiveTexture(GL_TEXTURE1);  // Does this need to match the shader..?
+    glBindTexture(GL_TEXTURE_1D, color_lut_handle_);
+    glTexParameteri(GL_TEXTURE_1D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_1D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    const auto format = GL_RGB32F;
+
+    const ColorMap map = ColorMap::kParula;
+
+    // Eigen is column major by default meaning columns are stored contiguously,
+    // meaning we want each component of a given color on the same column.
+    MatrixXf out_tex(3, n_steps);
+    out_tex.setZero();
+
+    // Set the source data for our gradient texture.
+    CHECK_GE(n_steps, 2);
+    for (int i = 0; i < n_steps; ++i) {
+      const double p = static_cast<double>(i) / (n_steps - 1);
+      out_tex.col(i) = GetMappedColor3f(map, p);
+    }
+
+    glTexImage1D(GL_TEXTURE_1D, 0, format, n_steps, 0, GL_RGB, GL_FLOAT,
+                 out_tex.data());
+    CHECK(CheckGLErrors());
+  }
+
   void SetRandomPoints(const AlignedBox2f& sample_space,
                        Eigen::Map<Matrix<float, 2, Eigen::Dynamic>> data) {
     std::mt19937 gen(0);
@@ -249,6 +287,7 @@ class SDLContainer {
 
   // Convert particle data to a texture of particle counts
   GLuint tex_handle_;
+  GLuint color_lut_handle_;
   GLuint compute_program_;
 
   // Quad draw
