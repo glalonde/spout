@@ -48,5 +48,6 @@ cc_binary(
         "//src:eigen_types",
         "//src:random",
         "//src:int_grid",
+        "//src/color_maps",
     ],
 )

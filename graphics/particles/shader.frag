@@ -7,4 +7,7 @@ void main() {
   uint count = texture(in_texture, texture_coordinate).x;
   float color_coordinate = float(count) / 11.0;
   out_color = texture(in_color_map, color_coordinate).rgba;
+  if (count <= 0) {
+    out_color.a = 0;
+  }
 }
