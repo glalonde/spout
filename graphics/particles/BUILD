@@ -11,6 +11,7 @@ filegroup(
     name = "shaders",
     srcs = [
         "draw_particles.cs",
+        "bresenham.cs",
         "shader.frag",
         "shader.vert",
     ],
@@ -30,5 +31,22 @@ cc_binary(
         "//src:eigen_types",
         "//src:random",
         "//src/color_maps",
+    ],
+)
+
+cc_binary(
+    name = "particle_shader_test",
+    srcs = ["particle_shader_test.cc"],
+    data = [":shaders"],
+    deps = [
+        "//base:init",
+        "//base:wall_timer",
+        "//graphics:check_opengl_errors",
+        "//graphics:load_shader",
+        "//graphics:opengl",
+        "//src:controller_input",
+        "//src:eigen_types",
+        "//src:random",
+        "//src:int_grid",
     ],
 )
