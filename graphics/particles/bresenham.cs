@@ -28,9 +28,22 @@ void main() {
   uvec2 end_pos = p.position + signed_delta;
 
   uvec2 delta = abs(signed_delta);
-  ivec2 step = sign(signed_delta);
-  ivec2 cell;
-  GetCell(p.position, cell);
+  ivec2 step = ivec2(delta.x > 0 ? 1 : -1, delta.y > 0 ? 1 : -1);
+  ivec2 current_cell;
+  GetCell(p.position, current_cell);
+  ivec2 end_cell;
+  GetCell(end_pos, end_cell);
+  ivec2 delta_i = end_cell - current_cell;
+
+
+  int num_cells = abs(delta_i.x) + abs(delta_i.y);
+  while (num_cells > 0) {
+    current_cell += step;
+    --num_cells;
+  }
+
   particles[gid].position = end_pos;
-  imageAtomicAdd(counter_texture, cell, 1);
+
+  // Draw to the density texture
+  imageAtomicAdd(counter_texture, current_cell, 1);
 }

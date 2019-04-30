@@ -47,6 +47,8 @@ class SDLContainer {
   }
 
   void Render(float dt) {
+    WallTimer timer;
+    timer.Start();
     // Update particle state, and compute particle density map
     ClearCounterTexture();
     UpdateTexture(dt);
@@ -64,7 +66,7 @@ class SDLContainer {
 
     SDL_GL_SwapWindow(window_);
     CHECK(CheckGLErrors());
-    ReadParticleBuffer();
+    // ReadParticleBuffer();
   }
 
   void UpdateInput(ControllerInput* input) {
@@ -84,11 +86,6 @@ class SDLContainer {
     Eigen::Map<Vector<IntParticle, Eigen::Dynamic>> points(
         reinterpret_cast<IntParticle*>(buffer_ptr), num_particles_);
     CHECK(CheckGLErrors());
-    auto get_cell = [](const Vector2u32& vec) -> Vector2i {
-      return vec.unaryExpr([](uint32_t v) -> int {
-        return static_cast<int>(GetLowRes<8>(v)) - kAnchor<uint32_t, 8>;
-      });
-    };
     glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
     CHECK(CheckGLErrors());
   }
@@ -247,6 +244,8 @@ class SDLContainer {
     glBindTexture(GL_TEXTURE_1D, color_lut_handle_);
     glTexParameteri(GL_TEXTURE_1D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_1D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_1D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+
     const auto format = GL_RGB32F;
 
     const ColorMap map = ColorMap::kParula;
@@ -271,20 +270,12 @@ class SDLContainer {
   void SetRandomPoints(Eigen::Map<Vector<IntParticle, Eigen::Dynamic>> data) {
     std::mt19937 gen(0);
     const int cell_size = kCellSize<uint32_t, 8>;
-    auto dist =
-        UniformRandomDistribution<int>(-120 * cell_size, 120 * cell_size);
+    auto dist = UniformRandomDistribution<int>(-10 * cell_size, 10 * cell_size);
     for (int i = 0; i < num_particles_; ++i) {
       data[i].position =
           Vector2u32::Constant(SetLowRes<8>(kAnchor<uint32_t, 8>));
-      data[i].position += Vector2u32::Constant(75 * cell_size);
+      data[i].position += ((grid_dims_ * cell_size) / 2).cast<uint32_t>();
       data[i].velocity = Vector2i(dist(gen), dist(gen));
-      auto get_cell = [](const Vector2u32& vec) -> Vector2i {
-        return vec.unaryExpr([](uint32_t v) -> int {
-          return static_cast<int>(GetLowRes<8>(v)) - kAnchor<uint32_t, 8>;
-        });
-      };
-      LOG(INFO) << "init: " << i << ", "
-                << get_cell(data[i].position).transpose();
     }
   }
 
