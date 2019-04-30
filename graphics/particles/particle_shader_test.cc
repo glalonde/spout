@@ -9,12 +9,16 @@
 #include "src/eigen_types.h"
 #include "src/int_grid.h"
 #include "src/random.h"
+#include "src/image.h"
+#include "src/bresenham.h"
 
 DEFINE_int32(num_particles, 512, "Number of particles");
+DEFINE_bool(debug, false, "Debug mode");
 
 struct IntParticle {
   Vector2<uint32_t> position;
   Vector2<int32_t> velocity;
+  Vector2<int32_t> debug;
 };
 
 class SDLContainer {
@@ -75,7 +79,7 @@ class SDLContainer {
     }
   }
 
-  void ReadParticleBuffer() {
+  Vector<IntParticle, Eigen::Dynamic> ReadParticleBuffer() {
     CHECK(CheckGLErrors());
     const int buffer_size = num_particles_ * (sizeof(IntParticle));
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, particle_ssbo_);
@@ -85,9 +89,11 @@ class SDLContainer {
     CHECK(CheckGLErrors());
     Eigen::Map<Vector<IntParticle, Eigen::Dynamic>> points(
         reinterpret_cast<IntParticle*>(buffer_ptr), num_particles_);
+    Vector<IntParticle, Eigen::Dynamic> copied = points;
     CHECK(CheckGLErrors());
     glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
     CHECK(CheckGLErrors());
+    return copied;
   }
 
  private:
@@ -275,7 +281,7 @@ class SDLContainer {
       data[i].position =
           Vector2u32::Constant(SetLowRes<8>(kAnchor<uint32_t, 8>));
       data[i].position += ((grid_dims_ * cell_size) / 2).cast<uint32_t>();
-      data[i].velocity = Vector2i(dist(gen), dist(gen));
+      data[i].velocity = Vector2i(dist(gen), 0);
     }
   }
 
@@ -327,8 +333,42 @@ class SDLContainer {
   GLuint element_buffer_;
 };
 
-int main(int argc, char* argv[]) {
-  Init(argc, argv);
+void Test1() {
+  Vector2i grid_dims = {100, 100}; // Rows, cols
+  SDLContainer sdl(600, 600, grid_dims, 1);
+  Image<uint8_t> environment(grid_dims[0], grid_dims[1]);
+  environment.setConstant(0);
+  const float dt = 1.0;
+  auto log_particle = [&](const IntParticle& p) {
+    auto get_cell = [](const Vector2u32& vec) -> Vector2i {
+      return vec.unaryExpr([](uint32_t v) -> int {
+        return static_cast<int>(GetLowRes<8>(v)) - kAnchor<uint32_t, 8>;
+      });
+    };
+    LOG(INFO) << "Position: " << p.position.transpose() << ", Velocity: " << p.velocity.transpose();
+    LOG(INFO) << "Cell: " << get_cell(p.position).transpose();
+    LOG(INFO) << "Debug: " << p.debug.transpose();
+
+    IntParticle next;
+    BresenhamExperimentLowRes(p.position, p.velocity, static_cast<double>(dt),
+                              environment, &next.position, &next.velocity);
+  };
+
+  ControllerInput input;
+  Vector<IntParticle, Eigen::Dynamic> points1 = sdl.ReadParticleBuffer();
+
+  log_particle(points1[0]);
+  sdl.UpdateInput(&input);
+  sdl.Render(dt);
+  Vector<IntParticle, Eigen::Dynamic> points2 = sdl.ReadParticleBuffer();
+  log_particle(points2[0]);
+  sdl.UpdateInput(&input);
+  sdl.Render(dt);
+  Vector<IntParticle, Eigen::Dynamic> points3 = sdl.ReadParticleBuffer();
+  log_particle(points3[0]);
+}
+
+void TestLoop() {
   SDLContainer sdl(600, 600, {100, 100}, FLAGS_num_particles);
   ControllerInput input;
   TimePoint previous = ClockType::now();
@@ -339,5 +379,15 @@ int main(int argc, char* argv[]) {
     sdl.Render(dt);
     previous = current;
   }
+}
+
+int main(int argc, char* argv[]) {
+  Init(argc, argv);
+  if (FLAGS_debug) {
+    Test1();
+  } else {
+    TestLoop();
+  }
+
   return 0;
 }

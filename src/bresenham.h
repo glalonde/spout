@@ -401,6 +401,9 @@ void BresenhamExperimentLowRes(const Vector2u32& pos, const Vector2i& vel,
     }
     --num_cells;
   }
+
+  CHECK_EQ(end_pos_i, pos_i);
+
   *pos_out = pos_i.unaryExpr([](int v) -> uint32_t {
     return SetLowRes<8>(static_cast<uint32_t>(v + kAnchor<uint32_t, 8>));
   });

@@ -46,6 +46,7 @@ cc_binary(
         "//graphics:opengl",
         "//src:controller_input",
         "//src:eigen_types",
+        "//src:bresenham",
         "//src:random",
         "//src:int_grid",
         "//src/color_maps",
