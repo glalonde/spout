@@ -4,13 +4,13 @@
 #include "graphics/check_opengl_errors.h"
 #include "graphics/load_shader.h"
 #include "graphics/opengl.h"
-#include "src/bresenham.h"
 #include "src/color_maps/color_maps.h"
 #include "src/controller_input.h"
 #include "src/eigen_types.h"
-#include "src/image.h"
 #include "src/int_grid.h"
 #include "src/random.h"
+#include "src/image.h"
+#include "src/bresenham.h"
 #include "src/so2.h"
 
 DEFINE_int32(num_particles, 512, "Number of particles");
@@ -23,20 +23,32 @@ struct IntParticle {
   Vector2<int32_t> debug;
 };
 
-class SDLContainer {
+class ParticleSim {
  public:
-  SDLContainer(int window_width, int window_height, const Vector2i& grid_dims,
-               int num_particles)
+  ParticleSim(int window_width, int window_height, int grid_width,
+              int grid_height, int num_particles)
       : window_size_(window_width, window_height),
-        grid_dims_(grid_dims),
+        grid_dims_(grid_width, grid_height),
         num_particles_(num_particles) {
     Init();
   }
 
-  ~SDLContainer() {
+  ~ParticleSim() {
     SDL_GL_DeleteContext(gl_context_);
     SDL_DestroyWindow(window_);
     SDL_Quit();
+  }
+
+  bool IsFullScreen() {
+    return SDL_GetWindowFlags(window_) & SDL_WINDOW_FULLSCREEN_DESKTOP;
+  }
+
+  void ToggleFullScreen() {
+    if (IsFullScreen()) {
+      SDL_SetWindowFullscreen(window_, 0);
+    } else {
+      SDL_SetWindowFullscreen(window_, SDL_WINDOW_FULLSCREEN_DESKTOP);
+    }
   }
 
   void UpdateTexture(float dt) {
@@ -46,9 +58,9 @@ class SDLContainer {
     glUniform1i(glGetUniformLocation(particle_program_, "anchor"),
                 kAnchor<uint32_t, 8>);
     glUniform1i(glGetUniformLocation(particle_program_, "buffer_width"),
-                grid_dims_[1]);
-    glUniform1i(glGetUniformLocation(particle_program_, "buffer_height"),
                 grid_dims_[0]);
+    glUniform1i(glGetUniformLocation(particle_program_, "buffer_height"),
+                grid_dims_[1]);
     const int group_size = std::min(num_particles_, 512);
     const int num_groups = num_particles_ / group_size;
     glad_glDispatchComputeGroupSizeARB(num_groups, 1, 1, group_size, 1, 1);
@@ -105,8 +117,7 @@ class SDLContainer {
  private:
   void Init() {
     SDL_Init(SDL_INIT_EVERYTHING);
-    uint32_t window_flags =
-        SDL_WINDOW_SHOWN | SDL_WINDOW_OPENGL | SDL_WINDOW_BORDERLESS;
+    uint32_t window_flags = SDL_WINDOW_SHOWN | SDL_WINDOW_OPENGL;
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK,
                         SDL_GL_CONTEXT_PROFILE_CORE);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 4);
@@ -234,10 +245,10 @@ class SDLContainer {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     const auto format = GL_R32UI;
-    Matrix<uint32_t, Eigen::Dynamic, Eigen::Dynamic> out_tex(grid_dims_.x(),
-                                                             grid_dims_.y());
+    Matrix<uint32_t, Eigen::Dynamic, Eigen::Dynamic> out_tex(grid_dims_[1],
+                                                             grid_dims_[0]);
     out_tex.setZero();
-    glTexImage2D(GL_TEXTURE_2D, 0, format, grid_dims_.x(), grid_dims_.y(), 0,
+    glTexImage2D(GL_TEXTURE_2D, 0, format, grid_dims_[0], grid_dims_[1], 0,
                  GL_RED_INTEGER, GL_UNSIGNED_INT, out_tex.data());
     CHECK(CheckGLErrors());
 
@@ -343,9 +354,8 @@ class SDLContainer {
 };
 
 void Test1() {
-  Vector2i grid_dims = {100, 100}; // Rows, cols
-  SDLContainer sdl(600, 600, grid_dims, 1);
-  Image<uint8_t> environment(grid_dims[0], grid_dims[1]);
+  ParticleSim sdl(600, 600, 100, 100, 1);
+  Image<uint8_t> environment(100, 100);
   environment.setConstant(0);
   const float dt = 1.0;
   auto log_particle = [&](const IntParticle& p) {
@@ -378,7 +388,7 @@ void Test1() {
 }
 
 void TestLoop() {
-  SDLContainer sdl(1440, 1280, {144, 128}, FLAGS_num_particles);
+  ParticleSim sdl(1440, 900, 144, 90, FLAGS_num_particles);
   ControllerInput input;
   TimePoint previous = ClockType::now();
   while (!input.quit) {

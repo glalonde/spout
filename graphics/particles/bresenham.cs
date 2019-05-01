@@ -25,7 +25,7 @@ ivec2 GetCell(in uvec2 pos) {
 }
 
 uvec2 SetPosition(in uvec2 low_res, in uvec2 high_res) {
-  return low_res << kMantissaBits + high_res;
+  return (low_res << kMantissaBits) + high_res;
 }
 
 uvec2 GetRemainder(in uvec2 pos) {
@@ -99,10 +99,9 @@ void main() {
     --num_cells;
   }
 
-  particles[gid].position =
-      SetPosition(uvec2(current_cell + anchor), uvec2(end_remainder));
+  particles[gid].position = SetPosition(uvec2(current_cell + anchor), uvec2(end_remainder));
   particles[gid].velocity = vel_out;
-  particles[gid].debug = end_cell - current_cell;
+  particles[gid].debug = ivec2(end_pos) - ivec2(particles[gid].position);
 
   // Draw to the density texture
   imageAtomicAdd(counter_texture, current_cell, 1);
