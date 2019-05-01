@@ -1,6 +1,7 @@
 #include <array>
 #include "base/init.h"
 #include "base/wall_timer.h"
+#include "base/format.h"
 #include "graphics/check_opengl_errors.h"
 #include "graphics/load_shader.h"
 #include "graphics/opengl.h"
@@ -10,6 +11,7 @@
 #include "src/int_grid.h"
 #include "src/random.h"
 #include "src/image.h"
+#include "src/demo_utils.h"
 #include "src/bresenham.h"
 #include "src/so2.h"
 
@@ -61,7 +63,7 @@ class ParticleSim {
   void UpdateSimulation(float dt) {
     // Clear the density counter texture
     uint32_t clear_color = 0;
-    glClearTexImage(tex_handle_, 0, GL_RED_INTEGER, GL_UNSIGNED_INT,
+    glClearTexImage(particle_tex_handle_, 0, GL_RED_INTEGER, GL_UNSIGNED_INT,
                     &clear_color);
     CHECK(CheckGLErrors());
     // Update particle states
@@ -85,12 +87,41 @@ class ParticleSim {
     glClearColor(0.0, 0.0, 0.0, 1.0);
     glClear(GL_COLOR_BUFFER_BIT);
     glUseProgram(render_program_);
-    // Bind in the color lookup table.
-    glActiveTexture(GL_TEXTURE0 + 1);
-    glBindTexture(GL_TEXTURE_1D, color_lut_handle_);
     glBindVertexArray(vertex_array_);
-    // Draw the density map
-    glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
+
+    // Draw the terrain
+    {
+      glUniform1i(glGetUniformLocation(render_program_, "min_value"), 0);
+      glUniform1i(glGetUniformLocation(render_program_, "max_value"), 255);
+
+      // Active the color texture in unit 0
+      glActiveTexture(GL_TEXTURE0);
+      glBindTexture(GL_TEXTURE_1D, terrain_color_handle_);
+
+      // Activate the density texture in unit 1
+      glActiveTexture(GL_TEXTURE1);
+      glBindTexture(GL_TEXTURE_2D, terrain_tex_handle_);
+
+      // Draw the density map
+      glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
+    }
+
+    // Draw the particles 
+    {
+      glUniform1i(glGetUniformLocation(render_program_, "min_value"), 0);
+      glUniform1i(glGetUniformLocation(render_program_, "max_value"), 15);
+      // Active the color texture in unit 0
+      glActiveTexture(GL_TEXTURE0);
+      glBindTexture(GL_TEXTURE_1D, particle_color_handle_);
+
+      // Activate the density texture in unit 1
+      glActiveTexture(GL_TEXTURE1);
+      glBindTexture(GL_TEXTURE_2D, particle_tex_handle_);
+
+      // Draw the density map
+      glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
+    }
+
     SDL_GL_SwapWindow(window_);
     CHECK(CheckGLErrors());
     SDL_GL_SwapWindow(window_);
@@ -152,12 +183,24 @@ class ParticleSim {
     SDL_GL_SetSwapInterval(1);
     SDL_ShowCursor(0);
 
+    std::mt19937 rando(0);
+    Image<uint8_t> level_buffer(grid_dims_.y(), grid_dims_.x());
+    level_buffer.setZero();
+    MakeLevel(&rando, &level_buffer);
+
     MakeParticleBuffer();
-    MakeTexture();
-    MakeColorTable();
+    MakeTerrainTexture(level_buffer);
+    MakeDensityTexture();
+    MakeParticleColorTable();
+    MakeTerrainColorTable();
     InitComputeShader();
     InitRenderShader();
     LOG(INFO) << "Finished init";
+  }
+
+  void MakeLevel(std::mt19937* gen, Image<uint8_t>* level_buffer) {
+    AddNoise(kWall, .2, gen, level_buffer);
+    AddAllWalls(kWall, level_buffer);
   }
 
   void UpdateWindowState(const SDL_Event& event) {
@@ -194,7 +237,7 @@ class ParticleSim {
     GLuint vert =
         LoadShader("graphics/particles/shader.vert", GL_VERTEX_SHADER);
     GLuint frag =
-        LoadShader("graphics/particles/shader.frag", GL_FRAGMENT_SHADER);
+        LoadShader("graphics/particles/color_map_texture.frag", GL_FRAGMENT_SHADER);
     glAttachShader(render_program_, vert);
     glAttachShader(render_program_, frag);
     CHECK(CheckGLErrors());
@@ -260,18 +303,13 @@ class ParticleSim {
     glEnable(GL_BLEND);
   }
 
-  void ClearCounterTexture() {
-
-  }
-
-  void MakeTexture() {
+  void MakeDensityTexture() {
     // Make a uint32 texture to hold the counts of each particle in that
     // position.
-    glGenTextures(1, &tex_handle_);
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, tex_handle_);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glGenTextures(1, &particle_tex_handle_);
+    glBindTexture(GL_TEXTURE_2D, particle_tex_handle_);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     const auto format = GL_R32UI;
     Matrix<uint32_t, Eigen::Dynamic, Eigen::Dynamic> out_tex(grid_dims_[1],
                                                              grid_dims_[0]);
@@ -282,17 +320,36 @@ class ParticleSim {
 
     // Because we're also using this tex as an image (in order to write to it),
     // we bind it to an image unit as well
-    glBindImageTexture(0, tex_handle_, 0, GL_FALSE, 0, GL_WRITE_ONLY, format);
+    glBindImageTexture(0, particle_tex_handle_, 0, GL_FALSE, 0, GL_WRITE_ONLY, format);
+    CHECK(CheckGLErrors());
+  }
+
+  void MakeTerrainTexture(const Image<uint8_t>& terrain_data) {
+    // Make a texture to represent the terrain state at each grid cell
+    glGenTextures(1, &terrain_tex_handle_);
+    glBindTexture(GL_TEXTURE_2D, terrain_tex_handle_);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    const auto format = GL_R8UI;
+    CHECK_EQ(terrain_data.rows(), grid_dims_.y());
+    CHECK_EQ(terrain_data.cols(), grid_dims_.x());
+    glTexImage2D(GL_TEXTURE_2D, 0, format, grid_dims_[0], grid_dims_[1], 0,
+                 GL_RED_INTEGER, GL_UNSIGNED_BYTE, terrain_data.data());
+    CHECK(CheckGLErrors());
+
+    // Because we're also using this tex as an image (in order to write to it),
+    // we bind it to an image unit as well
+    glBindImageTexture(1, terrain_tex_handle_, 0, GL_FALSE, 0, GL_READ_WRITE,
+                       format);
     CHECK(CheckGLErrors());
   }
 
   // Make a color gradient texture to sample.
-  void MakeColorTable(const int n_steps = 256) {
+  void MakeParticleColorTable(const int n_steps = 256) {
     // Make a uint32 texture to hold the counts of each particle in that
     // position.
-    glGenTextures(1, &color_lut_handle_);
-    glActiveTexture(GL_TEXTURE1);  // Does this need to match the shader..?
-    glBindTexture(GL_TEXTURE_1D, color_lut_handle_);
+    glGenTextures(1, &particle_color_handle_);
+    glBindTexture(GL_TEXTURE_1D, particle_color_handle_);
     glTexParameteri(GL_TEXTURE_1D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_1D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_1D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
@@ -310,6 +367,37 @@ class ParticleSim {
     CHECK_GE(n_steps, 2);
     for (int i = 0; i < n_steps; ++i) {
       const double p = static_cast<double>(i) / (n_steps - 1);
+      out_tex.col(i) = GetMappedColor3f(map, p);
+    }
+
+    glTexImage1D(GL_TEXTURE_1D, 0, format, n_steps, 0, GL_RGB, GL_FLOAT,
+                 out_tex.data());
+    CHECK(CheckGLErrors());
+  }
+
+  // Make a color gradient texture to sample.
+  void MakeTerrainColorTable(const int n_steps = 256) {
+    // Make a uint32 texture to hold the counts of each particle in that
+    // position.
+    glGenTextures(1, &terrain_color_handle_);
+    glBindTexture(GL_TEXTURE_1D, terrain_color_handle_);
+    glTexParameteri(GL_TEXTURE_1D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_1D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_1D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+
+    const auto format = GL_RGB32F;
+
+    const ColorMap map = ColorMap::kPlasma;
+
+    // Eigen is column major by default meaning columns are stored contiguously,
+    // meaning we want each component of a given color on the same column.
+    MatrixXf out_tex(3, n_steps);
+    out_tex.setZero();
+
+    // Set the source data for our gradient texture.
+    CHECK_GE(n_steps, 2);
+    for (int i = 0; i < n_steps; ++i) {
+      const double p = 1.0 - static_cast<double>(i) / (n_steps - 1);
       out_tex.col(i) = GetMappedColor3f(map, p);
     }
 
@@ -371,8 +459,10 @@ class ParticleSim {
   GLuint particle_program_;
 
   // Convert particle data to a texture of particle counts
-  GLuint tex_handle_;
-  GLuint color_lut_handle_;
+  GLuint particle_tex_handle_;
+  GLuint particle_color_handle_;
+  GLuint terrain_color_handle_;
+  GLuint terrain_tex_handle_;
 
   // Quad draw
   GLuint render_program_;
