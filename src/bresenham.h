@@ -322,6 +322,9 @@ template <class T>
 void BresenhamExperimentLowRes(const Vector2u32& pos, const Vector2i& vel,
                                const double dt, const T& buffer,
                                Vector2u32* pos_out, Vector2i* vel_out) {
+  LOG(INFO) << pos.transpose();
+  LOG(INFO) << vel.transpose();
+  LOG(INFO) << dt;
   using CellType = typename T::Scalar;
 
   auto get_cell = [](const Vector2u32& vec) -> Vector2i {
@@ -341,7 +344,7 @@ void BresenhamExperimentLowRes(const Vector2u32& pos, const Vector2i& vel,
                      static_cast<int>(pos.y()) + signed_delta.y());
 
   Vector2i delta = signed_delta.cwiseAbs();
-  Vector2i step(signed_delta.x() > 0 ? 1 : -1, signed_delta.y() > 0 ? 1 : -1);
+  Vector2i step(signed_delta.x() >= 0 ? 1 : -1, signed_delta.y() >= 0 ? 1 : -1);
   Vector2i pos_i = get_cell(pos);
   Vector2i end_pos_i = get_cell(end_pos);
   Vector2i delta_i = end_pos_i - pos_i;
@@ -403,6 +406,7 @@ void BresenhamExperimentLowRes(const Vector2u32& pos, const Vector2i& vel,
   }
 
   CHECK_EQ(end_pos_i, pos_i);
+  LOG(INFO) << end_pos_i.transpose() << ", " << pos_i.transpose();
 
   *pos_out = pos_i.unaryExpr([](int v) -> uint32_t {
     return SetLowRes<8>(static_cast<uint32_t>(v + kAnchor<uint32_t, 8>));

@@ -71,4 +71,20 @@ GTEST_TEST(BresenhamTest, SmokeVis) {
   }
 }
 
+GTEST_TEST(BresenhamTest, LowRes) {
+  Vector2i grid_dims = {100, 100};  // Rows, cols
+  Image<uint8_t> environment(grid_dims[0], grid_dims[1]);
+  environment.setConstant(0);
+  const double dt = 1.0;
+  Vector2u32 pos(2147496192, 2147496192);
+  Vector2i vel(250, 0);
+  Vector2u32 next_pos;
+  Vector2i next_vel;
+  for (int i = 0; i < 3; ++i) {
+    BresenhamExperimentLowRes(pos, vel, dt, environment, &next_pos, &next_vel);
+    pos = next_pos;
+    vel = next_vel;
+  }
+}
+
 GTEST_MAIN();

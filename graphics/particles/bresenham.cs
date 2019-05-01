@@ -2,6 +2,8 @@
 #extension GL_ARB_compute_variable_group_size : enable
 layout(location = 0) uniform float dt;
 layout(location = 1) uniform int anchor;
+layout(location = 2) uniform int buffer_width;
+layout(location = 3) uniform int buffer_height;
 layout(binding = 0, r32ui) uniform uimage2D counter_texture;
 
 const uint kMantissaBits = 8;
@@ -22,9 +24,18 @@ ivec2 GetCell(in uvec2 pos) {
   return ivec2(pos >> kMantissaBits) - anchor;
 }
 
+uvec2 SetPosition(in uvec2 low_res, in uvec2 high_res) {
+  return low_res << kMantissaBits + high_res;
+}
+
 uvec2 GetRemainder(in uvec2 pos) {
   const uint kHighResMask = (1 << kMantissaBits) - 1;
   return pos & kHighResMask;
+}
+
+bool OnBuffer(in ivec2 cell) {
+  return cell.x >= 0 && cell.y >= 0 && cell.x < buffer_width &&
+         cell.y < buffer_height;
 }
 
 layout(local_size_variable) in;
@@ -35,7 +46,8 @@ void main() {
   uvec2 end_pos = p.position + signed_delta;
 
   ivec2 delta = abs(signed_delta);
-  ivec2 step = ivec2(signed_delta.x > 0 ? 1 : -1, signed_delta.y > 0 ? 1 : -1);
+  ivec2 step =
+      ivec2(signed_delta.x >= 0 ? 1 : -1, signed_delta.y >= 0 ? 1 : -1);
   ivec2 current_cell = GetCell(p.position);
   ivec2 end_cell = GetCell(end_pos);
   ivec2 delta_i = end_cell - current_cell;
@@ -43,12 +55,18 @@ void main() {
   // Starting cell remainder:
   ivec2 start_remainder = ivec2(kHalfCellSize, kHalfCellSize) - ivec2(GetRemainder(p.position));
   start_remainder *= step;
+  ivec2 end_remainder = ivec2(GetRemainder(end_pos));
 
   // Error value
   int error = delta.x * start_remainder.y - delta.y * start_remainder.x;
   delta *= int(kCellSize);
 
+  // Update velocity
+  ivec2 vel_out = p.velocity;
+
+  int debug_max_cells = 20;
   int num_cells = abs(delta_i.x) + abs(delta_i.y);
+  num_cells = min(num_cells, debug_max_cells);
   while (num_cells > 0) {
     int error_horizontal = error - delta.y;
     int error_vertical = error + delta.x;
@@ -57,17 +75,33 @@ void main() {
       error = error_horizontal;
       current_cell.x += step.x;
       // Check cell
+      const bool off_buffer = !OnBuffer(current_cell);
+      if (off_buffer) {
+        // Bounce horizontally
+        current_cell.x -= step.x;
+        vel_out.x *= -1;
+        end_remainder.y = int(kCellSize) - end_remainder.y;
+      }
     } else {
       // Vertical step
       error = error_vertical;
       current_cell.y += step.y;
       // Check cell
+      const bool off_buffer = !OnBuffer(current_cell);
+      if (off_buffer) {
+        // Bounce vertically 
+        current_cell.y -= step.y;
+        vel_out.y *= -1;
+        end_remainder.x = int(kCellSize) - end_remainder.x;
+      }
     }
 
     --num_cells;
   }
 
-  particles[gid].position = end_pos;
+  particles[gid].position =
+      SetPosition(uvec2(current_cell + anchor), uvec2(end_remainder));
+  particles[gid].velocity = vel_out;
   particles[gid].debug = end_cell - current_cell;
 
   // Draw to the density texture

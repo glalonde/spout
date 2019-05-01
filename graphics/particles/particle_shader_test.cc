@@ -4,16 +4,18 @@
 #include "graphics/check_opengl_errors.h"
 #include "graphics/load_shader.h"
 #include "graphics/opengl.h"
+#include "src/bresenham.h"
 #include "src/color_maps/color_maps.h"
 #include "src/controller_input.h"
 #include "src/eigen_types.h"
+#include "src/image.h"
 #include "src/int_grid.h"
 #include "src/random.h"
-#include "src/image.h"
-#include "src/bresenham.h"
+#include "src/so2.h"
 
 DEFINE_int32(num_particles, 512, "Number of particles");
 DEFINE_bool(debug, false, "Debug mode");
+DEFINE_int32(color_map_index, 0, "Color map index, see color_maps.h");
 
 struct IntParticle {
   Vector2<uint32_t> position;
@@ -43,6 +45,10 @@ class SDLContainer {
     glUniform1f(glGetUniformLocation(particle_program_, "dt"), dt);
     glUniform1i(glGetUniformLocation(particle_program_, "anchor"),
                 kAnchor<uint32_t, 8>);
+    glUniform1i(glGetUniformLocation(particle_program_, "buffer_width"),
+                grid_dims_[1]);
+    glUniform1i(glGetUniformLocation(particle_program_, "buffer_height"),
+                grid_dims_[0]);
     const int group_size = std::min(num_particles_, 512);
     const int num_groups = num_particles_ / group_size;
     glad_glDispatchComputeGroupSizeARB(num_groups, 1, 1, group_size, 1, 1);
@@ -254,7 +260,7 @@ class SDLContainer {
 
     const auto format = GL_RGB32F;
 
-    const ColorMap map = ColorMap::kParula;
+    const ColorMap map = kAllColorMaps[FLAGS_color_map_index];
 
     // Eigen is column major by default meaning columns are stored contiguously,
     // meaning we want each component of a given color on the same column.
@@ -276,12 +282,15 @@ class SDLContainer {
   void SetRandomPoints(Eigen::Map<Vector<IntParticle, Eigen::Dynamic>> data) {
     std::mt19937 gen(0);
     const int cell_size = kCellSize<uint32_t, 8>;
-    auto dist = UniformRandomDistribution<int>(-10 * cell_size, 10 * cell_size);
+    auto magnitude_dist =
+        UniformRandomDistribution<double>(-10 * cell_size, 10 * cell_size);
+    auto angle_dist = UniformRandomDistribution<double>(-M_PI, M_PI);
     for (int i = 0; i < num_particles_; ++i) {
       data[i].position =
           Vector2u32::Constant(SetLowRes<8>(kAnchor<uint32_t, 8>));
       data[i].position += ((grid_dims_ * cell_size) / 2).cast<uint32_t>();
-      data[i].velocity = Vector2i(dist(gen), 0);
+      data[i].velocity =
+          (SO2d(angle_dist(gen)).data() * magnitude_dist(gen)).cast<int>();
     }
   }
 
@@ -369,7 +378,7 @@ void Test1() {
 }
 
 void TestLoop() {
-  SDLContainer sdl(600, 600, {100, 100}, FLAGS_num_particles);
+  SDLContainer sdl(1440, 1280, {144, 128}, FLAGS_num_particles);
   ControllerInput input;
   TimePoint previous = ClockType::now();
   while (!input.quit) {

@@ -50,5 +50,6 @@ cc_binary(
         "//src:random",
         "//src:int_grid",
         "//src/color_maps",
+        "//src:so2",
     ],
 )
