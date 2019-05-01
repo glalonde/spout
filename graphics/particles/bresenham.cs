@@ -53,7 +53,8 @@ void main() {
   ivec2 delta_i = end_cell - current_cell;
 
   // Starting cell remainder:
-  ivec2 start_remainder = ivec2(kHalfCellSize, kHalfCellSize) - ivec2(GetRemainder(p.position));
+  ivec2 start_remainder =
+      ivec2(kHalfCellSize, kHalfCellSize) - ivec2(GetRemainder(p.position));
   start_remainder *= step;
   ivec2 end_remainder = ivec2(GetRemainder(end_pos));
 
@@ -64,9 +65,9 @@ void main() {
   // Update velocity
   ivec2 vel_out = p.velocity;
 
-  int debug_max_cells = 20;
+  // int debug_max_cells = 20;
   int num_cells = abs(delta_i.x) + abs(delta_i.y);
-  num_cells = min(num_cells, debug_max_cells);
+  // num_cells = min(num_cells, debug_max_cells);
   while (num_cells > 0) {
     int error_horizontal = error - delta.y;
     int error_vertical = error + delta.x;
@@ -95,7 +96,6 @@ void main() {
         end_remainder.x = int(kCellSize) - end_remainder.x;
       }
     }
-
     --num_cells;
   }
 

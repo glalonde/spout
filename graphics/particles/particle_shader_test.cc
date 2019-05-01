@@ -51,7 +51,19 @@ class ParticleSim {
     }
   }
 
-  void UpdateTexture(float dt) {
+  ControllerInput Update(const Duration& dt) {
+    HandleEvents(&input_);
+    UpdateSimulation(ToSeconds<float>(dt));
+    Render();
+    return input_;
+  }
+
+  void UpdateSimulation(float dt) {
+    // Clear the density counter texture
+    uint32_t clear_color = 0;
+    glClearTexImage(tex_handle_, 0, GL_RED_INTEGER, GL_UNSIGNED_INT,
+                    &clear_color);
+    CHECK(CheckGLErrors());
     // Update particle states
     glUseProgram(particle_program_);
     glUniform1f(glGetUniformLocation(particle_program_, "dt"), dt);
@@ -68,27 +80,28 @@ class ParticleSim {
     CHECK(CheckGLErrors());
   }
 
-  void Render(float dt) {
-    WallTimer timer;
-    timer.Start();
-    // Update particle state, and compute particle density map
-    ClearCounterTexture();
-    UpdateTexture(dt);
-
+  void Render() {
+    // Clear the screen
     glClearColor(0.0, 0.0, 0.0, 1.0);
     glClear(GL_COLOR_BUFFER_BIT);
     glUseProgram(render_program_);
-    // Bind in the color lookup table, render the particle density map
+    // Bind in the color lookup table.
     glActiveTexture(GL_TEXTURE0 + 1);
     glBindTexture(GL_TEXTURE_1D, color_lut_handle_);
     glBindVertexArray(vertex_array_);
+    // Draw the density map
     glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
     SDL_GL_SwapWindow(window_);
     CHECK(CheckGLErrors());
-
     SDL_GL_SwapWindow(window_);
     CHECK(CheckGLErrors());
-    // ReadParticleBuffer();
+  }
+
+  void HandleEvents(ControllerInput* input) {
+    while (SDL_PollEvent(&event_)) {
+      UpdateControllerInput(event_, input);
+      UpdateWindowState(event_);
+    }
   }
 
   void UpdateInput(ControllerInput* input) {
@@ -113,7 +126,6 @@ class ParticleSim {
     CHECK(CheckGLErrors());
     return copied;
   }
-
  private:
   void Init() {
     SDL_Init(SDL_INIT_EVERYTHING);
@@ -146,6 +158,25 @@ class ParticleSim {
     InitComputeShader();
     InitRenderShader();
     LOG(INFO) << "Finished init";
+  }
+
+  void UpdateWindowState(const SDL_Event& event) {
+    switch (event.type) {
+      case SDL_WINDOWEVENT: {
+        switch (event.window.event) {
+          case SDL_WINDOWEVENT_RESIZED: {
+            glViewport(0, 0, event.window.data1, event.window.data2);
+            break;
+          }
+          default: {
+            break;
+          }
+        }
+      }
+      default: {
+        break;
+      }
+    }
   }
 
   void InitComputeShader() {
@@ -230,10 +261,7 @@ class ParticleSim {
   }
 
   void ClearCounterTexture() {
-    uint32_t clear_color = 0;
-    glClearTexImage(tex_handle_, 0, GL_RED_INTEGER, GL_UNSIGNED_INT,
-                    &clear_color);
-    CHECK(CheckGLErrors());
+
   }
 
   void MakeTexture() {
@@ -293,8 +321,7 @@ class ParticleSim {
   void SetRandomPoints(Eigen::Map<Vector<IntParticle, Eigen::Dynamic>> data) {
     std::mt19937 gen(0);
     const int cell_size = kCellSize<uint32_t, 8>;
-    auto magnitude_dist =
-        UniformRandomDistribution<double>(-10 * cell_size, 10 * cell_size);
+    auto magnitude_dist = UniformRandomDistribution<double>(0, 50 * cell_size);
     auto angle_dist = UniformRandomDistribution<double>(-M_PI, M_PI);
     for (int i = 0; i < num_particles_; ++i) {
       data[i].position =
@@ -333,6 +360,7 @@ class ParticleSim {
   const Vector2i grid_dims_;
   const int num_particles_;
 
+  ControllerInput input_;
   SDL_Event event_;
   SDL_Window* window_;
   SDL_GLContext gl_context_;
@@ -357,7 +385,7 @@ void Test1() {
   ParticleSim sdl(600, 600, 100, 100, 1);
   Image<uint8_t> environment(100, 100);
   environment.setConstant(0);
-  const float dt = 1.0;
+  const Duration dt = FromSeconds<double>(1.0);
   auto log_particle = [&](const IntParticle& p) {
     auto get_cell = [](const Vector2u32& vec) -> Vector2i {
       return vec.unaryExpr([](uint32_t v) -> int {
@@ -369,33 +397,28 @@ void Test1() {
     LOG(INFO) << "Debug: " << p.debug.transpose();
 
     IntParticle next;
-    BresenhamExperimentLowRes(p.position, p.velocity, static_cast<double>(dt),
+    BresenhamExperimentLowRes(p.position, p.velocity, ToSeconds<double>(dt),
                               environment, &next.position, &next.velocity);
   };
 
   ControllerInput input;
   Vector<IntParticle, Eigen::Dynamic> points1 = sdl.ReadParticleBuffer();
-
   log_particle(points1[0]);
-  sdl.UpdateInput(&input);
-  sdl.Render(dt);
+  input = sdl.Update(dt);
   Vector<IntParticle, Eigen::Dynamic> points2 = sdl.ReadParticleBuffer();
   log_particle(points2[0]);
-  sdl.UpdateInput(&input);
-  sdl.Render(dt);
+  input = sdl.Update(dt);
   Vector<IntParticle, Eigen::Dynamic> points3 = sdl.ReadParticleBuffer();
   log_particle(points3[0]);
 }
 
 void TestLoop() {
-  ParticleSim sdl(1440, 900, 144, 90, FLAGS_num_particles);
+  ParticleSim sim(1440, 900, 144, 90, FLAGS_num_particles);
   ControllerInput input;
   TimePoint previous = ClockType::now();
   while (!input.quit) {
     const TimePoint current = ClockType::now();
-    const float dt = ToSeconds<float>(current - previous);
-    sdl.UpdateInput(&input);
-    sdl.Render(dt);
+    input = sim.Update(current - previous);
     previous = current;
   }
 }
