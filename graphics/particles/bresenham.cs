@@ -4,7 +4,8 @@ layout(location = 0) uniform float dt;
 layout(location = 1) uniform int anchor;
 layout(location = 2) uniform int buffer_width;
 layout(location = 3) uniform int buffer_height;
-layout(binding = 0, r32ui) uniform uimage2D counter_texture;
+layout(binding = 0, r32ui) uniform uimage2D terrain_texture;
+layout(binding = 1, r32ui) uniform uimage2D counter_texture;
 
 const uint kMantissaBits = 8;
 const uint kCellSize = 1 << kMantissaBits;
@@ -36,6 +37,10 @@ uvec2 GetRemainder(in uvec2 pos) {
 bool OnBuffer(in ivec2 cell) {
   return cell.x >= 0 && cell.y >= 0 && cell.x < buffer_width &&
          cell.y < buffer_height;
+}
+
+bool TerrainIsFull(in ivec2 cell) {
+  return imageLoad(terrain_texture, cell).x > 0;
 }
 
 layout(local_size_variable) in;
@@ -77,7 +82,7 @@ void main() {
       current_cell.x += step.x;
       // Check cell
       const bool off_buffer = !OnBuffer(current_cell);
-      if (off_buffer) {
+      if (off_buffer || TerrainIsFull(current_cell)) {
         // Bounce horizontally
         current_cell.x -= step.x;
         vel_out.x *= -1;
@@ -89,7 +94,7 @@ void main() {
       current_cell.y += step.y;
       // Check cell
       const bool off_buffer = !OnBuffer(current_cell);
-      if (off_buffer) {
+      if (off_buffer || TerrainIsFull(current_cell)) {
         // Bounce vertically 
         current_cell.y -= step.y;
         vel_out.y *= -1;

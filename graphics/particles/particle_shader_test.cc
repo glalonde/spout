@@ -184,7 +184,7 @@ class ParticleSim {
     SDL_ShowCursor(0);
 
     std::mt19937 rando(0);
-    Image<uint8_t> level_buffer(grid_dims_.y(), grid_dims_.x());
+    Image<uint32_t> level_buffer(grid_dims_.y(), grid_dims_.x());
     level_buffer.setZero();
     MakeLevel(&rando, &level_buffer);
 
@@ -198,9 +198,9 @@ class ParticleSim {
     LOG(INFO) << "Finished init";
   }
 
-  void MakeLevel(std::mt19937* gen, Image<uint8_t>* level_buffer) {
-    AddNoise(kWall, .2, gen, level_buffer);
-    AddAllWalls(kWall, level_buffer);
+  void MakeLevel(std::mt19937* gen, Image<uint32_t>* level_buffer) {
+    AddNoise(static_cast<uint32_t>(kWall), .2, gen, level_buffer);
+    AddAllWalls(static_cast<uint32_t>(kWall), level_buffer);
   }
 
   void UpdateWindowState(const SDL_Event& event) {
@@ -303,6 +303,26 @@ class ParticleSim {
     glEnable(GL_BLEND);
   }
 
+  void MakeTerrainTexture(const Image<uint32_t>& terrain_data) {
+    // Make a texture to represent the terrain state at each grid cell
+    glGenTextures(1, &terrain_tex_handle_);
+    glBindTexture(GL_TEXTURE_2D, terrain_tex_handle_);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    const auto format = GL_R32UI;
+    CHECK_EQ(terrain_data.rows(), grid_dims_.y());
+    CHECK_EQ(terrain_data.cols(), grid_dims_.x());
+    glTexImage2D(GL_TEXTURE_2D, 0, format, grid_dims_[0], grid_dims_[1], 0,
+                 GL_RED_INTEGER, GL_UNSIGNED_INT, terrain_data.data());
+    CHECK(CheckGLErrors());
+
+    // Because we're also using this tex as an image (in order to write to it),
+    // we bind it to an image unit as well
+    glBindImageTexture(0, terrain_tex_handle_, 0, GL_FALSE, 0, GL_READ_WRITE,
+                       format);
+    CHECK(CheckGLErrors());
+  }
+
   void MakeDensityTexture() {
     // Make a uint32 texture to hold the counts of each particle in that
     // position.
@@ -320,26 +340,7 @@ class ParticleSim {
 
     // Because we're also using this tex as an image (in order to write to it),
     // we bind it to an image unit as well
-    glBindImageTexture(0, particle_tex_handle_, 0, GL_FALSE, 0, GL_WRITE_ONLY, format);
-    CHECK(CheckGLErrors());
-  }
-
-  void MakeTerrainTexture(const Image<uint8_t>& terrain_data) {
-    // Make a texture to represent the terrain state at each grid cell
-    glGenTextures(1, &terrain_tex_handle_);
-    glBindTexture(GL_TEXTURE_2D, terrain_tex_handle_);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    const auto format = GL_R8UI;
-    CHECK_EQ(terrain_data.rows(), grid_dims_.y());
-    CHECK_EQ(terrain_data.cols(), grid_dims_.x());
-    glTexImage2D(GL_TEXTURE_2D, 0, format, grid_dims_[0], grid_dims_[1], 0,
-                 GL_RED_INTEGER, GL_UNSIGNED_BYTE, terrain_data.data());
-    CHECK(CheckGLErrors());
-
-    // Because we're also using this tex as an image (in order to write to it),
-    // we bind it to an image unit as well
-    glBindImageTexture(1, terrain_tex_handle_, 0, GL_FALSE, 0, GL_READ_WRITE,
+    glBindImageTexture(1, particle_tex_handle_, 0, GL_FALSE, 0, GL_WRITE_ONLY,
                        format);
     CHECK(CheckGLErrors());
   }
