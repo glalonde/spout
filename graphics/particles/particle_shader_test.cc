@@ -18,6 +18,7 @@
 DEFINE_int32(num_particles, 512, "Number of particles");
 DEFINE_bool(debug, false, "Debug mode");
 DEFINE_int32(color_map_index, 0, "Color map index, see color_maps.h");
+DEFINE_double(damage_rate, 1.0, "Damage rate");
 
 struct IntParticle {
   Vector2<uint32_t> position;
@@ -75,6 +76,8 @@ class ParticleSim {
                 grid_dims_[0]);
     glUniform1i(glGetUniformLocation(particle_program_, "buffer_height"),
                 grid_dims_[1]);
+    glUniform1f(glGetUniformLocation(particle_program_, "damage_rate"),
+                FLAGS_damage_rate);
     const int group_size = std::min(num_particles_, 512);
     const int num_groups = num_particles_ / group_size;
     glad_glDispatchComputeGroupSizeARB(num_groups, 1, 1, group_size, 1, 1);
@@ -199,8 +202,9 @@ class ParticleSim {
   }
 
   void MakeLevel(std::mt19937* gen, Image<uint32_t>* level_buffer) {
-    AddNoise(static_cast<uint32_t>(kWall), .2, gen, level_buffer);
-    AddAllWalls(static_cast<uint32_t>(kWall), level_buffer);
+    static constexpr uint32_t kDenseWall = std::numeric_limits<int32_t>::max();
+    AddNoise(kDenseWall, .2, gen, level_buffer);
+    AddAllWalls(kDenseWall, level_buffer);
   }
 
   void UpdateWindowState(const SDL_Event& event) {

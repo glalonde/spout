@@ -4,8 +4,11 @@ layout(location = 0) uniform float dt;
 layout(location = 1) uniform int anchor;
 layout(location = 2) uniform int buffer_width;
 layout(location = 3) uniform int buffer_height;
+layout(location = 4) uniform float damage_rate;
+
 layout(binding = 0, r32ui) uniform uimage2D terrain_texture;
 layout(binding = 1, r32ui) uniform uimage2D counter_texture;
+layout(local_size_variable) in;
 
 const uint kMantissaBits = 8;
 const uint kCellSize = 1 << kMantissaBits;
@@ -34,16 +37,26 @@ uvec2 GetRemainder(in uvec2 pos) {
   return pos & kHighResMask;
 }
 
+float Norm(in ivec2 vel) {
+  return sqrt(vel.x*vel.x + vel.y * vel.y);
+}
+
 bool OnBuffer(in ivec2 cell) {
   return cell.x >= 0 && cell.y >= 0 && cell.x < buffer_width &&
          cell.y < buffer_height;
 }
 
-bool TerrainIsFull(in ivec2 cell) {
-  return imageLoad(terrain_texture, cell).x > 0;
+// Returns true if bounce occurred.
+bool TryErodeTerrain(in ivec2 cell, in float speed) {
+  int test_value = imageLoad(terrain_texture, cell).x;
+  if (test_value > 0) {
+    int dmg_amt = int(damage_rate * speed);
+    int actual_value = imageAtomicAdd(terrain_texture, cell, -dmg_amt);
+    return actual_value > 0;
+  }
+  return false;
 }
 
-layout(local_size_variable) in;
 void main() {
   uint gid = gl_GlobalInvocationID.x;
   Particle p = particles[gid];
@@ -70,9 +83,7 @@ void main() {
   // Update velocity
   ivec2 vel_out = p.velocity;
 
-  // int debug_max_cells = 20;
   int num_cells = abs(delta_i.x) + abs(delta_i.y);
-  // num_cells = min(num_cells, debug_max_cells);
   while (num_cells > 0) {
     int error_horizontal = error - delta.y;
     int error_vertical = error + delta.x;
@@ -81,24 +92,34 @@ void main() {
       error = error_horizontal;
       current_cell.x += step.x;
       // Check cell
-      const bool off_buffer = !OnBuffer(current_cell);
-      if (off_buffer || TerrainIsFull(current_cell)) {
+      bool bounce;
+      if (OnBuffer(current_cell)) {
+        bounce = TryErodeTerrain(current_cell, Norm(vel_out));
+      } else {
+        bounce = true;
+      }
+      if (bounce) {
         // Bounce horizontally
         current_cell.x -= step.x;
         vel_out.x *= -1;
-        end_remainder.y = int(kCellSize) - end_remainder.y;
+        end_remainder.y = int(kCellSize) - end_remainder.y - 1;
       }
     } else {
       // Vertical step
       error = error_vertical;
       current_cell.y += step.y;
       // Check cell
-      const bool off_buffer = !OnBuffer(current_cell);
-      if (off_buffer || TerrainIsFull(current_cell)) {
+      bool bounce;
+      if (OnBuffer(current_cell)) {
+        bounce = TryErodeTerrain(current_cell, Norm(vel_out));
+      } else {
+        bounce = true;
+      }
+      if (bounce) {
         // Bounce vertically 
         current_cell.y -= step.y;
         vel_out.y *= -1;
-        end_remainder.x = int(kCellSize) - end_remainder.x;
+        end_remainder.x = int(kCellSize) - end_remainder.x - 1;
       }
     }
     --num_cells;

@@ -386,7 +386,7 @@ void BresenhamExperimentLowRes(const Vector2u32& pos, const Vector2i& vel,
         pos_i.x() -= step.x();
         step.x() *= -1;
         vel_out->x() *= -1;
-        end_remainder.y() = kCellSize<uint32_t, 8> - end_remainder.y();
+        end_remainder.y() = kCellSize<uint32_t, 8> - end_remainder.y() - 1;
       }
     } else {
       // Vertical step
@@ -397,7 +397,7 @@ void BresenhamExperimentLowRes(const Vector2u32& pos, const Vector2i& vel,
       const bool off_buffer = !is_on_buffer(pos_i.y(), pos_i.x());
       if (off_buffer || buffer(pos_i.y(), pos_i.x()) > CellType(0)) {
         pos_i.y() -= step.y();
-        end_remainder.x() = kCellSize<uint32_t, 8> - end_remainder.x();
+        end_remainder.x() = kCellSize<uint32_t, 8> - end_remainder.x() - 1;
         step.y() *= -1;
         vel_out->y() *= -1;
       }
