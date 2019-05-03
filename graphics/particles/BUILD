@@ -11,6 +11,7 @@ filegroup(
     name = "shaders",
     srcs = [
         "bresenham.cs",
+        "fp_bresenham.cs",
         "color_map_texture.frag",
         "draw_particles.cs",
         "shader.frag",

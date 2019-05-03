@@ -20,12 +20,9 @@ DEFINE_bool(debug, false, "Debug mode");
 DEFINE_int32(color_map_index, 0, "Color map index, see color_maps.h");
 DEFINE_double(damage_rate, 1.0, "Damage rate");
 
-static constexpr int kMantissaBits = 12;
-
-struct IntParticle {
-  Vector2<uint32_t> position;
-  Vector2<int32_t> velocity;
-  Vector2<int32_t> debug;
+struct Particle {
+  Vector2f position;
+  Vector2f velocity;
 };
 
 static constexpr int32_t kDenseWall = 1000;
@@ -74,16 +71,12 @@ class ParticleSim {
     // Update particle states
     glUseProgram(particle_program_);
     glUniform1f(glGetUniformLocation(particle_program_, "dt"), dt);
-    glUniform1i(glGetUniformLocation(particle_program_, "anchor"),
-                kAnchor<uint32_t, kMantissaBits>);
     glUniform1i(glGetUniformLocation(particle_program_, "buffer_width"),
                 grid_dims_[0]);
     glUniform1i(glGetUniformLocation(particle_program_, "buffer_height"),
                 grid_dims_[1]);
     glUniform1f(glGetUniformLocation(particle_program_, "damage_rate"),
                 FLAGS_damage_rate);
-    glUniform1i(glGetUniformLocation(particle_program_, "kMantissaBits"),
-                kMantissaBits);
     const int group_size = std::min(num_particles_, 512);
     const int num_groups = num_particles_ / group_size;
     glad_glDispatchComputeGroupSizeARB(num_groups, 1, 1, group_size, 1, 1);
@@ -153,17 +146,17 @@ class ParticleSim {
     }
   }
 
-  Vector<IntParticle, Eigen::Dynamic> ReadParticleBuffer() {
+  Vector<Particle, Eigen::Dynamic> ReadParticleBuffer() {
     CHECK(CheckGLErrors());
-    const int buffer_size = num_particles_ * (sizeof(IntParticle));
+    const int buffer_size = num_particles_ * (sizeof(Particle));
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, particle_ssbo_);
     CHECK(CheckGLErrors());
     void* buffer_ptr = glMapBufferRange(GL_SHADER_STORAGE_BUFFER, 0,
                                         buffer_size, GL_MAP_READ_BIT);
     CHECK(CheckGLErrors());
-    Eigen::Map<Vector<IntParticle, Eigen::Dynamic>> points(
-        reinterpret_cast<IntParticle*>(buffer_ptr), num_particles_);
-    Vector<IntParticle, Eigen::Dynamic> copied = points;
+    Eigen::Map<Vector<Particle, Eigen::Dynamic>> points(
+        reinterpret_cast<Particle*>(buffer_ptr), num_particles_);
+    Vector<Particle, Eigen::Dynamic> copied = points;
     CHECK(CheckGLErrors());
     glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
     CHECK(CheckGLErrors());
@@ -238,7 +231,7 @@ class ParticleSim {
   void InitComputeShader() {
     particle_program_ = glCreateProgram();
     GLuint compute_shader =
-        LoadShader("graphics/particles/bresenham.cs", GL_COMPUTE_SHADER);
+        LoadShader("graphics/particles/fp_bresenham.cs", GL_COMPUTE_SHADER);
     glAttachShader(particle_program_, compute_shader);
     LinkProgram(particle_program_);
     glUseProgram(particle_program_);
@@ -420,22 +413,18 @@ class ParticleSim {
     CHECK(CheckGLErrors());
   }
 
-  void SetRandomPoints(Eigen::Map<Vector<IntParticle, Eigen::Dynamic>> data) {
+  void SetRandomPoints(Eigen::Map<Vector<Particle, Eigen::Dynamic>> data) {
     std::mt19937 gen(0);
-    const int cell_size = kCellSize<uint32_t, kMantissaBits>;
-    auto magnitude_dist = UniformRandomDistribution<double>(0, 50 * cell_size);
-    auto angle_dist = UniformRandomDistribution<double>(-M_PI, M_PI);
+    auto magnitude_dist = UniformRandomDistribution<float>(0, 500);
+    auto angle_dist = UniformRandomDistribution<float>(-M_PI, M_PI);
     for (int i = 0; i < num_particles_; ++i) {
-      data[i].position =
-          Vector2u32::Constant(SetLowRes<kMantissaBits>(kAnchor<uint32_t, kMantissaBits>));
-      data[i].position += ((grid_dims_ * cell_size) / 2).cast<uint32_t>();
-      data[i].velocity =
-          (SO2d(angle_dist(gen)).data() * magnitude_dist(gen)).cast<int>();
+      data[i].position = (grid_dims_).cast<float>() / 2.f;
+      data[i].velocity = SO2f(angle_dist(gen)).data() * magnitude_dist(gen);
     }
   }
 
   void MakeParticleBuffer() {
-    const int buffer_size = num_particles_ * (sizeof(IntParticle));
+    const int buffer_size = num_particles_ * (sizeof(Particle));
     glGenBuffers(1, &particle_ssbo_);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, particle_ssbo_);
     LOG(INFO) << "Making buffer size: " << buffer_size;
@@ -446,8 +435,8 @@ class ParticleSim {
     WallTimer timer;
     LOG(INFO) << "Creating " << num_particles_ << " random particles";
     timer.Start();
-    Eigen::Map<Vector<IntParticle, Eigen::Dynamic>> points(
-        reinterpret_cast<IntParticle*>(buffer_ptr), num_particles_);
+    Eigen::Map<Vector<Particle, Eigen::Dynamic>> points(
+        reinterpret_cast<Particle*>(buffer_ptr), num_particles_);
     SetRandomPoints(points);
     LOG(INFO) << "Done in: " << timer.ElapsedDuration();
     glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
@@ -484,40 +473,9 @@ class ParticleSim {
   GLuint vertex_array_;
   GLuint element_buffer_;
 };
-
-void Test1() {
-  ParticleSim sdl(600, 600, 100, 100, 1);
-  Image<uint8_t> environment(100, 100);
-  environment.setConstant(0);
-  const Duration dt = FromSeconds<double>(1.0);
-  auto log_particle = [&](const IntParticle& p) {
-    auto get_cell = [](const Vector2u32& vec) -> Vector2i {
-      return vec.unaryExpr([](uint32_t v) -> int {
-        return static_cast<int>(GetLowRes<kMantissaBits>(v)) - kAnchor<uint32_t, kMantissaBits>;
-      });
-    };
-    LOG(INFO) << "Position: " << p.position.transpose() << ", Velocity: " << p.velocity.transpose();
-    LOG(INFO) << "Cell: " << get_cell(p.position).transpose();
-    LOG(INFO) << "Debug: " << p.debug.transpose();
-
-    IntParticle next;
-    BresenhamExperimentLowRes(p.position, p.velocity, ToSeconds<double>(dt),
-                              environment, &next.position, &next.velocity);
-  };
-
-  ControllerInput input;
-  Vector<IntParticle, Eigen::Dynamic> points1 = sdl.ReadParticleBuffer();
-  log_particle(points1[0]);
-  input = sdl.Update(dt);
-  Vector<IntParticle, Eigen::Dynamic> points2 = sdl.ReadParticleBuffer();
-  log_particle(points2[0]);
-  input = sdl.Update(dt);
-  Vector<IntParticle, Eigen::Dynamic> points3 = sdl.ReadParticleBuffer();
-  log_particle(points3[0]);
-}
-
 void TestLoop() {
   ParticleSim sim(1440, 900, 576, 360, FLAGS_num_particles);
+  sim.ToggleFullScreen();
   ControllerInput input;
   TimePoint previous = ClockType::now();
   while (!input.quit) {
@@ -529,11 +487,6 @@ void TestLoop() {
 
 int main(int argc, char* argv[]) {
   Init(argc, argv);
-  if (FLAGS_debug) {
-    Test1();
-  } else {
-    TestLoop();
-  }
-
+  TestLoop();
   return 0;
 }
