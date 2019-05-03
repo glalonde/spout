@@ -26,6 +26,8 @@ struct IntParticle {
   Vector2<int32_t> debug;
 };
 
+static constexpr int32_t kDenseWall = 1000;
+
 class ParticleSim {
  public:
   ParticleSim(int window_width, int window_height, int grid_width,
@@ -92,27 +94,30 @@ class ParticleSim {
     glUseProgram(render_program_);
     glBindVertexArray(vertex_array_);
 
-    // Draw the terrain
+    // Draw the terrain(signed)
     {
       glUniform1i(glGetUniformLocation(render_program_, "min_value"), 0);
-      glUniform1i(glGetUniformLocation(render_program_, "max_value"), 255);
+      glUniform1i(glGetUniformLocation(render_program_, "max_value"),
+                  kDenseWall);
+      glUniform1i(glGetUniformLocation(render_program_, "signed"), true);
 
       // Active the color texture in unit 0
       glActiveTexture(GL_TEXTURE0);
       glBindTexture(GL_TEXTURE_1D, terrain_color_handle_);
 
       // Activate the density texture in unit 1
-      glActiveTexture(GL_TEXTURE1);
+      glActiveTexture(GL_TEXTURE2);
       glBindTexture(GL_TEXTURE_2D, terrain_tex_handle_);
 
       // Draw the density map
       glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
     }
 
-    // Draw the particles 
+    // Draw the particles(unsigned)
     {
       glUniform1i(glGetUniformLocation(render_program_, "min_value"), 0);
       glUniform1i(glGetUniformLocation(render_program_, "max_value"), 15);
+      glUniform1i(glGetUniformLocation(render_program_, "signed"), false);
       // Active the color texture in unit 0
       glActiveTexture(GL_TEXTURE0);
       glBindTexture(GL_TEXTURE_1D, particle_color_handle_);
@@ -187,9 +192,10 @@ class ParticleSim {
     SDL_ShowCursor(0);
 
     std::mt19937 rando(0);
-    Image<uint32_t> level_buffer(grid_dims_.y(), grid_dims_.x());
+    Image<int32_t> level_buffer(grid_dims_.y(), grid_dims_.x());
     level_buffer.setZero();
     MakeLevel(&rando, &level_buffer);
+    LOG(INFO) << level_buffer.maxCoeff();
 
     MakeParticleBuffer();
     MakeTerrainTexture(level_buffer);
@@ -201,9 +207,8 @@ class ParticleSim {
     LOG(INFO) << "Finished init";
   }
 
-  void MakeLevel(std::mt19937* gen, Image<uint32_t>* level_buffer) {
-    static constexpr uint32_t kDenseWall = std::numeric_limits<int32_t>::max();
-    AddNoise(kDenseWall, .2, gen, level_buffer);
+  void MakeLevel(std::mt19937* gen, Image<int32_t>* level_buffer) {
+    AddNoise(kDenseWall, .5, gen, level_buffer);
     AddAllWalls(kDenseWall, level_buffer);
   }
 
@@ -307,17 +312,17 @@ class ParticleSim {
     glEnable(GL_BLEND);
   }
 
-  void MakeTerrainTexture(const Image<uint32_t>& terrain_data) {
+  void MakeTerrainTexture(const Image<int32_t>& terrain_data) {
     // Make a texture to represent the terrain state at each grid cell
     glGenTextures(1, &terrain_tex_handle_);
     glBindTexture(GL_TEXTURE_2D, terrain_tex_handle_);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    const auto format = GL_R32UI;
+    const auto format = GL_R32I;
     CHECK_EQ(terrain_data.rows(), grid_dims_.y());
     CHECK_EQ(terrain_data.cols(), grid_dims_.x());
     glTexImage2D(GL_TEXTURE_2D, 0, format, grid_dims_[0], grid_dims_[1], 0,
-                 GL_RED_INTEGER, GL_UNSIGNED_INT, terrain_data.data());
+                 GL_RED_INTEGER, GL_INT, terrain_data.data());
     CHECK(CheckGLErrors());
 
     // Because we're also using this tex as an image (in order to write to it),
@@ -508,7 +513,7 @@ void Test1() {
 }
 
 void TestLoop() {
-  ParticleSim sim(1440, 900, 144, 90, FLAGS_num_particles);
+  ParticleSim sim(1440, 900, 576, 360, FLAGS_num_particles);
   ControllerInput input;
   TimePoint previous = ClockType::now();
   while (!input.quit) {
