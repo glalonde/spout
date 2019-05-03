@@ -5,12 +5,12 @@ layout(location = 1) uniform int anchor;
 layout(location = 2) uniform int buffer_width;
 layout(location = 3) uniform int buffer_height;
 layout(location = 4) uniform float damage_rate;
+layout(location = 5) uniform int kMantissaBits;
 
 layout(binding = 0, r32i) uniform iimage2D terrain_texture;
 layout(binding = 1, r32ui) uniform uimage2D counter_texture;
 layout(local_size_variable) in;
 
-const uint kMantissaBits = 8;
 const uint kCellSize = 1 << kMantissaBits;
 const uint kHalfCellSize = 1 << (kMantissaBits - 1);
 

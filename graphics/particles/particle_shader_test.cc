@@ -20,6 +20,8 @@ DEFINE_bool(debug, false, "Debug mode");
 DEFINE_int32(color_map_index, 0, "Color map index, see color_maps.h");
 DEFINE_double(damage_rate, 1.0, "Damage rate");
 
+static constexpr int kMantissaBits = 12;
+
 struct IntParticle {
   Vector2<uint32_t> position;
   Vector2<int32_t> velocity;
@@ -73,13 +75,15 @@ class ParticleSim {
     glUseProgram(particle_program_);
     glUniform1f(glGetUniformLocation(particle_program_, "dt"), dt);
     glUniform1i(glGetUniformLocation(particle_program_, "anchor"),
-                kAnchor<uint32_t, 8>);
+                kAnchor<uint32_t, kMantissaBits>);
     glUniform1i(glGetUniformLocation(particle_program_, "buffer_width"),
                 grid_dims_[0]);
     glUniform1i(glGetUniformLocation(particle_program_, "buffer_height"),
                 grid_dims_[1]);
     glUniform1f(glGetUniformLocation(particle_program_, "damage_rate"),
                 FLAGS_damage_rate);
+    glUniform1i(glGetUniformLocation(particle_program_, "kMantissaBits"),
+                kMantissaBits);
     const int group_size = std::min(num_particles_, 512);
     const int num_groups = num_particles_ / group_size;
     glad_glDispatchComputeGroupSizeARB(num_groups, 1, 1, group_size, 1, 1);
@@ -418,12 +422,12 @@ class ParticleSim {
 
   void SetRandomPoints(Eigen::Map<Vector<IntParticle, Eigen::Dynamic>> data) {
     std::mt19937 gen(0);
-    const int cell_size = kCellSize<uint32_t, 8>;
+    const int cell_size = kCellSize<uint32_t, kMantissaBits>;
     auto magnitude_dist = UniformRandomDistribution<double>(0, 50 * cell_size);
     auto angle_dist = UniformRandomDistribution<double>(-M_PI, M_PI);
     for (int i = 0; i < num_particles_; ++i) {
       data[i].position =
-          Vector2u32::Constant(SetLowRes<8>(kAnchor<uint32_t, 8>));
+          Vector2u32::Constant(SetLowRes<kMantissaBits>(kAnchor<uint32_t, kMantissaBits>));
       data[i].position += ((grid_dims_ * cell_size) / 2).cast<uint32_t>();
       data[i].velocity =
           (SO2d(angle_dist(gen)).data() * magnitude_dist(gen)).cast<int>();
@@ -489,7 +493,7 @@ void Test1() {
   auto log_particle = [&](const IntParticle& p) {
     auto get_cell = [](const Vector2u32& vec) -> Vector2i {
       return vec.unaryExpr([](uint32_t v) -> int {
-        return static_cast<int>(GetLowRes<8>(v)) - kAnchor<uint32_t, 8>;
+        return static_cast<int>(GetLowRes<kMantissaBits>(v)) - kAnchor<uint32_t, kMantissaBits>;
       });
     };
     LOG(INFO) << "Position: " << p.position.transpose() << ", Velocity: " << p.velocity.transpose();
