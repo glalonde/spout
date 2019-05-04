@@ -483,6 +483,7 @@ void BresenhamExperimentLowResDestructive(const Vector2u32& pos,
         if (!off_buffer) {
           damage_cell(&(*buffer)(pos_i.y(), pos_i.x()));
         }
+        LOG(INFO) << "H BOUNCE: " << end_remainder.transpose() << ", " << pos_i.transpose();
         pos_i.x() -= step.x();
         step.x() *= -1;
         vel_out->x() *= -1;
@@ -499,6 +500,7 @@ void BresenhamExperimentLowResDestructive(const Vector2u32& pos,
         if (!off_buffer) {
           damage_cell(&(*buffer)(pos_i.y(), pos_i.x()));
         }
+        LOG(INFO) << "V BOUNCE: " << end_remainder.transpose() << ", " << pos_i.transpose();
         pos_i.y() -= step.y();
         end_remainder.x() = kCellSize<uint32_t, 8> - end_remainder.x() - 1;
         step.y() *= -1;

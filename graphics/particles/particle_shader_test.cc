@@ -419,16 +419,16 @@ class ParticleSim {
     CHECK(CheckGLErrors());
   }
 
-  void SetRandomPoints(Eigen::Map<Vector<IntParticle, Eigen::Dynamic>> data) {
+  void SetRandomPoints(Vector2i start_cell, int cell_size,
+                       Eigen::Map<Vector<IntParticle, Eigen::Dynamic>> data) {
     std::mt19937 gen(0);
-    const int cell_size = kCellSize<uint32_t, kMantissaBits>;
     auto magnitude_dist =
-        UniformRandomDistribution<double>(400, 500 * cell_size);
+        UniformRandomDistribution<double>(400 * cell_size, 500 * cell_size);
     auto angle_dist = UniformRandomDistribution<double>(-M_PI, M_PI);
     for (int i = 0; i < num_particles_; ++i) {
       data[i].position =
           Vector2u32::Constant(SetLowRes<kMantissaBits>(kAnchor<uint32_t, kMantissaBits>));
-      data[i].position += ((grid_dims_ * cell_size) / 2).cast<uint32_t>();
+      data[i].position += (start_cell * cell_size).cast<uint32_t>();
       data[i].velocity =
           (SO2d(angle_dist(gen)).data() * magnitude_dist(gen)).cast<int>();
     }
@@ -448,7 +448,9 @@ class ParticleSim {
     timer.Start();
     Eigen::Map<Vector<IntParticle, Eigen::Dynamic>> points(
         reinterpret_cast<IntParticle*>(buffer_ptr), num_particles_);
-    SetRandomPoints(points);
+
+    const int cell_size = kCellSize<uint32_t, kMantissaBits>;
+    SetRandomPoints(grid_dims_/2, cell_size, points);
     LOG(INFO) << "Done in: " << timer.ElapsedDuration();
     glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
     CHECK(CheckGLErrors());
@@ -499,6 +501,10 @@ void TestLoop() {
   ControllerInput input;
   while (!input.quit) {
     input = sim.Update(dt);
+    auto parts = sim.ReadParticleBuffer();
+    const auto& next = parts[0];
+    LOG(INFO) << next.position.transpose() << ", " << next.velocity.transpose();
+    LOG(INFO) << "DBG: " << next.debug.transpose();
   }
 }
 

@@ -82,6 +82,7 @@ void main() {
 
   // Update velocity
   ivec2 vel_out = p.velocity;
+  bool did_bounce = false;
 
   int num_cells = abs(delta_i.x) + abs(delta_i.y);
   while (num_cells > 0) {
@@ -101,8 +102,10 @@ void main() {
       if (bounce) {
         // Bounce horizontally
         current_cell.x -= step.x;
+        step.x *= -1;
         vel_out.x *= -1;
         end_remainder.y = int(kCellSize) - end_remainder.y - 1;
+        did_bounce = true;
       }
     } else {
       // Vertical step
@@ -118,8 +121,10 @@ void main() {
       if (bounce) {
         // Bounce vertically 
         current_cell.y -= step.y;
+        step.y *= -1;
         vel_out.y *= -1;
         end_remainder.x = int(kCellSize) - end_remainder.x - 1;
+        did_bounce = true;
       }
     }
     --num_cells;
@@ -127,7 +132,11 @@ void main() {
 
   particles[gid].position = SetPosition(uvec2(current_cell + anchor), uvec2(end_remainder));
   particles[gid].velocity = vel_out;
-  particles[gid].debug = ivec2(end_pos) - ivec2(particles[gid].position);
+  if (did_bounce) {
+    particles[gid].debug = end_remainder;
+  } else {
+    particles[gid].debug = ivec2(-1, -1);
+  }
 
   // Draw to the density texture
   imageAtomicAdd(counter_texture, current_cell, 1);

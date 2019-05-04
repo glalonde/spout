@@ -89,6 +89,7 @@ void TestLoop(int num_particles) {
           particles[i].position, particles[i].velocity, dt, FLAGS_damage_rate,
           &environment, &next.position, &next.velocity);
       particles[i] = next;
+      LOG(INFO) << next.position.transpose() << ", " << next.velocity.transpose();
       RenderParticle(next.position, data);
     }
     AddFpsText(canvas.fps(), text_color, data);
