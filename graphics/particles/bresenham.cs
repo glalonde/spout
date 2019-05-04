@@ -16,7 +16,6 @@ layout(local_size_x = 512, local_size_y = 1, local_size_z = 1) in;
 struct Particle {
   uvec2 position;
   ivec2 velocity;
-  ivec2 debug;
 };
 
 layout(std430, binding = 0) buffer Particles {
@@ -82,7 +81,6 @@ void main() {
 
   // Update velocity
   ivec2 vel_out = p.velocity;
-  bool did_bounce = false;
 
   int num_cells = abs(delta_i.x) + abs(delta_i.y);
   while (num_cells > 0) {
@@ -105,7 +103,6 @@ void main() {
         step.x *= -1;
         vel_out.x *= -1;
         end_remainder.y = int(kCellSize) - end_remainder.y - 1;
-        did_bounce = true;
       }
     } else {
       // Vertical step
@@ -124,7 +121,6 @@ void main() {
         step.y *= -1;
         vel_out.y *= -1;
         end_remainder.x = int(kCellSize) - end_remainder.x - 1;
-        did_bounce = true;
       }
     }
     --num_cells;
@@ -132,11 +128,6 @@ void main() {
 
   particles[gid].position = SetPosition(uvec2(current_cell + anchor), uvec2(end_remainder));
   particles[gid].velocity = vel_out;
-  if (did_bounce) {
-    particles[gid].debug = end_remainder;
-  } else {
-    particles[gid].debug = ivec2(-1, -1);
-  }
 
   // Draw to the density texture
   imageAtomicAdd(counter_texture, current_cell, 1);

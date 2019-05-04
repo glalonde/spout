@@ -20,13 +20,13 @@ DEFINE_bool(debug, false, "Debug mode");
 DEFINE_int32(color_map_index, 0, "Color map index, see color_maps.h");
 DEFINE_double(damage_rate, 1.0, "Damage rate");
 DEFINE_double(dt, .016, "Simulation rate");
+DEFINE_int32(pixel_size, 4, "Pixel size");
 
-static constexpr int kMantissaBits = 8;
+static constexpr int kMantissaBits = 14;
 
 struct IntParticle {
   Vector2<uint32_t> position;
   Vector2<int32_t> velocity;
-  Vector2<int32_t> debug;
 };
 
 static constexpr int32_t kDenseWall = 1000;
@@ -489,7 +489,7 @@ class ParticleSim {
 void TestLoop() {
   int window_width = 1440;
   int window_height = 900;
-  int pixel_size = 4;
+  int pixel_size = FLAGS_pixel_size;
   int grid_width = window_width / pixel_size;
   int grid_height = window_height / pixel_size;
 
@@ -501,10 +501,6 @@ void TestLoop() {
   ControllerInput input;
   while (!input.quit) {
     input = sim.Update(dt);
-    auto parts = sim.ReadParticleBuffer();
-    const auto& next = parts[0];
-    LOG(INFO) << next.position.transpose() << ", " << next.velocity.transpose();
-    LOG(INFO) << "DBG: " << next.debug.transpose();
   }
 }
 

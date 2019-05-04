@@ -61,14 +61,14 @@ cc_binary(
     name = "cpu_particle_test",
     srcs = ["cpu_particle_test.cc"],
     deps = [
+        "//base:format",
+        "//base:init",
+        "//graphics:animated_canvas",
         "//src:bresenham",
         "//src:convert",
         "//src:demo_utils",
         "//src:random",
         "//src:so2",
-        "//base:format",
-        "//base:init",
-        "//graphics:animated_canvas",
         "//src/fonts:font_renderer",
     ],
 )
