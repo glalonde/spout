@@ -19,8 +19,9 @@ DEFINE_int32(num_particles, 512, "Number of particles");
 DEFINE_bool(debug, false, "Debug mode");
 DEFINE_int32(color_map_index, 0, "Color map index, see color_maps.h");
 DEFINE_double(damage_rate, 1.0, "Damage rate");
+DEFINE_double(dt, .016, "Simulation rate");
 
-static constexpr int kMantissaBits = 12;
+static constexpr int kMantissaBits = 8;
 
 struct IntParticle {
   Vector2<uint32_t> position;
@@ -58,9 +59,9 @@ class ParticleSim {
     }
   }
 
-  ControllerInput Update(const Duration& dt) {
+  ControllerInput Update(const double dt) {
     HandleEvents(&input_);
-    UpdateSimulation(ToSeconds<float>(dt));
+    UpdateSimulation(static_cast<float>(dt));
     Render();
     return input_;
   }
@@ -422,7 +423,7 @@ class ParticleSim {
     std::mt19937 gen(0);
     const int cell_size = kCellSize<uint32_t, kMantissaBits>;
     auto magnitude_dist =
-        UniformRandomDistribution<double>(10, 100 * cell_size);
+        UniformRandomDistribution<double>(400, 500 * cell_size);
     auto angle_dist = UniformRandomDistribution<double>(-M_PI, M_PI);
     for (int i = 0; i < num_particles_; ++i) {
       data[i].position =
@@ -483,57 +484,26 @@ class ParticleSim {
   GLuint vertex_array_;
   GLuint element_buffer_;
 };
-
-void Test1() {
-  ParticleSim sdl(600, 600, 100, 100, 1);
-  Image<uint8_t> environment(100, 100);
-  environment.setConstant(0);
-  const Duration dt = FromSeconds<double>(1.0);
-  auto log_particle = [&](const IntParticle& p) {
-    auto get_cell = [](const Vector2u32& vec) -> Vector2i {
-      return vec.unaryExpr([](uint32_t v) -> int {
-        return static_cast<int>(GetLowRes<kMantissaBits>(v)) - kAnchor<uint32_t, kMantissaBits>;
-      });
-    };
-    LOG(INFO) << "Position: " << p.position.transpose() << ", Velocity: " << p.velocity.transpose();
-    LOG(INFO) << "Cell: " << get_cell(p.position).transpose();
-    LOG(INFO) << "Debug: " << p.debug.transpose();
-
-    IntParticle next;
-    BresenhamExperimentLowRes(p.position, p.velocity, ToSeconds<double>(dt),
-                              environment, &next.position, &next.velocity);
-  };
-
-  ControllerInput input;
-  Vector<IntParticle, Eigen::Dynamic> points1 = sdl.ReadParticleBuffer();
-  log_particle(points1[0]);
-  input = sdl.Update(dt);
-  Vector<IntParticle, Eigen::Dynamic> points2 = sdl.ReadParticleBuffer();
-  log_particle(points2[0]);
-  input = sdl.Update(dt);
-  Vector<IntParticle, Eigen::Dynamic> points3 = sdl.ReadParticleBuffer();
-  log_particle(points3[0]);
-}
-
 void TestLoop() {
-  ParticleSim sim(1440, 900, 576, 360, FLAGS_num_particles);
+  int window_width = 1440;
+  int window_height = 900;
+  int pixel_size = 4;
+  int grid_width = window_width / pixel_size;
+  int grid_height = window_height / pixel_size;
+
+  ParticleSim sim(window_width, window_height, grid_width, grid_height,
+                  FLAGS_num_particles);
+
+  double dt = FLAGS_dt;
   sim.ToggleFullScreen();
   ControllerInput input;
-  TimePoint previous = ClockType::now();
   while (!input.quit) {
-    const TimePoint current = ClockType::now();
-    input = sim.Update(current - previous);
-    previous = current;
+    input = sim.Update(dt);
   }
 }
 
 int main(int argc, char* argv[]) {
   Init(argc, argv);
-  if (FLAGS_debug) {
-    Test1();
-  } else {
-    TestLoop();
-  }
-
+  TestLoop();
   return 0;
 }

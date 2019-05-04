@@ -37,7 +37,8 @@ uvec2 GetRemainder(in uvec2 pos) {
 }
 
 float Norm(in ivec2 vel) {
-  return sqrt(vel.x*vel.x + vel.y * vel.y);
+  vec2 f_vel = vec2(vel);
+  return sqrt(f_vel.x*f_vel.x + f_vel.y * f_vel.y);
 }
 
 bool OnBuffer(in ivec2 cell) {

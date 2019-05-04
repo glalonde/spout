@@ -14,11 +14,11 @@ static const PixelType::RGBAU8 kTrailColor = {0, 128, 0, 255};
 static const PixelType::RGBAU8 text_color =
     Convert<PixelType::RGBAU8>(PixelType::RGBF64(1.0, 0.0, 0.0));
 
-void RenderEnvironment(const Image<uint8_t>& env,
-                       Image<PixelType::RGBAU8>* data) {
+template <class T>
+void RenderEnvironment(const Image<T>& env, Image<PixelType::RGBAU8>* data) {
   for (int r = 0; r < env.rows(); ++r) {
     for (int c = 0; c < env.cols(); ++c) {
-      if (env(r, c) == kWall) {
+      if (env(r, c) > T(0)) {
         (*data)(r, c) = kWallColor;
       } else {
         (*data)(r, c) = {0, 0, 0, 255};
