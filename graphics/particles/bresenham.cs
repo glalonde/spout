@@ -1,5 +1,4 @@
 #version 430
-#extension GL_ARB_compute_variable_group_size : enable
 layout(location = 0) uniform float dt;
 layout(location = 1) uniform int anchor;
 layout(location = 2) uniform int buffer_width;
@@ -9,10 +8,10 @@ layout(location = 5) uniform int kMantissaBits;
 
 layout(binding = 0, r32i) uniform iimage2D terrain_texture;
 layout(binding = 1, r32ui) uniform uimage2D counter_texture;
-layout(local_size_variable) in;
+uint kCellSize = 1 << kMantissaBits;
+uint kHalfCellSize = 1 << (kMantissaBits - 1);
 
-const uint kCellSize = 1 << kMantissaBits;
-const uint kHalfCellSize = 1 << (kMantissaBits - 1);
+layout(local_size_x = 512, local_size_y = 1, local_size_z = 1) in;
 
 struct Particle {
   uvec2 position;

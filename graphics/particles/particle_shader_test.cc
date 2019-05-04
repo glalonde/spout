@@ -86,7 +86,7 @@ class ParticleSim {
                 kMantissaBits);
     const int group_size = std::min(num_particles_, 512);
     const int num_groups = num_particles_ / group_size;
-    glad_glDispatchComputeGroupSizeARB(num_groups, 1, 1, group_size, 1, 1);
+    glad_glDispatchCompute(num_groups, 1, 1);
     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
     CHECK(CheckGLErrors());
   }
@@ -134,8 +134,6 @@ class ParticleSim {
       glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
     }
 
-    SDL_GL_SwapWindow(window_);
-    CHECK(CheckGLErrors());
     SDL_GL_SwapWindow(window_);
     CHECK(CheckGLErrors());
   }
@@ -423,7 +421,8 @@ class ParticleSim {
   void SetRandomPoints(Eigen::Map<Vector<IntParticle, Eigen::Dynamic>> data) {
     std::mt19937 gen(0);
     const int cell_size = kCellSize<uint32_t, kMantissaBits>;
-    auto magnitude_dist = UniformRandomDistribution<double>(0, 50 * cell_size);
+    auto magnitude_dist =
+        UniformRandomDistribution<double>(10, 100 * cell_size);
     auto angle_dist = UniformRandomDistribution<double>(-M_PI, M_PI);
     for (int i = 0; i < num_particles_; ++i) {
       data[i].position =
@@ -518,6 +517,7 @@ void Test1() {
 
 void TestLoop() {
   ParticleSim sim(1440, 900, 576, 360, FLAGS_num_particles);
+  sim.ToggleFullScreen();
   ControllerInput input;
   TimePoint previous = ClockType::now();
   while (!input.quit) {
