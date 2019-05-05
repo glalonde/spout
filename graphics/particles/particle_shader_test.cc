@@ -49,13 +49,13 @@ class Emitter {
     InitEmitterShader();
   }
 
-  void EmitOverTime(float dt) {
+  void EmitOverTime(float dt, Vector2u32 position) {
     emission_progress_ += dt;
     if (emission_progress_ > emission_period_) {
       const int num_emissions =
           static_cast<int>(emission_progress_ / emission_period_);
       emission_progress_ -= num_emissions * emission_period_;
-      Emit(num_emissions);
+      Emit(num_emissions, position);
     }
     return;
   }
@@ -75,13 +75,15 @@ class Emitter {
     CHECK(CheckGLErrors());
   }
 
-  void Emit(int num_emitted) {
+  void Emit(int num_emitted, Vector2u32 position) {
     // Execute the emitter shader
     glUseProgram(emitter_program_);
     glUniform1i(glGetUniformLocation(emitter_program_, "start_index"), write_index_);
     glUniform1i(glGetUniformLocation(emitter_program_, "num_emitted"), num_emitted);
     glUniform1f(glGetUniformLocation(emitter_program_, "ttl_min"), min_life_);
     glUniform1f(glGetUniformLocation(emitter_program_, "ttl_max"), max_life_);
+    glUniform2ui(glGetUniformLocation(emitter_program_, "position"),
+                 position.x(), position.y());
     const int group_size = std::min(num_particles_, 512);
     const int num_groups = num_particles_ / group_size;
     glad_glDispatchCompute(num_groups, 1, 1);
@@ -136,7 +138,10 @@ class ParticleSim {
   ControllerInput Update(const float dt) {
     HandleEvents(&input_);
     if (input_.up) {
-      emitter_->EmitOverTime(dt);
+      Vector2u32 emit_position = Vector2u32::Constant(
+          SetLowRes<kMantissaBits>(kAnchor<uint32_t, kMantissaBits>));
+      emit_position += ((grid_dims_ / 2) * cell_size_).cast<uint32_t>();
+      emitter_->EmitOverTime(dt, emit_position);
     }
     UpdateSimulation(dt);
     Render();
@@ -504,22 +509,20 @@ class ParticleSim {
     CHECK(CheckGLErrors());
   }
 
-  void SetRandomPoints(Vector2i start_cell, int cell_size,
+  void SetRandomPoints(Vector2i start_cell,
                        Eigen::Map<Vector<IntParticle, Eigen::Dynamic>> data) {
     std::mt19937 gen(0);
-
-    std::normal_distribution<double> ttl_dist(3.0, 1.0);
     auto magnitude_dist = UniformRandomDistribution<double>(
-        FLAGS_particle_speed * cell_size * .75,
-        FLAGS_particle_speed * cell_size * 1.25);
+        FLAGS_particle_speed * cell_size_ * .75,
+        FLAGS_particle_speed * cell_size_ * 1.25);
     auto angle_dist = UniformRandomDistribution<double>(-M_PI, M_PI);
     for (int i = 0; i < num_particles_; ++i) {
       data[i].position =
           Vector2u32::Constant(SetLowRes<kMantissaBits>(kAnchor<uint32_t, kMantissaBits>));
-      data[i].position += (start_cell * cell_size).cast<uint32_t>();
+      data[i].position += (start_cell * cell_size_).cast<uint32_t>();
       data[i].velocity =
           (SO2d(angle_dist(gen)).data() * magnitude_dist(gen)).cast<int>();
-      data[i].ttl = ttl_dist(gen);
+      data[i].ttl = 0;
     }
   }
 
@@ -538,8 +541,7 @@ class ParticleSim {
     Eigen::Map<Vector<IntParticle, Eigen::Dynamic>> points(
         reinterpret_cast<IntParticle*>(buffer_ptr), num_particles_);
 
-    const int cell_size = kCellSize<uint32_t, kMantissaBits>;
-    SetRandomPoints(grid_dims_/2, cell_size, points);
+    SetRandomPoints(grid_dims_ / 2, points);
     LOG(INFO) << "Done in: " << timer.ElapsedDuration();
     glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
     CHECK(CheckGLErrors());
@@ -551,6 +553,7 @@ class ParticleSim {
 
   const Vector2i window_size_;
   const Vector2i grid_dims_;
+  const int cell_size_ = kCellSize<uint32_t, kMantissaBits>;
   int num_particles_;
 
   ControllerInput input_;
