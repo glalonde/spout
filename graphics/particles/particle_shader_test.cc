@@ -49,13 +49,13 @@ class Emitter {
     InitEmitterShader();
   }
 
-  void EmitOverTime(float dt, Vector2u32 position) {
+  void EmitOverTime(float dt, Vector2u32 start_pos, Vector2u32 end_pos) {
     emission_progress_ += dt;
     if (emission_progress_ > emission_period_) {
       const int num_emissions =
           static_cast<int>(emission_progress_ / emission_period_);
       emission_progress_ -= num_emissions * emission_period_;
-      Emit(num_emissions, position);
+      Emit(num_emissions, start_pos, end_pos);
     }
     return;
   }
@@ -75,15 +75,17 @@ class Emitter {
     CHECK(CheckGLErrors());
   }
 
-  void Emit(int num_emitted, Vector2u32 position) {
+  void Emit(int num_emitted, Vector2u32 start_pos, Vector2u32 end_pos) {
     // Execute the emitter shader
     glUseProgram(emitter_program_);
     glUniform1i(glGetUniformLocation(emitter_program_, "start_index"), write_index_);
     glUniform1i(glGetUniformLocation(emitter_program_, "num_emitted"), num_emitted);
     glUniform1f(glGetUniformLocation(emitter_program_, "ttl_min"), min_life_);
     glUniform1f(glGetUniformLocation(emitter_program_, "ttl_max"), max_life_);
-    glUniform2ui(glGetUniformLocation(emitter_program_, "position"),
-                 position.x(), position.y());
+    glUniform2ui(glGetUniformLocation(emitter_program_, "start_position"),
+                 start_pos.x(), start_pos.y());
+    glUniform2ui(glGetUniformLocation(emitter_program_, "end_position"),
+                 end_pos.x(), end_pos.y());
     const int group_size = std::min(num_particles_, 512);
     const int num_groups = num_particles_ / group_size;
     glad_glDispatchCompute(num_groups, 1, 1);
@@ -141,7 +143,8 @@ class ParticleSim {
       Vector2u32 emit_position = Vector2u32::Constant(
           SetLowRes<kMantissaBits>(kAnchor<uint32_t, kMantissaBits>));
       emit_position += ((grid_dims_ / 2) * cell_size_).cast<uint32_t>();
-      emitter_->EmitOverTime(dt, emit_position);
+      emitter_->EmitOverTime(dt, emit_position - Vector2u32(cell_size_, 0) * 30,
+                             emit_position + Vector2u32(cell_size_, 0) * 30);
     }
     UpdateSimulation(dt);
     Render();
