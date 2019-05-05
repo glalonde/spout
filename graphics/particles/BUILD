@@ -1,16 +1,10 @@
 package(default_visibility = ["//visibility:public"])
 
 filegroup(
-    name = "testdata",
-    srcs = glob([
-        "testdata/*",
-    ]),
-)
-
-filegroup(
     name = "shaders",
     srcs = [
         "bresenham.cs",
+        "emitter.cs",
         "color_map_texture.frag",
         "draw_particles.cs",
         "shader.frag",

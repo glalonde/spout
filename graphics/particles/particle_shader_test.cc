@@ -1,4 +1,5 @@
 #include <array>
+#include <memory>
 #include "base/init.h"
 #include "base/wall_timer.h"
 #include "base/format.h"
@@ -15,13 +16,15 @@
 #include "src/bresenham.h"
 #include "src/so2.h"
 
-DEFINE_int32(num_particles, 512, "Number of particles");
 DEFINE_bool(debug, false, "Debug mode");
 DEFINE_int32(color_map_index, 0, "Color map index, see color_maps.h");
 DEFINE_double(damage_rate, 1.0, "Damage rate");
 DEFINE_double(dt, .016, "Simulation rate");
 DEFINE_int32(pixel_size, 4, "Pixel size");
 DEFINE_double(particle_speed, 250.0, "Particle speed");
+DEFINE_double(emission_rate, 250.0, "Particle emission rate");
+DEFINE_double(min_life, 1.0, "Min particle life");
+DEFINE_double(max_life, 5.0, "Max particle life");
 
 static constexpr int kMantissaBits = 14;
 
@@ -34,13 +37,81 @@ struct IntParticle {
 
 static constexpr int32_t kDenseWall = 1000;
 
+class Emitter {
+ public:
+  Emitter(float emission_rate, float min_life, float max_life)
+      : emission_rate_(emission_rate),
+        min_life_(min_life),
+        max_life_(max_life),
+        emission_period_(1.0 / emission_rate_),
+        num_particles_(static_cast<int>(std::ceil(emission_rate_ * max_life_))),
+        emission_progress_(0) {
+    InitEmitterShader();
+  }
+
+  void EmitOverTime(float dt) {
+    emission_progress_ += dt;
+    if (emission_progress_ > emission_period_) {
+      const int num_emissions =
+          static_cast<int>(emission_progress_ / emission_period_);
+      emission_progress_ -= num_emissions * emission_period_;
+      Emit(num_emissions);
+    }
+    return;
+  }
+
+  int num_particles() const {
+    return num_particles_;
+  }
+
+ private:
+  void InitEmitterShader() {
+    emitter_program_ = glCreateProgram();
+    GLuint compute_shader =
+        LoadShader("graphics/particles/emitter.cs", GL_COMPUTE_SHADER);
+    glAttachShader(emitter_program_, compute_shader);
+    LinkProgram(emitter_program_);
+    glUseProgram(emitter_program_);
+    CHECK(CheckGLErrors());
+  }
+
+  void Emit(int num_emitted) {
+    // Execute the emitter shader
+    glUseProgram(emitter_program_);
+    glUniform1i(glGetUniformLocation(emitter_program_, "start_index"), write_index_);
+    glUniform1i(glGetUniformLocation(emitter_program_, "num_emitted"), num_emitted);
+    glUniform1f(glGetUniformLocation(emitter_program_, "ttl_min"), min_life_);
+    glUniform1f(glGetUniformLocation(emitter_program_, "ttl_max"), max_life_);
+    const int group_size = std::min(num_particles_, 512);
+    const int num_groups = num_particles_ / group_size;
+    glad_glDispatchCompute(num_groups, 1, 1);
+    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+    glUseProgram(0);
+    CHECK(CheckGLErrors());
+    write_index_ = (write_index_ + num_emitted) % num_particles_;
+  }
+
+  // Emitter constants
+  float emission_rate_;
+  float min_life_;
+  float max_life_;
+  float emission_period_;
+  int num_particles_;
+
+  // Shader handle
+  GLuint emitter_program_;
+
+  // State
+  float emission_progress_;
+  int write_index_;
+};
+
 class ParticleSim {
  public:
   ParticleSim(int window_width, int window_height, int grid_width,
-              int grid_height, int num_particles)
+              int grid_height)
       : window_size_(window_width, window_height),
-        grid_dims_(grid_width, grid_height),
-        num_particles_(num_particles) {
+        grid_dims_(grid_width, grid_height) {
     Init();
   }
 
@@ -62,9 +133,12 @@ class ParticleSim {
     }
   }
 
-  ControllerInput Update(const double dt) {
+  ControllerInput Update(const float dt) {
     HandleEvents(&input_);
-    UpdateSimulation(static_cast<float>(dt));
+    if (input_.up) {
+      emitter_->EmitOverTime(dt);
+    }
+    UpdateSimulation(dt);
     Render();
     return input_;
   }
@@ -171,6 +245,7 @@ class ParticleSim {
     CHECK(CheckGLErrors());
     return copied;
   }
+
  private:
   void Init() {
     SDL_Init(SDL_INIT_EVERYTHING);
@@ -203,12 +278,14 @@ class ParticleSim {
     MakeLevel(&rando, &level_buffer);
     LOG(INFO) << level_buffer.maxCoeff();
 
+    InitEmitter();
+    num_particles_ = emitter_->num_particles();
     MakeParticleBuffer();
     MakeTerrainTexture(level_buffer);
     MakeDensityTexture();
     MakeParticleColorTable();
     MakeTerrainColorTable();
-    InitComputeShader();
+    InitBresenhamShader();
     InitRenderShader();
     LOG(INFO) << "Finished init";
   }
@@ -237,7 +314,12 @@ class ParticleSim {
     }
   }
 
-  void InitComputeShader() {
+  void InitEmitter() {
+    emitter_ = std::make_unique<Emitter>(FLAGS_emission_rate, FLAGS_min_life,
+                                         FLAGS_max_life);
+  }
+
+  void InitBresenhamShader() {
     particle_program_ = glCreateProgram();
     GLuint compute_shader =
         LoadShader("graphics/particles/bresenham.cs", GL_COMPUTE_SHADER);
@@ -469,7 +551,7 @@ class ParticleSim {
 
   const Vector2i window_size_;
   const Vector2i grid_dims_;
-  const int num_particles_;
+  int num_particles_;
 
   ControllerInput input_;
   SDL_Event event_;
@@ -479,7 +561,9 @@ class ParticleSim {
   // Particle data
   GLuint particle_ssbo_;
 
+  // Compute shaders
   GLuint particle_program_;
+  std::unique_ptr<Emitter> emitter_;
 
   // Convert particle data to a texture of particle counts
   GLuint particle_tex_handle_;
@@ -500,8 +584,7 @@ void TestLoop() {
   int grid_width = window_width / pixel_size;
   int grid_height = window_height / pixel_size;
 
-  ParticleSim sim(window_width, window_height, grid_width, grid_height,
-                  FLAGS_num_particles);
+  ParticleSim sim(window_width, window_height, grid_width, grid_height);
 
   double dt = FLAGS_dt;
   sim.ToggleFullScreen();
