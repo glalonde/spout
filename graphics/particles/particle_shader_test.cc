@@ -21,12 +21,15 @@ DEFINE_int32(color_map_index, 0, "Color map index, see color_maps.h");
 DEFINE_double(damage_rate, 1.0, "Damage rate");
 DEFINE_double(dt, .016, "Simulation rate");
 DEFINE_int32(pixel_size, 4, "Pixel size");
+DEFINE_double(particle_speed, 250.0, "Particle speed");
 
 static constexpr int kMantissaBits = 14;
 
 struct IntParticle {
   Vector2<uint32_t> position;
   Vector2<int32_t> velocity;
+  float ttl;
+  uint32_t padding;
 };
 
 static constexpr int32_t kDenseWall = 1000;
@@ -422,8 +425,11 @@ class ParticleSim {
   void SetRandomPoints(Vector2i start_cell, int cell_size,
                        Eigen::Map<Vector<IntParticle, Eigen::Dynamic>> data) {
     std::mt19937 gen(0);
-    auto magnitude_dist =
-        UniformRandomDistribution<double>(400 * cell_size, 500 * cell_size);
+
+    std::normal_distribution<double> ttl_dist(3.0, 1.0);
+    auto magnitude_dist = UniformRandomDistribution<double>(
+        FLAGS_particle_speed * cell_size * .75,
+        FLAGS_particle_speed * cell_size * 1.25);
     auto angle_dist = UniformRandomDistribution<double>(-M_PI, M_PI);
     for (int i = 0; i < num_particles_; ++i) {
       data[i].position =
@@ -431,6 +437,7 @@ class ParticleSim {
       data[i].position += (start_cell * cell_size).cast<uint32_t>();
       data[i].velocity =
           (SO2d(angle_dist(gen)).data() * magnitude_dist(gen)).cast<int>();
+      data[i].ttl = ttl_dist(gen);
     }
   }
 

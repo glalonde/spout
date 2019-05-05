@@ -16,6 +16,8 @@ layout(local_size_x = 512, local_size_y = 1, local_size_z = 1) in;
 struct Particle {
   uvec2 position;
   ivec2 velocity;
+  float ttl;
+  uint padding;
 };
 
 layout(std430, binding = 0) buffer Particles {
@@ -59,6 +61,10 @@ bool TryErodeTerrain(in ivec2 cell, in float speed) {
 void main() {
   uint gid = gl_GlobalInvocationID.x;
   Particle p = particles[gid];
+  if (p.ttl <= 0) {
+    return;
+  }
+
   ivec2 signed_delta = ivec2(p.velocity * dt);
   uvec2 end_pos = p.position + signed_delta;
 
@@ -128,6 +134,7 @@ void main() {
 
   particles[gid].position = SetPosition(uvec2(current_cell + anchor), uvec2(end_remainder));
   particles[gid].velocity = vel_out;
+  particles[gid].ttl = p.ttl - dt;
 
   // Draw to the density texture
   imageAtomicAdd(counter_texture, current_cell, 1);
