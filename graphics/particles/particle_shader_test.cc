@@ -16,7 +16,6 @@
 #include "src/bresenham.h"
 #include "src/so2.h"
 
-DEFINE_bool(debug, false, "Debug mode");
 DEFINE_int32(color_map_index, 0, "Color map index, see color_maps.h");
 DEFINE_double(damage_rate, 1.0, "Damage rate");
 DEFINE_double(dt, .016, "Simulation rate");
@@ -49,13 +48,16 @@ class Emitter {
     InitEmitterShader();
   }
 
-  void EmitOverTime(float dt, Vector2u32 start_pos, Vector2u32 end_pos) {
+  void EmitOverTime(float dt, float start_angle, float delta_angle,
+                    Vector2u32 start_pos, Vector2u32 delta_pos,
+                    Vector2i32 start_velocity, Vector2i32 delta_velocity) {
     emission_progress_ += dt;
     if (emission_progress_ > emission_period_) {
       const int num_emissions =
           static_cast<int>(emission_progress_ / emission_period_);
       emission_progress_ -= num_emissions * emission_period_;
-      Emit(num_emissions, start_pos, end_pos);
+      Emit(num_emissions, start_angle, delta_angle, start_pos, delta_pos,
+           start_velocity, delta_velocity);
     }
     return;
   }
@@ -75,17 +77,39 @@ class Emitter {
     CHECK(CheckGLErrors());
   }
 
-  void Emit(int num_emitted, Vector2u32 start_pos, Vector2u32 end_pos) {
+  void Emit(int num_emitted, float start_angle, float delta_angle,
+            Vector2u32 start_pos, Vector2u32 delta_pos,
+            Vector2i32 start_velocity, Vector2i32 delta_velocity) {
     // Execute the emitter shader
     glUseProgram(emitter_program_);
+
+    // This shader is invoked for every particle instance, so we need to only
+    // act on the subset that are emitted, starting at `write_index`, for
+    // `num_emitted` particles. Everything else is ignored. This is effectively
+    // a circular buffer.
     glUniform1i(glGetUniformLocation(emitter_program_, "start_index"), write_index_);
+
+    // num_emitted is how many to emit during this invocation.
     glUniform1i(glGetUniformLocation(emitter_program_, "num_emitted"), num_emitted);
     glUniform1f(glGetUniformLocation(emitter_program_, "ttl_min"), min_life_);
     glUniform1f(glGetUniformLocation(emitter_program_, "ttl_max"), max_life_);
+
+    // Physical properties inherited from the linearly interpolated state of the
+    // emitter during this time window. TODO: Can we do better than linear
+    // interpolation?
+    glUniform1f(glGetUniformLocation(emitter_program_, "start_angle"),
+                 start_angle);
+    glUniform1f(glGetUniformLocation(emitter_program_, "delta_angle"),
+                 delta_angle);
     glUniform2ui(glGetUniformLocation(emitter_program_, "start_position"),
                  start_pos.x(), start_pos.y());
-    glUniform2ui(glGetUniformLocation(emitter_program_, "end_position"),
-                 end_pos.x(), end_pos.y());
+    glUniform2ui(glGetUniformLocation(emitter_program_, "delta_position"),
+                 delta_pos.x(), delta_pos.y());
+    glUniform2i(glGetUniformLocation(emitter_program_, "start_velocity"),
+                 start_velocity.x(), start_velocity.y());
+    glUniform2i(glGetUniformLocation(emitter_program_, "delta_velocity"),
+                 delta_velocity.x(), delta_velocity.y());
+
     const int group_size = std::min(num_particles_, 512);
     const int num_groups = num_particles_ / group_size;
     glad_glDispatchCompute(num_groups, 1, 1);
@@ -583,6 +607,7 @@ class ParticleSim {
   GLuint vertex_array_;
   GLuint element_buffer_;
 };
+
 void TestLoop() {
   int window_width = 1440;
   int window_height = 900;
