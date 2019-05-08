@@ -47,6 +47,7 @@ class Emitter {
         num_particles_(static_cast<int>(std::ceil(emission_rate_ * max_life_))),
         emission_progress_(0) {
     InitEmitterShader();
+    MakeParticleBuffer();
   }
 
   void EmitOverTime(float dt, Vector2u32 start_pos, Vector2u32 end_pos) {
@@ -64,6 +65,10 @@ class Emitter {
     return num_particles_;
   }
 
+  GLuint particle_ssbo() const {
+    return particle_ssbo_;
+  }
+
  private:
   void InitEmitterShader() {
     emitter_program_ = glCreateProgram();
@@ -71,13 +76,22 @@ class Emitter {
         LoadShader("graphics/particles/emitter.cs", GL_COMPUTE_SHADER);
     glAttachShader(emitter_program_, compute_shader);
     LinkProgram(emitter_program_);
-    glUseProgram(emitter_program_);
+    CHECK(CheckGLErrors());
+  }
+
+  void MakeParticleBuffer() {
+    const int buffer_size = num_particles_ * (sizeof(IntParticle));
+    glGenBuffers(1, &particle_ssbo_);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, particle_ssbo_);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, buffer_size, NULL, GL_DYNAMIC_COPY);
     CHECK(CheckGLErrors());
   }
 
   void Emit(int num_emitted, Vector2u32 start_pos, Vector2u32 end_pos) {
     // Execute the emitter shader
     glUseProgram(emitter_program_);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0 /* bind index */,
+                     particle_ssbo_);
     glUniform1i(glGetUniformLocation(emitter_program_, "start_index"), write_index_);
     glUniform1i(glGetUniformLocation(emitter_program_, "num_emitted"), num_emitted);
     glUniform1f(glGetUniformLocation(emitter_program_, "ttl_min"), min_life_);
@@ -104,6 +118,7 @@ class Emitter {
 
   // Shader handle
   GLuint emitter_program_;
+  GLuint particle_ssbo_;
 
   // State
   float emission_progress_;
@@ -146,12 +161,13 @@ class ParticleSim {
       emitter_->EmitOverTime(dt, emit_position - Vector2u32(cell_size_, 0) * 30,
                              emit_position + Vector2u32(cell_size_, 0) * 30);
     }
-    UpdateSimulation(dt);
+    UpdateParticleSimulation(dt);
+    UpdateShipSimulation(dt, Vector2f(0.f, -250 * cell_size_));
     Render();
     return input_;
   }
 
-  void UpdateSimulation(float dt) {
+  void UpdateParticleSimulation(float dt) {
     // Clear the density counter texture
     uint32_t clear_color = 0;
     glClearTexImage(particle_tex_handle_, 0, GL_RED_INTEGER, GL_UNSIGNED_INT,
@@ -159,6 +175,8 @@ class ParticleSim {
     CHECK(CheckGLErrors());
     // Update particle states
     glUseProgram(particle_program_);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0 /* bind index */,
+                     particle_ssbo_);
     glUniform1f(glGetUniformLocation(particle_program_, "dt"), dt);
     glUniform1i(glGetUniformLocation(particle_program_, "anchor"),
                 kAnchor<uint32_t, kMantissaBits>);
@@ -173,6 +191,34 @@ class ParticleSim {
     const int group_size = std::min(num_particles_, 512);
     const int num_groups = num_particles_ / group_size;
     glad_glDispatchCompute(num_groups, 1, 1);
+    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+    CHECK(CheckGLErrors());
+  }
+
+  void UpdateShipSimulation(float dt, Vector2f acceleration) {
+    glUseProgram(particle_program_);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0 /* bind index */, ship_ssbo_);
+    glUniform1f(glGetUniformLocation(particle_program_, "dt"), dt);
+    glUniform1i(glGetUniformLocation(particle_program_, "anchor"),
+                kAnchor<uint32_t, kMantissaBits>);
+    glUniform1i(glGetUniformLocation(particle_program_, "buffer_width"),
+                grid_dims_[0]);
+    glUniform1i(glGetUniformLocation(particle_program_, "buffer_height"),
+                grid_dims_[1]);
+    glUniform1f(glGetUniformLocation(particle_program_, "damage_rate"),
+                FLAGS_damage_rate);
+    glUniform1i(glGetUniformLocation(particle_program_, "kMantissaBits"),
+                kMantissaBits);
+    glad_glDispatchCompute(1, 1, 1);
+    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+    CHECK(CheckGLErrors());
+
+    glUseProgram(ship_program_);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0 /* bind index */, ship_ssbo_);
+    glUniform1f(glGetUniformLocation(ship_program_, "dt"), dt);
+    glUniform2f(glGetUniformLocation(ship_program_, "acceleration"),
+                acceleration.x(), acceleration.y());
+    glad_glDispatchCompute(1, 1, 1);
     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
     CHECK(CheckGLErrors());
   }
@@ -254,6 +300,19 @@ class ParticleSim {
     return copied;
   }
 
+  IntParticle ReadShipBuffer() {
+    const int buffer_size = 1 * (sizeof(IntParticle));
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, ship_ssbo_);
+    CHECK(CheckGLErrors());
+    void* buffer_ptr = glMapBufferRange(GL_SHADER_STORAGE_BUFFER, 0,
+                                        buffer_size, GL_MAP_READ_BIT);
+    CHECK(CheckGLErrors());
+    IntParticle out = *reinterpret_cast<IntParticle*>(buffer_ptr);
+    glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
+    CHECK(CheckGLErrors());
+    return out;
+  }
+
  private:
   void Init() {
     SDL_Init(SDL_INIT_EVERYTHING);
@@ -286,14 +345,24 @@ class ParticleSim {
     MakeLevel(&rando, &level_buffer);
     LOG(INFO) << level_buffer.maxCoeff();
 
+    IntParticle initial_ship;
+    initial_ship.position = Vector2u32::Constant(
+        SetLowRes<kMantissaBits>(kAnchor<uint32_t, kMantissaBits>));
+    initial_ship.position += (grid_dims_ / 2 * cell_size_).cast<uint32_t>();
+    initial_ship.velocity.setZero();
+    initial_ship.ttl = 100000;
+
     InitEmitter();
     num_particles_ = emitter_->num_particles();
-    MakeParticleBuffer();
+    particle_ssbo_ = emitter_->particle_ssbo();
+
+    MakeShipBuffer(initial_ship);
     MakeTerrainTexture(level_buffer);
     MakeDensityTexture();
     MakeParticleColorTable();
     MakeTerrainColorTable();
     InitBresenhamShader();
+    InitShipShader();
     InitRenderShader();
     LOG(INFO) << "Finished init";
   }
@@ -327,13 +396,36 @@ class ParticleSim {
                                          FLAGS_max_life);
   }
 
+  void MakeShipBuffer(const IntParticle& init) {
+    const int buffer_size = 1 * (sizeof(IntParticle));
+    glGenBuffers(1, &ship_ssbo_);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, ship_ssbo_);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, buffer_size, NULL, GL_DYNAMIC_COPY);
+    GLint buf_mask = GL_MAP_WRITE_BIT | GL_MAP_INVALIDATE_BUFFER_BIT;
+    void* buffer_ptr =
+        glMapBufferRange(GL_SHADER_STORAGE_BUFFER, 0, buffer_size, buf_mask);
+    IntParticle* ship_ptr = reinterpret_cast<IntParticle*>(buffer_ptr);
+    *ship_ptr = init;
+    glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
+    CHECK(CheckGLErrors());
+    LOG(INFO) << "Made ship buffer";
+  }
+
   void InitBresenhamShader() {
     particle_program_ = glCreateProgram();
     GLuint compute_shader =
         LoadShader("graphics/particles/bresenham.cs", GL_COMPUTE_SHADER);
     glAttachShader(particle_program_, compute_shader);
     LinkProgram(particle_program_);
-    glUseProgram(particle_program_);
+    CHECK(CheckGLErrors());
+  }
+
+  void InitShipShader() {
+    ship_program_ = glCreateProgram();
+    GLuint compute_shader =
+        LoadShader("graphics/particles/ship.cs", GL_COMPUTE_SHADER);
+    glAttachShader(ship_program_, compute_shader);
+    LinkProgram(ship_program_);
     CHECK(CheckGLErrors());
   }
 
@@ -529,31 +621,6 @@ class ParticleSim {
     }
   }
 
-  void MakeParticleBuffer() {
-    const int buffer_size = num_particles_ * (sizeof(IntParticle));
-    glGenBuffers(1, &particle_ssbo_);
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, particle_ssbo_);
-    LOG(INFO) << "Making buffer size: " << buffer_size;
-    glBufferData(GL_SHADER_STORAGE_BUFFER, buffer_size, NULL, GL_DYNAMIC_COPY);
-    GLint buf_mask = GL_MAP_WRITE_BIT | GL_MAP_INVALIDATE_BUFFER_BIT;
-    void* buffer_ptr =
-        glMapBufferRange(GL_SHADER_STORAGE_BUFFER, 0, buffer_size, buf_mask);
-    WallTimer timer;
-    LOG(INFO) << "Creating " << num_particles_ << " random particles";
-    timer.Start();
-    Eigen::Map<Vector<IntParticle, Eigen::Dynamic>> points(
-        reinterpret_cast<IntParticle*>(buffer_ptr), num_particles_);
-
-    SetRandomPoints(grid_dims_ / 2, points);
-    LOG(INFO) << "Done in: " << timer.ElapsedDuration();
-    glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
-    CHECK(CheckGLErrors());
-    const GLint particle_buffer_bind_point = 0;
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, particle_buffer_bind_point,
-                     particle_ssbo_);
-    timer.Stop();
-  }
-
   const Vector2i window_size_;
   const Vector2i grid_dims_;
   const int cell_size_ = kCellSize<uint32_t, kMantissaBits>;
@@ -566,9 +633,11 @@ class ParticleSim {
 
   // Particle data
   GLuint particle_ssbo_;
+  GLuint ship_ssbo_;
 
   // Compute shaders
   GLuint particle_program_;
+  GLuint ship_program_;
   std::unique_ptr<Emitter> emitter_;
 
   // Convert particle data to a texture of particle counts
