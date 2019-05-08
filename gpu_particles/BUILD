@@ -32,6 +32,19 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "game_window",
+    hdrs = ["game_window.h"],
+    srcs = ["game_window.cc"],
+    data = [":shaders"],
+    deps = [
+        "//base",
+        "//graphics:load_shader",
+        "//graphics:opengl",
+        "//src:controller_input",
+    ],
+)
+
 cc_binary(
     name = "game_main",
     srcs = ["game_main.cc"],
