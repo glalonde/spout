@@ -1,19 +1,19 @@
 #include <array>
 #include <memory>
+#include "base/format.h"
 #include "base/init.h"
 #include "base/wall_timer.h"
-#include "base/format.h"
+#include "gpu_particles/gl_emitter.h"
 #include "graphics/check_opengl_errors.h"
 #include "graphics/load_shader.h"
 #include "graphics/opengl.h"
 #include "src/color_maps/color_maps.h"
 #include "src/controller_input.h"
+#include "src/demo_utils.h"
 #include "src/eigen_types.h"
+#include "src/image.h"
 #include "src/int_grid.h"
 #include "src/random.h"
-#include "src/image.h"
-#include "src/demo_utils.h"
-#include "src/bresenham.h"
 #include "src/so2.h"
 
 DEFINE_bool(debug, false, "Debug mode");
@@ -28,102 +28,7 @@ DEFINE_double(max_life, 5.0, "Max particle life");
 
 static constexpr int kMantissaBits = 14;
 
-struct IntParticle {
-  Vector2<uint32_t> position;
-  Vector2<int32_t> velocity;
-  float ttl;
-  uint32_t padding;
-};
-
 static constexpr int32_t kDenseWall = 1000;
-
-class Emitter {
- public:
-  Emitter(float emission_rate, float min_life, float max_life)
-      : emission_rate_(emission_rate),
-        min_life_(min_life),
-        max_life_(max_life),
-        emission_period_(1.0 / emission_rate_),
-        num_particles_(static_cast<int>(std::ceil(emission_rate_ * max_life_))),
-        emission_progress_(0) {
-    InitEmitterShader();
-    MakeParticleBuffer();
-  }
-
-  void EmitOverTime(float dt, Vector2u32 start_pos, Vector2u32 end_pos) {
-    emission_progress_ += dt;
-    if (emission_progress_ > emission_period_) {
-      const int num_emissions =
-          static_cast<int>(emission_progress_ / emission_period_);
-      emission_progress_ -= num_emissions * emission_period_;
-      Emit(num_emissions, start_pos, end_pos);
-    }
-    return;
-  }
-
-  int num_particles() const {
-    return num_particles_;
-  }
-
-  GLuint particle_ssbo() const {
-    return particle_ssbo_;
-  }
-
- private:
-  void InitEmitterShader() {
-    emitter_program_ = glCreateProgram();
-    GLuint compute_shader =
-        LoadShader("graphics/particles/emitter.cs", GL_COMPUTE_SHADER);
-    glAttachShader(emitter_program_, compute_shader);
-    LinkProgram(emitter_program_);
-    CHECK(CheckGLErrors());
-  }
-
-  void MakeParticleBuffer() {
-    const int buffer_size = num_particles_ * (sizeof(IntParticle));
-    glGenBuffers(1, &particle_ssbo_);
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, particle_ssbo_);
-    glBufferData(GL_SHADER_STORAGE_BUFFER, buffer_size, NULL, GL_DYNAMIC_COPY);
-    CHECK(CheckGLErrors());
-  }
-
-  void Emit(int num_emitted, Vector2u32 start_pos, Vector2u32 end_pos) {
-    // Execute the emitter shader
-    glUseProgram(emitter_program_);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0 /* bind index */,
-                     particle_ssbo_);
-    glUniform1i(glGetUniformLocation(emitter_program_, "start_index"), write_index_);
-    glUniform1i(glGetUniformLocation(emitter_program_, "num_emitted"), num_emitted);
-    glUniform1f(glGetUniformLocation(emitter_program_, "ttl_min"), min_life_);
-    glUniform1f(glGetUniformLocation(emitter_program_, "ttl_max"), max_life_);
-    glUniform2ui(glGetUniformLocation(emitter_program_, "start_position"),
-                 start_pos.x(), start_pos.y());
-    glUniform2ui(glGetUniformLocation(emitter_program_, "end_position"),
-                 end_pos.x(), end_pos.y());
-    const int group_size = std::min(num_particles_, 512);
-    const int num_groups = num_particles_ / group_size;
-    glad_glDispatchCompute(num_groups, 1, 1);
-    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-    glUseProgram(0);
-    CHECK(CheckGLErrors());
-    write_index_ = (write_index_ + num_emitted) % num_particles_;
-  }
-
-  // Emitter constants
-  float emission_rate_;
-  float min_life_;
-  float max_life_;
-  float emission_period_;
-  int num_particles_;
-
-  // Shader handle
-  GLuint emitter_program_;
-  GLuint particle_ssbo_;
-
-  // State
-  float emission_progress_;
-  int write_index_;
-};
 
 class ParticleSim {
  public:
@@ -326,7 +231,7 @@ class ParticleSim {
     SDL_GL_SetAttribute(SDL_GL_GREEN_SIZE, 8);
     SDL_GL_SetAttribute(SDL_GL_BLUE_SIZE, 8);
     SDL_GL_SetAttribute(SDL_GL_ALPHA_SIZE, 8);
-    window_ = SDL_CreateWindow("Image", SDL_WINDOWPOS_UNDEFINED,
+    window_ = SDL_CreateWindow("Spout", SDL_WINDOWPOS_UNDEFINED,
                                SDL_WINDOWPOS_UNDEFINED, window_size_[0],
                                window_size_[1], window_flags);
     gl_context_ = SDL_GL_CreateContext(window_);
@@ -415,7 +320,7 @@ class ParticleSim {
   void InitBresenhamShader() {
     particle_program_ = glCreateProgram();
     GLuint compute_shader =
-        LoadShader("graphics/particles/bresenham.cs", GL_COMPUTE_SHADER);
+        LoadShader("gpu_particles/shaders/bresenham.cs", GL_COMPUTE_SHADER);
     glAttachShader(particle_program_, compute_shader);
     LinkProgram(particle_program_);
     CHECK(CheckGLErrors());
@@ -424,7 +329,7 @@ class ParticleSim {
   void InitShipShader() {
     ship_program_ = glCreateProgram();
     GLuint compute_shader =
-        LoadShader("graphics/particles/ship.cs", GL_COMPUTE_SHADER);
+        LoadShader("gpu_particles/shaders/ship.cs", GL_COMPUTE_SHADER);
     glAttachShader(ship_program_, compute_shader);
     LinkProgram(ship_program_);
     CHECK(CheckGLErrors());
@@ -433,9 +338,9 @@ class ParticleSim {
   void InitRenderShader() {
     render_program_ = glCreateProgram();
     GLuint vert =
-        LoadShader("graphics/particles/shader.vert", GL_VERTEX_SHADER);
-    GLuint frag =
-        LoadShader("graphics/particles/color_map_texture.frag", GL_FRAGMENT_SHADER);
+        LoadShader("gpu_particles/shaders/shader.vert", GL_VERTEX_SHADER);
+    GLuint frag = LoadShader("gpu_particles/shaders/color_map_texture.frag",
+                             GL_FRAGMENT_SHADER);
     glAttachShader(render_program_, vert);
     glAttachShader(render_program_, frag);
     CHECK(CheckGLErrors());
@@ -613,8 +518,8 @@ class ParticleSim {
         FLAGS_particle_speed * cell_size_ * 1.25);
     auto angle_dist = UniformRandomDistribution<double>(-M_PI, M_PI);
     for (int i = 0; i < num_particles_; ++i) {
-      data[i].position =
-          Vector2u32::Constant(SetLowRes<kMantissaBits>(kAnchor<uint32_t, kMantissaBits>));
+      data[i].position = Vector2u32::Constant(
+          SetLowRes<kMantissaBits>(kAnchor<uint32_t, kMantissaBits>));
       data[i].position += (start_cell * cell_size_).cast<uint32_t>();
       data[i].velocity =
           (SO2d(angle_dist(gen)).data() * magnitude_dist(gen)).cast<int>();
