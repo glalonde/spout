@@ -2,12 +2,11 @@
 #include "graphics/check_opengl_errors.h"
 #include "graphics/load_shader.h"
 
-Emitter::Emitter(float emission_rate, float min_life, float max_life)
-    : emission_rate_(emission_rate),
-      min_life_(min_life),
-      max_life_(max_life),
-      emission_period_(1.0 / emission_rate_),
-      num_particles_(static_cast<int>(std::ceil(emission_rate_ * max_life_))),
+Emitter::Emitter(EmitterParameters params)
+    : params_(std::move(params)),
+      emission_period_(1.0 / params_.emission_rate),
+      num_particles_(static_cast<int>(
+          std::ceil(params_.emission_rate * params_.max_particle_life))),
       emission_progress_(0) {
   InitEmitterShader();
   MakeParticleBuffer();
@@ -50,8 +49,10 @@ void Emitter::Emit(int num_emitted, Vector2u32 start_pos, Vector2u32 end_pos) {
               write_index_);
   glUniform1i(glGetUniformLocation(emitter_program_, "num_emitted"),
               num_emitted);
-  glUniform1f(glGetUniformLocation(emitter_program_, "ttl_min"), min_life_);
-  glUniform1f(glGetUniformLocation(emitter_program_, "ttl_max"), max_life_);
+  glUniform1f(glGetUniformLocation(emitter_program_, "ttl_min"),
+              params_.min_particle_life);
+  glUniform1f(glGetUniformLocation(emitter_program_, "ttl_max"),
+              params_.max_particle_life);
   glUniform2ui(glGetUniformLocation(emitter_program_, "start_position"),
                start_pos.x(), start_pos.y());
   glUniform2ui(glGetUniformLocation(emitter_program_, "end_position"),

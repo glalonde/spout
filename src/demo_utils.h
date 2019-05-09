@@ -5,6 +5,7 @@
 #include "src/image.h"
 #include "src/random.h"
 #include "src/buffer_stack.h"
+#include "base/format.h"
 
 static constexpr uint8_t kWall = std::numeric_limits<uint8_t>::max();
 static const PixelType::RGBAU8 kWallColor = {0, 0, 255, 255};

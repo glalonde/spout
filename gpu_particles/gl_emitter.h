@@ -1,10 +1,12 @@
 #pragma once
+#include "gpu_particles/game_parameters.h"
 #include "gpu_particles/gl_particle.h"
 #include "graphics/opengl.h"
 
 class Emitter {
  public:
-  Emitter(float emission_rate, float min_life, float max_life);
+  Emitter(EmitterParameters params);
+
   void EmitOverTime(float dt, Vector2u32 start_pos, Vector2u32 end_pos);
 
   int num_particles() const {
@@ -21,9 +23,9 @@ class Emitter {
   void Emit(int num_emitted, Vector2u32 start_pos, Vector2u32 end_pos);
 
   // Emitter constants
-  float emission_rate_;
-  float min_life_;
-  float max_life_;
+  EmitterParameters params_;
+
+  // Computed from emitter constants
   float emission_period_;
   int num_particles_;
 

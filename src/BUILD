@@ -291,6 +291,7 @@ cc_library(
         ":convert",
         ":image",
         ":random",
+        "//base:format",
         "//src/color_maps",
         "//src/fonts:font_renderer",
     ],

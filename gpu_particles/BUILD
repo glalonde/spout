@@ -7,11 +7,18 @@ filegroup(
     ]),
 )
 
+cc_library(
+    name = "game_parameters",
+    srcs = [],
+    hdrs = ["game_parameters.h"],
+    deps = [
+    ],
+)
 
 cc_library(
     name = "gl_particle",
-    hdrs = ["gl_particle.h"],
     srcs = [],
+    hdrs = ["gl_particle.h"],
     deps = [
         "//src:eigen_types",
     ],
@@ -19,11 +26,12 @@ cc_library(
 
 cc_library(
     name = "gl_emitter",
-    hdrs = ["gl_emitter.h"],
     srcs = ["gl_emitter.cc"],
+    hdrs = ["gl_emitter.h"],
     deps = [
-        "//base",
+        ":game_parameters",
         ":gl_particle",
+        "//base",
         "//graphics:check_opengl_errors",
         "//graphics:load_shader",
         "//graphics:opengl",
@@ -33,9 +41,30 @@ cc_library(
 )
 
 cc_library(
+    name = "game_controller",
+    srcs = ["game_controller.cc"],
+    hdrs = ["game_controller.h"],
+    deps = [
+        ":game_parameters",
+        ":game_window",
+        ":gl_emitter",
+        "//base",
+        "//graphics:check_opengl_errors",
+        "//graphics:load_shader",
+        "//graphics:opengl",
+        "//src:demo_utils",
+        "//src:eigen_types",
+        "//src:image",
+        "//src:int_grid",
+        "//src:random",
+        "//src/color_maps",
+    ],
+)
+
+cc_library(
     name = "game_window",
-    hdrs = ["game_window.h"],
     srcs = ["game_window.cc"],
+    hdrs = ["game_window.h"],
     data = [":shaders"],
     deps = [
         "//base",
@@ -50,21 +79,7 @@ cc_binary(
     srcs = ["game_main.cc"],
     data = [":shaders"],
     deps = [
-        ":gl_emitter",
-        ":game_window",
-        "//base",
+        ":game_controller",
         "//base:init",
-        "//base:wall_timer",
-        "//graphics:check_opengl_errors",
-        "//graphics:load_shader",
-        "//graphics:opengl",
-        "//src:bresenham",
-        "//src:controller_input",
-        "//src:demo_utils",
-        "//src:eigen_types",
-        "//src:int_grid",
-        "//src:random",
-        "//src:so2",
-        "//src/color_maps",
     ],
 )
