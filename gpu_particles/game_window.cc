@@ -35,12 +35,6 @@ void GameWindow::HandleEvents() {
   }
 }
 
-void GameWindow::UpdateInput(ControllerInput* input) {
-  while (SDL_PollEvent(&event_)) {
-    UpdateControllerInput(event_, input);
-  }
-}
-
 void GameWindow::Init() {
   SDL_Init(SDL_INIT_EVERYTHING);
   uint32_t window_flags = SDL_WINDOW_SHOWN | SDL_WINDOW_OPENGL;

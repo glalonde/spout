@@ -51,6 +51,7 @@ cc_binary(
     data = [":shaders"],
     deps = [
         ":gl_emitter",
+        ":game_window",
         "//base",
         "//base:init",
         "//base:wall_timer",

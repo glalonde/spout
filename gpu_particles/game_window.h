@@ -14,7 +14,9 @@ class GameWindow {
 
   void HandleEvents();
 
-  void UpdateInput(ControllerInput* input);
+  const ControllerInput& input() const {
+    return input_;
+  }
 
  private:
   void Init();

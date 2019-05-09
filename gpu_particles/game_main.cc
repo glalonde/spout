@@ -3,6 +3,7 @@
 #include "base/format.h"
 #include "base/init.h"
 #include "base/wall_timer.h"
+#include "gpu_particles/game_window.h"
 #include "gpu_particles/gl_emitter.h"
 #include "graphics/check_opengl_errors.h"
 #include "graphics/load_shader.h"
@@ -34,32 +35,18 @@ class ParticleSim {
  public:
   ParticleSim(int window_width, int window_height, int grid_width,
               int grid_height)
-      : window_size_(window_width, window_height),
+      : window_(window_width, window_height),
         grid_dims_(grid_width, grid_height) {
     Init();
   }
 
   ~ParticleSim() {
-    SDL_GL_DeleteContext(gl_context_);
-    SDL_DestroyWindow(window_);
-    SDL_Quit();
-  }
-
-  bool IsFullScreen() {
-    return SDL_GetWindowFlags(window_) & SDL_WINDOW_FULLSCREEN_DESKTOP;
-  }
-
-  void ToggleFullScreen() {
-    if (IsFullScreen()) {
-      SDL_SetWindowFullscreen(window_, 0);
-    } else {
-      SDL_SetWindowFullscreen(window_, SDL_WINDOW_FULLSCREEN_DESKTOP);
-    }
   }
 
   ControllerInput Update(const float dt) {
-    HandleEvents(&input_);
-    if (input_.up) {
+    window_.HandleEvents();
+    const auto& input = window_.input();
+    if (input.up) {
       Vector2u32 emit_position = Vector2u32::Constant(
           SetLowRes<kMantissaBits>(kAnchor<uint32_t, kMantissaBits>));
       emit_position += ((grid_dims_ / 2) * cell_size_).cast<uint32_t>();
@@ -69,7 +56,7 @@ class ParticleSim {
     UpdateParticleSimulation(dt);
     UpdateShipSimulation(dt, Vector2f(0.f, -250 * cell_size_));
     Render();
-    return input_;
+    return input;
   }
 
   void UpdateParticleSimulation(float dt) {
@@ -171,21 +158,8 @@ class ParticleSim {
       glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
     }
 
-    SDL_GL_SwapWindow(window_);
+    window_.SwapWindow();
     CHECK(CheckGLErrors());
-  }
-
-  void HandleEvents(ControllerInput* input) {
-    while (SDL_PollEvent(&event_)) {
-      UpdateControllerInput(event_, input);
-      UpdateWindowState(event_);
-    }
-  }
-
-  void UpdateInput(ControllerInput* input) {
-    while (SDL_PollEvent(&event_)) {
-      UpdateControllerInput(event_, input);
-    }
   }
 
   Vector<IntParticle, Eigen::Dynamic> ReadParticleBuffer() {
@@ -220,30 +194,6 @@ class ParticleSim {
 
  private:
   void Init() {
-    SDL_Init(SDL_INIT_EVERYTHING);
-    uint32_t window_flags = SDL_WINDOW_SHOWN | SDL_WINDOW_OPENGL;
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK,
-                        SDL_GL_CONTEXT_PROFILE_CORE);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 4);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
-    SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
-    SDL_GL_SetAttribute(SDL_GL_RED_SIZE, 8);
-    SDL_GL_SetAttribute(SDL_GL_GREEN_SIZE, 8);
-    SDL_GL_SetAttribute(SDL_GL_BLUE_SIZE, 8);
-    SDL_GL_SetAttribute(SDL_GL_ALPHA_SIZE, 8);
-    window_ = SDL_CreateWindow("Spout", SDL_WINDOWPOS_UNDEFINED,
-                               SDL_WINDOWPOS_UNDEFINED, window_size_[0],
-                               window_size_[1], window_flags);
-    gl_context_ = SDL_GL_CreateContext(window_);
-    if (!gl_context_) {
-      LOG(FATAL) << "Couldn't create OpenGL context, error: " << SDL_GetError();
-    }
-    if (!gladLoadGL()) {
-      LOG(FATAL) << "Something went wrong.";
-    }
-    SDL_GL_SetSwapInterval(1);
-    SDL_ShowCursor(0);
-
     std::mt19937 rando(0);
     Image<int32_t> level_buffer(grid_dims_.y(), grid_dims_.x());
     level_buffer.setZero();
@@ -276,25 +226,6 @@ class ParticleSim {
   void MakeLevel(std::mt19937* gen, Image<int32_t>* level_buffer) {
     AddNoise(kDenseWall, .5, gen, level_buffer);
     AddAllWalls(kDenseWall, level_buffer);
-  }
-
-  void UpdateWindowState(const SDL_Event& event) {
-    switch (event.type) {
-      case SDL_WINDOWEVENT: {
-        switch (event.window.event) {
-          case SDL_WINDOWEVENT_RESIZED: {
-            glViewport(0, 0, event.window.data1, event.window.data2);
-            break;
-          }
-          default: {
-            break;
-          }
-        }
-      }
-      default: {
-        break;
-      }
-    }
   }
 
   void InitEmitter() {
@@ -510,32 +441,11 @@ class ParticleSim {
     CHECK(CheckGLErrors());
   }
 
-  void SetRandomPoints(Vector2i start_cell,
-                       Eigen::Map<Vector<IntParticle, Eigen::Dynamic>> data) {
-    std::mt19937 gen(0);
-    auto magnitude_dist = UniformRandomDistribution<double>(
-        FLAGS_particle_speed * cell_size_ * .75,
-        FLAGS_particle_speed * cell_size_ * 1.25);
-    auto angle_dist = UniformRandomDistribution<double>(-M_PI, M_PI);
-    for (int i = 0; i < num_particles_; ++i) {
-      data[i].position = Vector2u32::Constant(
-          SetLowRes<kMantissaBits>(kAnchor<uint32_t, kMantissaBits>));
-      data[i].position += (start_cell * cell_size_).cast<uint32_t>();
-      data[i].velocity =
-          (SO2d(angle_dist(gen)).data() * magnitude_dist(gen)).cast<int>();
-      data[i].ttl = 0;
-    }
-  }
-
-  const Vector2i window_size_;
+  GameWindow window_;
   const Vector2i grid_dims_;
   const int cell_size_ = kCellSize<uint32_t, kMantissaBits>;
   int num_particles_;
 
-  ControllerInput input_;
-  SDL_Event event_;
-  SDL_Window* window_;
-  SDL_GLContext gl_context_;
 
   // Particle data
   GLuint particle_ssbo_;
@@ -568,7 +478,6 @@ void TestLoop() {
   ParticleSim sim(window_width, window_height, grid_width, grid_height);
 
   double dt = FLAGS_dt;
-  sim.ToggleFullScreen();
   ControllerInput input;
   while (!input.quit) {
     input = sim.Update(dt);
