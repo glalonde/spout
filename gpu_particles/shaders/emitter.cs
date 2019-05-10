@@ -1,4 +1,3 @@
-#version 430
 layout(location = 0) uniform int start_index;
 layout(location = 1) uniform int num_emitted;
 layout(location = 3) uniform float ttl_min;
@@ -26,7 +25,7 @@ layout(std430, binding = 0) buffer Particles {
 };
 
 float rand(vec2 st) {
-  return fract(sin(dot(st.xy, vec2(12.9898, 78.233))) * 43758.5453123);
+  return (snoise(st) + 1.0) / 2.0;
 }
 
 void main() {
@@ -42,7 +41,7 @@ void main() {
 
   float interp = float(distance) / num_emitted;
   // Start existing
-  float first_rand = rand(vec2(fract(random_seed), interp));
+  float first_rand = rand(vec2(random_seed / 3.0, interp));
   particles[gid].ttl = ttl_max - (ttl_max - ttl_min) * first_rand;
   ivec2 pos_delta = ivec2(interp * vec2(end_position - start_position));
   particles[gid].position = start_position + pos_delta;
@@ -51,8 +50,8 @@ void main() {
   float speed =
       emit_velocity_min + second_rand * (emit_velocity_max - emit_velocity_min);
 
-  float third_rand = noise1(4.0);
-  float angle = third_rand * M_PI * 2.0;
+  float third_rand = rand(vec2(second_rand, interp));
+  float angle = third_rand * M_PI;
   particles[gid].velocity = ivec2(speed * cos(angle), speed * sin(angle));
   particles[gid].padding = first_rand;
 }
