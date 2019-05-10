@@ -52,10 +52,15 @@ void ParticleSim::UpdateParticleSimulation(float dt) {
   glUniform1i(glGetUniformLocation(particle_program_, "kMantissaBits"),
               kMantissaBits);
   const int group_size = std::min(num_particles_, 512);
-  const int num_groups = num_particles_ / group_size;
+  const int num_groups = (num_particles_ + group_size - 1) / group_size;
+  LOG(INFO) << num_particles_ << ", " << group_size << ", " << num_groups;
   glad_glDispatchCompute(num_groups, 1, 1);
   glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
   CHECK(CheckGLErrors());
+  auto parts = ReadParticleBuffer();
+  for (int i = 0; i < parts.size(); ++i) {
+    LOG(INFO) << i << ", " << parts[i].padding;
+  }
 }
 
 void ParticleSim::UpdateShipSimulation(float dt, Vector2f acceleration) {

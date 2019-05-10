@@ -31,6 +31,7 @@ float rand(float x) {
 
 void main() {
   int gid = int(gl_GlobalInvocationID.x);
+  particles[gid].padding = gl_GlobalInvocationID.x;
   int total_particles = int(gl_NumWorkGroups * gl_WorkGroupSize);
   int distance = gid - start_index;
   if (distance < 0) {
@@ -42,7 +43,7 @@ void main() {
 
   float interp = float(distance) / num_emitted;
   // Start existing
-  particles[gid].ttl = ttl_max - 1.0 * rand(float(gid));
+  particles[gid].ttl = ttl_max - ttl_min * rand(float(gid));
   vec2 delta = interp * vec2(end_position - start_position);
   particles[gid].position = start_position + ivec2(delta);
   float speed = emit_velocity_min;

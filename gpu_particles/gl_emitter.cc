@@ -42,7 +42,7 @@ void Emitter::MakeParticleBuffer() {
 }
 
 void Emitter::Emit(int num_emitted, Vector2u32 start_pos, Vector2u32 end_pos) {
-  LOG(INFO) << num_emitted << ", " << write_index_;
+  LOG(INFO) << num_emitted << ", " << write_index_ << ", " << num_particles_;
   // Execute the emitter shader
   glUseProgram(emitter_program_);
   glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0 /* bind index */,
@@ -64,7 +64,7 @@ void Emitter::Emit(int num_emitted, Vector2u32 start_pos, Vector2u32 end_pos) {
   glUniform1f(glGetUniformLocation(emitter_program_, "emit_velocity_max"),
                params_.emission_speed_max * 16000);
   const int group_size = std::min(num_particles_, 512);
-  const int num_groups = num_particles_ / group_size;
+  const int num_groups = (num_particles_ + group_size - 1) / group_size;
   glad_glDispatchCompute(num_groups, 1, 1);
   glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
   glUseProgram(0);
