@@ -31,11 +31,31 @@ uint32_t SetHighRes(uint32_t v) {
   return v | kHighResMask<Bits>;
 }
 
-template <class R, int Bits>
-static R kAnchor = Bitmask<uint32_t>(((sizeof(R) * CHAR_BIT) - Bits) - 1);
+static constexpr uint32_t SetValues(int mantissa_bits, uint32_t integral,
+                                    uint32_t fractional) {
+  return (integral << mantissa_bits) | fractional;
+}
 
-template <class R, int Bits>
-static R kCellSize = Bitmask<uint32_t>(Bits) + 1;
+template <class R>
+static constexpr R Anchor(int mantissa_bits) {
+  return Bitmask<uint32_t>(((sizeof(R) * CHAR_BIT) - mantissa_bits) - 1);
+}
 
-template <class R, int Bits>
-static R kHalfCell = kCellSize<R, Bits> / 2;
+template <class R, int MantissaBits>
+static R kAnchor = Anchor<R>(MantissaBits);
+
+template <class R>
+static constexpr R CellSize(int mantissa_bits) {
+  return Bitmask<uint32_t>(mantissa_bits) + 1;
+}
+
+template <class R, int MantissaBits>
+static R kCellSize = CellSize<R>(MantissaBits);
+
+template <class R>
+static constexpr R HalfCellSize(int mantissa_bits) {
+  return CellSize<R>(mantissa_bits) >> 1;
+}
+
+template <class R, int MantissaBits>
+static R kHalfCellSize = HalfCellSize<R>(MantissaBits);

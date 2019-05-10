@@ -16,13 +16,16 @@ ControllerInput ParticleSim::Update(const float dt) {
   window_.HandleEvents();
   const auto& input = window_.input();
   if (input.up) {
-    Vector2u32 emit_position = Vector2u32::Constant(
-        SetLowRes<kMantissaBits>(kAnchor<uint32_t, kMantissaBits>));
-    emit_position +=
-        ((Vector2i(params_.grid_width, params_.grid_height) / 2) * cell_size_)
-            .cast<uint32_t>();
+    Vector2u32 emit_position;
+    emit_position.x() =
+        SetValues(kMantissaBits,
+                  Anchor<uint32_t>(kMantissaBits) + params_.grid_width / 2, 0);
+    emit_position.y() =
+        SetValues(kMantissaBits,
+                  Anchor<uint32_t>(kMantissaBits) + params_.grid_height / 2,
+                  CellSize<uint32_t>(kMantissaBits) / 2);
     emitter_->EmitOverTime(dt, emit_position - Vector2u32(cell_size_, 0) * 30,
-                           emit_position + Vector2u32(cell_size_, 0) * 30);
+                           emit_position + Vector2u32(0, cell_size_) * 30);
   }
   UpdateParticleSimulation(dt);
   // UpdateShipSimulation(dt, Vector2f(0.f, -250 * cell_size_));
@@ -42,7 +45,7 @@ void ParticleSim::UpdateParticleSimulation(float dt) {
                    particle_ssbo_);
   glUniform1f(glGetUniformLocation(particle_program_, "dt"), dt);
   glUniform1i(glGetUniformLocation(particle_program_, "anchor"),
-              kAnchor<uint32_t, kMantissaBits>);
+              Anchor<uint32_t>(kMantissaBits));
   glUniform1i(glGetUniformLocation(particle_program_, "buffer_width"),
               params_.grid_width);
   glUniform1i(glGetUniformLocation(particle_program_, "buffer_height"),
@@ -53,14 +56,16 @@ void ParticleSim::UpdateParticleSimulation(float dt) {
               kMantissaBits);
   const int group_size = std::min(num_particles_, 512);
   const int num_groups = (num_particles_ + group_size - 1) / group_size;
-  LOG(INFO) << num_particles_ << ", " << group_size << ", " << num_groups;
   glad_glDispatchCompute(num_groups, 1, 1);
   glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
   CHECK(CheckGLErrors());
+  /*
   auto parts = ReadParticleBuffer();
-  for (int i = 0; i < parts.size(); ++i) {
-    LOG(INFO) << i << ", " << parts[i].padding;
+  for (int i = 0 ; i < parts.size(); ++i) {
+    const auto& p = parts[i];
+    LOG(INFO) << i << ", " << p.padding;
   }
+  */
 }
 
 void ParticleSim::UpdateShipSimulation(float dt, Vector2f acceleration) {
@@ -68,7 +73,7 @@ void ParticleSim::UpdateShipSimulation(float dt, Vector2f acceleration) {
   glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0 /* bind index */, ship_ssbo_);
   glUniform1f(glGetUniformLocation(particle_program_, "dt"), dt);
   glUniform1i(glGetUniformLocation(particle_program_, "anchor"),
-              kAnchor<uint32_t, kMantissaBits>);
+              Anchor<uint32_t>(kMantissaBits));
   glUniform1i(glGetUniformLocation(particle_program_, "buffer_width"),
               params_.grid_width);
   glUniform1i(glGetUniformLocation(particle_program_, "buffer_height"),
@@ -172,14 +177,14 @@ void ParticleSim::Init() {
   Image<int32_t> level_buffer(params_.grid_height, params_.grid_width);
   level_buffer.setZero();
   MakeLevel(&rando, &level_buffer);
-  LOG(INFO) << level_buffer.maxCoeff();
 
   IntParticle initial_ship;
-  initial_ship.position = Vector2u32::Constant(
-      SetLowRes<kMantissaBits>(kAnchor<uint32_t, kMantissaBits>));
-  initial_ship.position +=
-      (Vector2i(params_.grid_width, params_.grid_height) / 2 * cell_size_)
-          .cast<uint32_t>();
+  initial_ship.position.x() =
+      SetValues(kMantissaBits,
+                Anchor<uint32_t>(kMantissaBits) + params_.grid_width / 2, 0);
+  initial_ship.position.y() =
+      SetValues(kMantissaBits,
+                Anchor<uint32_t>(kMantissaBits) + params_.grid_height / 2, 0);
   initial_ship.velocity.setZero();
   initial_ship.ttl = 100000;
   initial_ship.padding = 0;

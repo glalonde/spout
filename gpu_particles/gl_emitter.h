@@ -36,4 +36,6 @@ class Emitter {
   // State
   float emission_progress_;
   int write_index_;
+
+  float time_;
 };

@@ -5,5 +5,5 @@ struct IntParticle {
   Vector2<uint32_t> position;
   Vector2<int32_t> velocity;
   float ttl;
-  uint32_t padding;
+  float padding;
 };

@@ -1,4 +1,5 @@
 #include "gpu_particles/gl_emitter.h"
+#include <cmath>
 #include "graphics/check_opengl_errors.h"
 #include "graphics/load_shader.h"
 
@@ -8,12 +9,14 @@ Emitter::Emitter(EmitterParameters params)
       num_particles_(static_cast<int>(
           std::ceil(params_.emission_rate * params_.max_particle_life))),
       emission_progress_(0),
-      write_index_(0) {
+      write_index_(0),
+      time_(0) {
   InitEmitterShader();
   MakeParticleBuffer();
 }
 
 void Emitter::EmitOverTime(float dt, Vector2u32 start_pos, Vector2u32 end_pos) {
+  time_ += dt;
   emission_progress_ += dt;
   if (emission_progress_ > emission_period_) {
     const int num_emissions =
@@ -42,7 +45,6 @@ void Emitter::MakeParticleBuffer() {
 }
 
 void Emitter::Emit(int num_emitted, Vector2u32 start_pos, Vector2u32 end_pos) {
-  LOG(INFO) << num_emitted << ", " << write_index_ << ", " << num_particles_;
   // Execute the emitter shader
   glUseProgram(emitter_program_);
   glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0 /* bind index */,
@@ -55,14 +57,15 @@ void Emitter::Emit(int num_emitted, Vector2u32 start_pos, Vector2u32 end_pos) {
               params_.min_particle_life);
   glUniform1f(glGetUniformLocation(emitter_program_, "ttl_max"),
               params_.max_particle_life);
+  glUniform1f(glGetUniformLocation(emitter_program_, "random_seed"), time_);
   glUniform2ui(glGetUniformLocation(emitter_program_, "start_position"),
                start_pos.x(), start_pos.y());
   glUniform2ui(glGetUniformLocation(emitter_program_, "end_position"),
                end_pos.x(), end_pos.y());
   glUniform1f(glGetUniformLocation(emitter_program_, "emit_velocity_min"),
-               params_.emission_speed_min * 16000);
+              params_.emission_speed_min * params_.cell_size);
   glUniform1f(glGetUniformLocation(emitter_program_, "emit_velocity_max"),
-               params_.emission_speed_max * 16000);
+              params_.emission_speed_max * params_.cell_size);
   const int group_size = std::min(num_particles_, 512);
   const int num_groups = (num_particles_ + group_size - 1) / group_size;
   glad_glDispatchCompute(num_groups, 1, 1);

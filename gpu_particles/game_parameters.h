@@ -1,6 +1,7 @@
 #pragma once
 
 struct EmitterParameters {
+  int cell_size;
   float emission_rate;
   float emission_speed_min;
   float emission_speed_max;
@@ -11,6 +12,7 @@ struct EmitterParameters {
 struct GameParameters {
   int grid_width;
   int grid_height;
+  int mantissa_bits;
   double damage_rate;
   double dt;
   EmitterParameters emitter_params;
