@@ -32,6 +32,9 @@ void Emitter::InitEmitterShader() {
   GLuint compute_shader =
       LoadShader("gpu_particles/shaders/emitter.cs", GL_COMPUTE_SHADER);
   glAttachShader(emitter_program_, compute_shader);
+  GLuint compute_shader =
+      LoadShader("gpu_particles/shaders/noise.cs", GL_COMPUTE_SHADER);
+  glAttachShader(emitter_program_, compute_shader);
   LinkProgram(emitter_program_);
   CHECK(CheckGLErrors());
 }

@@ -24,8 +24,9 @@ ControllerInput ParticleSim::Update(const float dt) {
         SetValues(kMantissaBits,
                   Anchor<uint32_t>(kMantissaBits) + params_.grid_height / 2,
                   CellSize<uint32_t>(kMantissaBits) / 2);
-    emitter_->EmitOverTime(dt, emit_position - Vector2u32(cell_size_, 0) * 30,
-                           emit_position + Vector2u32(0, cell_size_) * 30);
+    uint32_t hc = params_.emitter_params.cell_size / 2;
+    emitter_->EmitOverTime(dt, emit_position + Vector2u32::Constant(hc),
+                           emit_position + Vector2u32::Constant(hc));
   }
   UpdateParticleSimulation(dt);
   // UpdateShipSimulation(dt, Vector2f(0.f, -250 * cell_size_));
@@ -59,13 +60,11 @@ void ParticleSim::UpdateParticleSimulation(float dt) {
   glad_glDispatchCompute(num_groups, 1, 1);
   glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
   CHECK(CheckGLErrors());
-  /*
   auto parts = ReadParticleBuffer();
   for (int i = 0 ; i < parts.size(); ++i) {
     const auto& p = parts[i];
     LOG(INFO) << i << ", " << p.padding;
   }
-  */
 }
 
 void ParticleSim::UpdateShipSimulation(float dt, Vector2f acceleration) {

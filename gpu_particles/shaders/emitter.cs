@@ -41,7 +41,6 @@ void main() {
   }
 
   float interp = float(distance) / num_emitted;
-  ;
   // Start existing
   float first_rand = rand(vec2(fract(random_seed), interp));
   particles[gid].ttl = ttl_max - (ttl_max - ttl_min) * first_rand;
@@ -52,8 +51,8 @@ void main() {
   float speed =
       emit_velocity_min + second_rand * (emit_velocity_max - emit_velocity_min);
 
-  float third_rand = rand(vec2(second_rand, interp));
+  float third_rand = noise1(4.0);
   float angle = third_rand * M_PI * 2.0;
-  particles[gid].velocity = ivec2(speed * sin(angle), speed * cos(angle));
+  particles[gid].velocity = ivec2(speed * cos(angle), speed * sin(angle));
   particles[gid].padding = first_rand;
 }

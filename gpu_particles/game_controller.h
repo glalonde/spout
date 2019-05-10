@@ -58,7 +58,6 @@ class ParticleSim {
 
   GameWindow window_;
   GameParameters params_;
-  const int cell_size_ = kCellSize<uint32_t, kMantissaBits>;
   int num_particles_;
 
   // Particle data
