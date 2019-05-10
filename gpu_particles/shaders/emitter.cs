@@ -6,7 +6,13 @@ layout(location = 4) uniform float ttl_max;
 layout(location = 5) uniform uvec2 start_position;
 layout(location = 6) uniform uvec2 end_position;
 
+layout(location = 7) uniform float emit_velocity_min;
+layout(location = 8) uniform float emit_velocity_max;
+
 layout(local_size_x = 512, local_size_y = 1, local_size_z = 1) in;
+
+#define M_PI 3.1415926535897932384626433832795
+
 
 struct Particle {
   uvec2 position;
@@ -20,7 +26,7 @@ layout(std430, binding = 0) buffer Particles {
 };
 
 float rand(float x) {
-  return fract(sin(x)*10000.0);
+  return fract(sin(x)*100000.0);
 }
 
 void main() {
@@ -36,7 +42,10 @@ void main() {
 
   float interp = float(distance) / num_emitted;
   // Start existing
-  particles[gid].ttl = ttl_max - (ttl_max - ttl_min) * rand(float(gid));
-  vec2 delta = mix(vec2(0, 0), vec2(end_position - start_position), interp);
+  particles[gid].ttl = ttl_max - 1.0 * rand(float(gid));
+  vec2 delta = interp * vec2(end_position - start_position);
   particles[gid].position = start_position + ivec2(delta);
+  float speed = emit_velocity_min;
+  float angle = 1.0 * 2 * M_PI;
+  particles[gid].velocity = ivec2(200000, 200000);
 }

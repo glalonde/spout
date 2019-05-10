@@ -25,7 +25,7 @@ ControllerInput ParticleSim::Update(const float dt) {
                            emit_position + Vector2u32(cell_size_, 0) * 30);
   }
   UpdateParticleSimulation(dt);
-  UpdateShipSimulation(dt, Vector2f(0.f, -250 * cell_size_));
+  // UpdateShipSimulation(dt, Vector2f(0.f, -250 * cell_size_));
   Render();
   return input;
 }
