@@ -4,12 +4,12 @@ filegroup(
     name = "shaders",
     srcs = [
         "bresenham.cs",
-        "ship.cs",
-        "emitter.cs",
         "color_map_texture.frag",
         "draw_particles.cs",
+        "emitter.cs",
         "shader.frag",
         "shader.vert",
+        "ship.cs",
     ],
 )
 

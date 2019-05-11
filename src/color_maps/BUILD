@@ -38,7 +38,7 @@ cc_binary(
     deps = [
         ":color_maps",
         "//base:init",
-        "//src:convert",
         "//graphics:image_viewer",
+        "//src:convert",
     ],
 )

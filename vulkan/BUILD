@@ -10,12 +10,12 @@ filegroup(
 cc_binary(
     name = "glfw_main",
     srcs = ["glfw_main.cc"],
-    linkopts = [
-        "-lglfw",
-        "-lvulkan",
-    ],
     data = [
         "//vulkan/shaders:frag_shader",
         "//vulkan/shaders:vert_shader",
+    ],
+    linkopts = [
+        "-lglfw",
+        "-lvulkan",
     ],
 )
