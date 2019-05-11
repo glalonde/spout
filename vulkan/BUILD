@@ -18,5 +18,8 @@ cc_binary(
         "-lglfw",
         "-lvulkan",
     ],
-    deps = ["//base"],
+    deps = [
+        "//base",
+        "//src:eigen_types",
+    ],
 )
