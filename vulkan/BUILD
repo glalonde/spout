@@ -18,4 +18,5 @@ cc_binary(
         "-lglfw",
         "-lvulkan",
     ],
+    deps = ["//base"],
 )
