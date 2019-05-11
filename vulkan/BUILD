@@ -1,0 +1,21 @@
+package(default_visibility = ["//visibility:public"])
+
+filegroup(
+    name = "shaders",
+    srcs = glob([
+        "shaders/*",
+    ]),
+)
+
+cc_binary(
+    name = "glfw_main",
+    srcs = ["glfw_main.cc"],
+    linkopts = [
+        "-lglfw",
+        "-lvulkan",
+    ],
+    data = [
+        "//vulkan/shaders:frag_shader",
+        "//vulkan/shaders:vert_shader",
+    ],
+)
