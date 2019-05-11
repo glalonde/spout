@@ -79,6 +79,7 @@ cc_binary(
     srcs = ["game_main.cc"],
     data = [":shaders"],
     deps = [
+        "//src:fps_estimator",
         ":game_controller",
         "//base:init",
     ],
