@@ -53,5 +53,5 @@ void main() {
   float third_rand = rand(vec2(second_rand, interp));
   float angle = third_rand * M_PI * 2.0 - M_PI;
   particles[gid].velocity = ivec2(vec2(cos(angle), sin(angle)) * speed);
-  particles[gid].padding = first_rand;
+  particles[gid].padding = speed;
 }

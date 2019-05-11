@@ -9,8 +9,6 @@
 #include "src/int_grid.h"
 #include "src/random.h"
 
-static constexpr int kMantissaBits = 14;
-
 static constexpr int32_t kDenseWall = 1000;
 
 class ParticleSim {
