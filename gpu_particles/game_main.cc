@@ -1,5 +1,6 @@
 #include "base/init.h"
 #include "gpu_particles/game_controller.h"
+#include "src/fps_estimator.h"
 
 DEFINE_int32(color_map_index, 0, "Color map index, see color_maps.h");
 DEFINE_double(damage_rate, 1.0, "Damage rate");
@@ -33,10 +34,17 @@ void TestLoop() {
   params.mantissa_bits = 14;
   params.emitter_params.cell_size = CellSize<uint32_t>(params.mantissa_bits);
   ParticleSim sim(window_width, window_height, params);
+  FPSEstimator fps(FromSeconds(2), 60.0);
   double dt = params.dt;
   ControllerInput input;
+  TimePoint previous_cycle = ClockType::now();
   while (!input.quit) {
     input = sim.Update(dt);
+    const auto now = ClockType::now();
+    const auto delta = now - previous_cycle;
+    previous_cycle = now;
+    double estimated_fps = fps.Tick(delta);
+    LOG(INFO) << estimated_fps;
   }
 }
 

@@ -29,11 +29,9 @@ void Emitter::EmitOverTime(float dt, Vector2u32 start_pos, Vector2u32 end_pos) {
 
 void Emitter::InitEmitterShader() {
   emitter_program_ = glCreateProgram();
-  GLuint compute_shader =
-      LoadShader("gpu_particles/shaders/emitter.cs", GL_COMPUTE_SHADER);
-  glAttachShader(emitter_program_, compute_shader);
-  GLuint compute_shader =
-      LoadShader("gpu_particles/shaders/noise.cs", GL_COMPUTE_SHADER);
+  std::vector<std::string> paths = {"gpu_particles/shaders/noise2d.cs",
+                                    "gpu_particles/shaders/emitter.cs"};
+  GLuint compute_shader = LoadShader(paths, GL_COMPUTE_SHADER);
   glAttachShader(emitter_program_, compute_shader);
   LinkProgram(emitter_program_);
   CHECK(CheckGLErrors());
