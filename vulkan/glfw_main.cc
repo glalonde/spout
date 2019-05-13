@@ -100,9 +100,18 @@ struct Vertex {
   }
 };
 
-const std::vector<Vertex> kVertices = {{{0.0f, -0.5f}, {1.0f, 0.0f, 0.0f}},
-                                       {{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}},
-                                       {{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}}};
+struct UniformBufferObject {
+  Matrix4f model;
+  Matrix4f view;
+  Matrix4f proj;
+};
+
+const std::vector<Vertex> kVertices = {{{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
+                                       {{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
+                                       {{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}},
+                                       {{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}}};
+
+const std::vector<uint16_t> kIndices = {0, 1, 2, 2, 3, 0};
 
 class HelloTriangleApplication {
  public:
@@ -134,12 +143,18 @@ class HelloTriangleApplication {
   std::vector<VkFramebuffer> swap_chain_frame_buffers_;
 
   VkRenderPass render_pass_;
+  VkDescriptorSetLayout descriptor_set_layout_;
   VkPipelineLayout pipeline_layout_;
   VkPipeline graphics_pipeline_;
 
   VkCommandPool command_pool_;
   VkBuffer vertex_buffer_;
   VkDeviceMemory vertex_buffer_memory_;
+  VkBuffer index_buffer_;
+  VkDeviceMemory index_buffer_memory_;
+  std::vector<VkBuffer> uniform_buffers_;
+  std::vector<VkDeviceMemory> uniform_buffers_memory_;
+
   std::vector<VkCommandBuffer> command_buffers_;
 
   std::vector<VkSemaphore> image_available_semaphores_;
@@ -175,10 +190,13 @@ class HelloTriangleApplication {
     CreateSwapChain();
     CreateImageViews();
     CreateRenderPass();
+    CreateDescriptorSetLayout();
     CreateGraphicsPipeline();
     CreateFramebuffers();
     CreateCommandPool();
     CreateVertexBuffer();
+    CreateIndexBuffer();
+    CreateUniformBuffers();
     CreateCommandBuffers();
     CreateSyncObjects();
   }
@@ -210,10 +228,20 @@ class HelloTriangleApplication {
     }
 
     vkDestroySwapchainKHR(device_, swap_chain_, nullptr);
+
+    for (size_t i = 0; i < swap_chain_images_.size(); i++) {
+      vkDestroyBuffer(device_, uniform_buffers_[i], nullptr);
+      vkFreeMemory(device_, uniform_buffers_memory_[i], nullptr);
+    }
   }
 
   void Cleanup() {
     CleanupSwapChain();
+
+    vkDestroyDescriptorSetLayout(device_, descriptor_set_layout_, nullptr);
+
+    vkDestroyBuffer(device_, index_buffer_, nullptr);
+    vkFreeMemory(device_, index_buffer_memory_, nullptr);
 
     vkDestroyBuffer(device_, vertex_buffer_, nullptr);
     vkFreeMemory(device_, vertex_buffer_memory_, nullptr);
@@ -256,6 +284,7 @@ class HelloTriangleApplication {
     CreateRenderPass();
     CreateGraphicsPipeline();
     CreateFramebuffers();
+    CreateUniformBuffers();
     CreateCommandBuffers();
   }
 
@@ -524,6 +553,25 @@ class HelloTriangleApplication {
     }
   }
 
+  void CreateDescriptorSetLayout() {
+    VkDescriptorSetLayoutBinding ubo_layout_binding = {};
+    ubo_layout_binding.binding = 0;
+    ubo_layout_binding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    ubo_layout_binding.descriptorCount = 1;
+    ubo_layout_binding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    ubo_layout_binding.pImmutableSamplers = nullptr;
+
+    VkDescriptorSetLayoutCreateInfo layout_info = {};
+    layout_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    layout_info.bindingCount = 1;
+    layout_info.pBindings = &ubo_layout_binding;
+
+    if (vkCreateDescriptorSetLayout(device_, &layout_info, nullptr,
+                                    &descriptor_set_layout_) != VK_SUCCESS) {
+      LOG(FATAL) << "Failed to create descriptor set layout.";
+    }
+  }
+
   void CreateGraphicsPipeline() {
     auto vertShaderCode = ReadFileOrDie("vulkan/shaders/shader.vert.spv");
     auto fragShaderCode = ReadFileOrDie("vulkan/shaders/shader.frag.spv");
@@ -619,32 +667,38 @@ class HelloTriangleApplication {
     colorBlending.blendConstants[2] = 0.0f;
     colorBlending.blendConstants[3] = 0.0f;
 
-    VkPipelineLayoutCreateInfo pipelineLayoutInfo = {};
-    pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    pipelineLayoutInfo.setLayoutCount = 0;
-    pipelineLayoutInfo.pushConstantRangeCount = 0;
+    VkPushConstantRange push_constant_range = {};
+    push_constant_range.offset = 0;
+    push_constant_range.size = sizeof(UniformObject);
+    push_constant_range.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
-    if (vkCreatePipelineLayout(device_, &pipelineLayoutInfo, nullptr,
+    VkPipelineLayoutCreateInfo pipeline_layout_info = {};
+    pipeline_layout_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    pipeline_layout_info.setLayoutCount = 0;
+    pipeline_layout_info.pushConstantRangeCount = 1;
+    pipeline_layout_info.pSetLayouts = &descriptor_set_layout_;
+
+    if (vkCreatePipelineLayout(device_, &pipeline_layout_info, nullptr,
                                &pipeline_layout_) != VK_SUCCESS) {
       LOG(FATAL) << "Failed to create pipeline layout.";
     }
 
-    VkGraphicsPipelineCreateInfo pipelineInfo = {};
-    pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-    pipelineInfo.stageCount = 2;
-    pipelineInfo.pStages = shaderStages;
-    pipelineInfo.pVertexInputState = &vertex_input_info;
-    pipelineInfo.pInputAssemblyState = &inputAssembly;
-    pipelineInfo.pViewportState = &viewportState;
-    pipelineInfo.pRasterizationState = &rasterizer;
-    pipelineInfo.pMultisampleState = &multisampling;
-    pipelineInfo.pColorBlendState = &colorBlending;
-    pipelineInfo.layout = pipeline_layout_;
-    pipelineInfo.renderPass = render_pass_;
-    pipelineInfo.subpass = 0;
-    pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;
+    VkGraphicsPipelineCreateInfo pipeline_info = {};
+    pipeline_info.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+    pipeline_info.stageCount = 2;
+    pipeline_info.pStages = shaderStages;
+    pipeline_info.pVertexInputState = &vertex_input_info;
+    pipeline_info.pInputAssemblyState = &inputAssembly;
+    pipeline_info.pViewportState = &viewportState;
+    pipeline_info.pRasterizationState = &rasterizer;
+    pipeline_info.pMultisampleState = &multisampling;
+    pipeline_info.pColorBlendState = &colorBlending;
+    pipeline_info.layout = pipeline_layout_;
+    pipeline_info.renderPass = render_pass_;
+    pipeline_info.subpass = 0;
+    pipeline_info.basePipelineHandle = VK_NULL_HANDLE;
 
-    if (vkCreateGraphicsPipelines(device_, VK_NULL_HANDLE, 1, &pipelineInfo,
+    if (vkCreateGraphicsPipelines(device_, VK_NULL_HANDLE, 1, &pipeline_info,
                                   nullptr, &graphics_pipeline_) != VK_SUCCESS) {
       LOG(FATAL) << "Failed to create graphics pipeline.";
     }
@@ -712,6 +766,69 @@ class HelloTriangleApplication {
     CopyBuffer(staging_buffer, vertex_buffer_, buffer_size);
     vkDestroyBuffer(device_, staging_buffer, nullptr);
     vkFreeMemory(device_, staging_buffer_memory, nullptr);
+  }
+
+  void CreateIndexBuffer() {
+    VkDeviceSize buffer_size = sizeof(kIndices[0]) * kIndices.size();
+
+    VkBuffer staging_buffer;
+    VkDeviceMemory staging_buffer_memory;
+    CreateBuffer(buffer_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                     VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                 &staging_buffer, &staging_buffer_memory);
+
+    void* data;
+    vkMapMemory(device_, staging_buffer_memory, 0, buffer_size, 0, &data);
+    std::memcpy(data, kIndices.data(), static_cast<size_t>(buffer_size));
+    vkUnmapMemory(device_, staging_buffer_memory);
+
+    CreateBuffer(
+        buffer_size,
+        VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &index_buffer_,
+        &index_buffer_memory_);
+
+    CopyBuffer(staging_buffer, index_buffer_, buffer_size);
+    vkDestroyBuffer(device_, staging_buffer, nullptr);
+    vkFreeMemory(device_, staging_buffer_memory, nullptr);
+  }
+
+  void CreateUniformBuffers() {
+    VkDeviceSize buffer_size = sizeof(UniformBufferObject);
+    uniform_buffers_.resize(swap_chain_images_.size());
+    uniform_buffers_memory_.resize(swap_chain_images_.size());
+
+    for (size_t i = 0; i < swap_chain_images_.size(); i++) {
+      createBuffer(buffer_size, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                   VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                       VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                   uniform_buffers_[i], uniform_buffers_memory_[i]);
+    }
+
+    /*
+  VkBuffer staging_buffer;
+  VkDeviceMemory staging_buffer_memory;
+  CreateBuffer(buffer_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+               VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                   VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+               &staging_buffer, &staging_buffer_memory);
+
+  void* data;
+  vkMapMemory(device_, staging_buffer_memory, 0, buffer_size, 0, &data);
+  std::memcpy(data, kIndices.data(), static_cast<size_t>(buffer_size));
+  vkUnmapMemory(device_, staging_buffer_memory);
+
+  CreateBuffer(
+      buffer_size,
+      VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &index_buffer_,
+      &index_buffer_memory_);
+
+  CopyBuffer(staging_buffer, index_buffer_, buffer_size);
+  vkDestroyBuffer(device_, staging_buffer, nullptr);
+  vkFreeMemory(device_, staging_buffer_memory, nullptr);
+  */
   }
 
   void CopyBuffer(VkBuffer src_buff, VkBuffer dest_buff, VkDeviceSize size) {
@@ -833,9 +950,10 @@ class HelloTriangleApplication {
       VkDeviceSize offsets[] = {0};
       vkCmdBindVertexBuffers(command_buffers_[i], 0, 1, vertex_buffers,
                              offsets);
-      vkCmdDraw(command_buffers_[i], static_cast<uint32_t>(kVertices.size()), 1,
-                0, 0);
-
+      vkCmdBindIndexBuffer(command_buffers_[i], index_buffer_, 0,
+                           VK_INDEX_TYPE_UINT16);
+      vkCmdDrawIndexed(command_buffers_[i],
+                       static_cast<uint32_t>(kIndices.size()), 1, 0, 0, 0);
       vkCmdEndRenderPass(command_buffers_[i]);
 
       if (vkEndCommandBuffer(command_buffers_[i]) != VK_SUCCESS) {
@@ -873,56 +991,58 @@ class HelloTriangleApplication {
     vkWaitForFences(device_, 1, &in_flight_fences_[current_frame_], VK_TRUE,
                     std::numeric_limits<uint64_t>::max());
 
-    uint32_t imageIndex;
+    uint32_t image_index;
     VkResult result = vkAcquireNextImageKHR(
         device_, swap_chain_, std::numeric_limits<uint64_t>::max(),
         image_available_semaphores_[current_frame_], VK_NULL_HANDLE,
-        &imageIndex);
+        &image_index);
 
     if (result == VK_ERROR_OUT_OF_DATE_KHR) {
       RecreateSwapChain();
       return;
     } else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
-      throw std::runtime_error("failed to acquire swap chain image!");
+      LOG(FATAL) << "Failed to acquire swap chain image.";
     }
 
-    VkSubmitInfo submitInfo = {};
-    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    UpdateUniformBuffer(image_index);
 
-    VkSemaphore waitSemaphores[] = {
+    VkSubmitInfo submit_info = {};
+    submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+
+    VkSemaphore wait_semaphores[] = {
         image_available_semaphores_[current_frame_]};
-    VkPipelineStageFlags waitStages[] = {
+    VkPipelineStageFlags wait_stages[] = {
         VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
-    submitInfo.waitSemaphoreCount = 1;
-    submitInfo.pWaitSemaphores = waitSemaphores;
-    submitInfo.pWaitDstStageMask = waitStages;
+    submit_info.waitSemaphoreCount = 1;
+    submit_info.pWaitSemaphores = wait_semaphores;
+    submit_info.pWaitDstStageMask = wait_stages;
 
-    submitInfo.commandBufferCount = 1;
-    submitInfo.pCommandBuffers = &command_buffers_[imageIndex];
+    submit_info.commandBufferCount = 1;
+    submit_info.pCommandBuffers = &command_buffers_[image_index];
 
-    VkSemaphore signalSemaphores[] = {
+    VkSemaphore signal_semaphores[] = {
         render_finished_semaphores_[current_frame_]};
-    submitInfo.signalSemaphoreCount = 1;
-    submitInfo.pSignalSemaphores = signalSemaphores;
+    submit_info.signalSemaphoreCount = 1;
+    submit_info.pSignalSemaphores = signal_semaphores;
 
     vkResetFences(device_, 1, &in_flight_fences_[current_frame_]);
 
-    if (vkQueueSubmit(graphics_queue_, 1, &submitInfo,
+    if (vkQueueSubmit(graphics_queue_, 1, &submit_info,
                       in_flight_fences_[current_frame_]) != VK_SUCCESS) {
-      throw std::runtime_error("failed to submit draw command buffer!");
+      LOG(FATAL) << "Failed to submit draw command buffer.";
     }
 
     VkPresentInfoKHR present_info = {};
     present_info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
 
     present_info.waitSemaphoreCount = 1;
-    present_info.pWaitSemaphores = signalSemaphores;
+    present_info.pWaitSemaphores = signal_semaphores;
 
-    VkSwapchainKHR swapChains[] = {swap_chain_};
+    VkSwapchainKHR swap_chains[] = {swap_chain_};
     present_info.swapchainCount = 1;
-    present_info.pSwapchains = swapChains;
+    present_info.pSwapchains = swap_chains;
 
-    present_info.pImageIndices = &imageIndex;
+    present_info.pImageIndices = &image_index;
 
     result = vkQueuePresentKHR(present_queue_, &present_info);
 
@@ -931,7 +1051,7 @@ class HelloTriangleApplication {
       framebuffer_resized_ = false;
       RecreateSwapChain();
     } else if (result != VK_SUCCESS) {
-      throw std::runtime_error("failed to present swap chain image!");
+      LOG(FATAL) << "Failed to present swap chain image.";
     }
 
     current_frame_ = (current_frame_ + 1) % kMaxFramesInFlight;
@@ -943,13 +1063,27 @@ class HelloTriangleApplication {
     create_info.codeSize = code.size();
     create_info.pCode = reinterpret_cast<const uint32_t*>(code.data());
 
-    VkShaderModule shaderModule;
-    if (vkCreateShaderModule(device_, &create_info, nullptr, &shaderModule) !=
+    VkShaderModule shader_module;
+    if (vkCreateShaderModule(device_, &create_info, nullptr, &shader_module) !=
         VK_SUCCESS) {
-      throw std::runtime_error("failed to create shader module!");
+      LOG(FATAL) << "Failed to create shader module.";
     }
 
     return shaderModule;
+  }
+
+  void UpdateUniformBuffer(uint32_t current_image) {
+    static auto start_time = std::chrono::high_resolution_clock::now();
+
+    auto current_time = std::chrono::high_resolution_clock::now();
+    float time = std::chrono::duration<float, std::chrono::seconds::period>(
+                     current_time - start_time)
+                     .count();
+
+    UniformBufferObject ubo = {};
+    Eigen::Affine3f model = Eigen::Affine3f::rotate(
+        Eigen::AngleAxis<float>(time * M_PI / 2.0, Vector3f(0, 0, 1)));
+    ubo.model = model.matrix();
   }
 
   VkSurfaceFormatKHR chooseSwapSurfaceFormat(
