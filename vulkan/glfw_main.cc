@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
@@ -14,7 +15,11 @@
 
 #include "base/file.h"
 #include "base/logging.h"
-#include "src/eigen_types.h"
+#include "src/eigen_glm.h"
+
+#include "glm/glm.hpp"
+#include "glm/gtc/matrix_transform.hpp"
+#include "glm/gtx/string_cast.hpp"
 
 const int WIDTH = 800;
 const int HEIGHT = 600;
@@ -148,6 +153,9 @@ class HelloTriangleApplication {
   VkPipeline graphics_pipeline_;
 
   VkCommandPool command_pool_;
+  VkDescriptorPool descriptor_pool_;
+  std::vector<VkDescriptorSet> descriptor_sets_;
+
   VkBuffer vertex_buffer_;
   VkDeviceMemory vertex_buffer_memory_;
   VkBuffer index_buffer_;
@@ -197,6 +205,8 @@ class HelloTriangleApplication {
     CreateVertexBuffer();
     CreateIndexBuffer();
     CreateUniformBuffers();
+    CreateDescriptorPool();
+    CreateDescriptorSets();
     CreateCommandBuffers();
     CreateSyncObjects();
   }
@@ -233,6 +243,8 @@ class HelloTriangleApplication {
       vkDestroyBuffer(device_, uniform_buffers_[i], nullptr);
       vkFreeMemory(device_, uniform_buffers_memory_[i], nullptr);
     }
+
+    vkDestroyDescriptorPool(device_, descriptor_pool_, nullptr);
   }
 
   void Cleanup() {
@@ -285,6 +297,8 @@ class HelloTriangleApplication {
     CreateGraphicsPipeline();
     CreateFramebuffers();
     CreateUniformBuffers();
+    CreateDescriptorPool();
+    CreateDescriptorSets();
     CreateCommandBuffers();
   }
 
@@ -576,21 +590,21 @@ class HelloTriangleApplication {
     auto vertShaderCode = ReadFileOrDie("vulkan/shaders/shader.vert.spv");
     auto fragShaderCode = ReadFileOrDie("vulkan/shaders/shader.frag.spv");
 
-    VkShaderModule vertShaderModule = CreateShaderModule(vertShaderCode);
-    VkShaderModule fragShaderModule = CreateShaderModule(fragShaderCode);
+    VkShaderModule vert_shader_module = CreateShaderModule(vertShaderCode);
+    VkShaderModule frag_shader_module = CreateShaderModule(fragShaderCode);
 
     VkPipelineShaderStageCreateInfo vertShaderStageInfo = {};
     vertShaderStageInfo.sType =
         VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
     vertShaderStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
-    vertShaderStageInfo.module = vertShaderModule;
+    vertShaderStageInfo.module = vert_shader_module;
     vertShaderStageInfo.pName = "main";
 
     VkPipelineShaderStageCreateInfo fragShaderStageInfo = {};
     fragShaderStageInfo.sType =
         VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
     fragShaderStageInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-    fragShaderStageInfo.module = fragShaderModule;
+    fragShaderStageInfo.module = frag_shader_module;
     fragShaderStageInfo.pName = "main";
 
     VkPipelineShaderStageCreateInfo shaderStages[] = {vertShaderStageInfo,
@@ -640,7 +654,7 @@ class HelloTriangleApplication {
     rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
     rasterizer.lineWidth = 1.0f;
     rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
-    rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
+    rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     rasterizer.depthBiasEnable = VK_FALSE;
 
     VkPipelineMultisampleStateCreateInfo multisampling = {};
@@ -667,15 +681,17 @@ class HelloTriangleApplication {
     colorBlending.blendConstants[2] = 0.0f;
     colorBlending.blendConstants[3] = 0.0f;
 
-    VkPushConstantRange push_constant_range = {};
-    push_constant_range.offset = 0;
-    push_constant_range.size = sizeof(UniformObject);
-    push_constant_range.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    /*
+   VkPushConstantRange push_constant_range = {};
+   push_constant_range.offset = 0;
+   push_constant_range.size = sizeof(UniformBufferObject);
+   push_constant_range.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+   */
 
     VkPipelineLayoutCreateInfo pipeline_layout_info = {};
     pipeline_layout_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    pipeline_layout_info.setLayoutCount = 0;
-    pipeline_layout_info.pushConstantRangeCount = 1;
+    pipeline_layout_info.setLayoutCount = 1;
+    pipeline_layout_info.pushConstantRangeCount = 0;
     pipeline_layout_info.pSetLayouts = &descriptor_set_layout_;
 
     if (vkCreatePipelineLayout(device_, &pipeline_layout_info, nullptr,
@@ -703,8 +719,8 @@ class HelloTriangleApplication {
       LOG(FATAL) << "Failed to create graphics pipeline.";
     }
 
-    vkDestroyShaderModule(device_, fragShaderModule, nullptr);
-    vkDestroyShaderModule(device_, vertShaderModule, nullptr);
+    vkDestroyShaderModule(device_, frag_shader_module, nullptr);
+    vkDestroyShaderModule(device_, vert_shader_module, nullptr);
   }
 
   void CreateFramebuffers() {
@@ -739,6 +755,60 @@ class HelloTriangleApplication {
     if (vkCreateCommandPool(device_, &pool_info, nullptr, &command_pool_) !=
         VK_SUCCESS) {
       LOG(FATAL) << "Failed to create command pool.";
+    }
+  }
+
+  void CreateDescriptorPool() {
+    VkDescriptorPoolSize pool_size = {};
+    pool_size.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    pool_size.descriptorCount =
+        static_cast<uint32_t>(swap_chain_images_.size());
+    VkDescriptorPoolCreateInfo pool_info = {};
+    pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    pool_info.poolSizeCount = 1;
+    pool_info.pPoolSizes = &pool_size;
+    pool_info.maxSets = static_cast<uint32_t>(swap_chain_images_.size());
+    ;
+
+    if (vkCreateDescriptorPool(device_, &pool_info, nullptr,
+                               &descriptor_pool_) != VK_SUCCESS) {
+      LOG(FATAL) << "Failed to create descriptor pool.";
+    }
+  }
+
+  void CreateDescriptorSets() {
+    std::vector<VkDescriptorSetLayout> layouts(swap_chain_images_.size(),
+                                               descriptor_set_layout_);
+    VkDescriptorSetAllocateInfo alloc_info = {};
+    alloc_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    alloc_info.descriptorPool = descriptor_pool_;
+    alloc_info.descriptorSetCount =
+        static_cast<uint32_t>(swap_chain_images_.size());
+    alloc_info.pSetLayouts = layouts.data();
+
+    descriptor_sets_.resize(swap_chain_images_.size());
+    if (vkAllocateDescriptorSets(device_, &alloc_info,
+                                 descriptor_sets_.data()) != VK_SUCCESS) {
+      LOG(FATAL) << "Failed to allocate descriptor sets.";
+    }
+
+    for (size_t i = 0; i < swap_chain_images_.size(); i++) {
+      VkDescriptorBufferInfo buffer_info = {};
+      buffer_info.buffer = uniform_buffers_[i];
+      buffer_info.offset = 0;
+      buffer_info.range = sizeof(UniformBufferObject);
+
+      VkWriteDescriptorSet descriptor_write = {};
+      descriptor_write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+      descriptor_write.dstSet = descriptor_sets_[i];
+      descriptor_write.dstBinding = 0;
+      descriptor_write.dstArrayElement = 0;
+      descriptor_write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+      descriptor_write.descriptorCount = 1;
+      descriptor_write.pBufferInfo = &buffer_info;
+      descriptor_write.pImageInfo = nullptr;        // Optional
+      descriptor_write.pTexelBufferView = nullptr;  // Optional
+      vkUpdateDescriptorSets(device_, 1, &descriptor_write, 0, nullptr);
     }
   }
 
@@ -800,10 +870,10 @@ class HelloTriangleApplication {
     uniform_buffers_memory_.resize(swap_chain_images_.size());
 
     for (size_t i = 0; i < swap_chain_images_.size(); i++) {
-      createBuffer(buffer_size, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+      CreateBuffer(buffer_size, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
                    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
                        VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                   uniform_buffers_[i], uniform_buffers_memory_[i]);
+                   &uniform_buffers_[i], &uniform_buffers_memory_[i]);
     }
 
     /*
@@ -952,6 +1022,9 @@ class HelloTriangleApplication {
                              offsets);
       vkCmdBindIndexBuffer(command_buffers_[i], index_buffer_, 0,
                            VK_INDEX_TYPE_UINT16);
+      vkCmdBindDescriptorSets(command_buffers_[i],
+                              VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout_,
+                              0, 1, &descriptor_sets_[i], 0, nullptr);
       vkCmdDrawIndexed(command_buffers_[i],
                        static_cast<uint32_t>(kIndices.size()), 1, 0, 0, 0);
       vkCmdEndRenderPass(command_buffers_[i]);
@@ -1069,7 +1142,7 @@ class HelloTriangleApplication {
       LOG(FATAL) << "Failed to create shader module.";
     }
 
-    return shaderModule;
+    return shader_module;
   }
 
   void UpdateUniformBuffer(uint32_t current_image) {
@@ -1081,9 +1154,24 @@ class HelloTriangleApplication {
                      .count();
 
     UniformBufferObject ubo = {};
-    Eigen::Affine3f model = Eigen::Affine3f::rotate(
-        Eigen::AngleAxis<float>(time * M_PI / 2.0, Vector3f(0, 0, 1)));
+    Eigen::Affine3f model =
+        Eigen::Affine3f::Identity() *
+        Eigen::AngleAxis<float>(time * M_PI / 2.0, Vector3f(0, 0, 1));
     ubo.model = model.matrix();
+    ubo.view = LookAt(Vector3f(2.0f, 2.0f, 2.0f), Vector3f(0.0f, 0.0f, 0.0f),
+                      Vector3f(0.0f, 0.0f, 1.0f));
+    ubo.proj = Perspective<float>(M_PI / 4.f,
+                                  static_cast<float>(swap_chain_extent_.width) /
+                                      swap_chain_extent_.height,
+                                  0.1f, 10.0f);
+
+    ubo.proj(1, 1) *= -1;
+
+    void* data;
+    vkMapMemory(device_, uniform_buffers_memory_[current_image], 0, sizeof(ubo),
+                0, &data);
+    std::memcpy(data, &ubo, sizeof(ubo));
+    vkUnmapMemory(device_, uniform_buffers_memory_[current_image]);
   }
 
   VkSurfaceFormatKHR chooseSwapSurfaceFormat(

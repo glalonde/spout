@@ -17,6 +17,12 @@ cc_library(
     deps = ["@eigen"],
 )
 
+cc_library(
+    name = "eigen_glm",
+    hdrs = ["eigen_glm.h"],
+    deps = [":eigen_types"],
+)
+
 cc_test(
     name = "eigen_types_test",
     srcs = ["eigen_types_test.cc"],

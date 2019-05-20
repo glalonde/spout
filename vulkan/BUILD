@@ -20,6 +20,7 @@ cc_binary(
     ],
     deps = [
         "//base",
-        "//src:eigen_types",
+        "//src:eigen_glm",
+        "@com_github_gtruc_glm//:glm",
     ],
 )

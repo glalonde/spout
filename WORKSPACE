@@ -53,3 +53,10 @@ http_archive(
     strip_prefix = "stb-master",
     urls = ["https://github.com/nothings/stb/archive/master.zip"],
 )
+
+http_archive(
+    name = "com_github_gtruc_glm",
+    build_file = "@//third_party:glm.BUILD",
+    strip_prefix = "glm-master",
+    urls = ["https://github.com/g-truc/glm/archive/master.zip"],
+)
