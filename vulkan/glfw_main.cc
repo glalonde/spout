@@ -16,6 +16,7 @@
 #include "base/file.h"
 #include "base/logging.h"
 #include "src/eigen_glm.h"
+#include "src/fps_estimator.h"
 
 #include "glm/glm.hpp"
 #include "glm/gtc/matrix_transform.hpp"
@@ -120,7 +121,9 @@ const std::vector<uint16_t> kIndices = {0, 1, 2, 2, 3, 0};
 
 class HelloTriangleApplication {
  public:
-  void run() {
+  HelloTriangleApplication() : fps_(FromSeconds(1.0), 60.0) {}
+
+  void Run() {
     InitWindow();
     InitVulkan();
     MainLoop();
@@ -129,6 +132,7 @@ class HelloTriangleApplication {
 
  private:
   GLFWwindow* window_;
+  FPSEstimator fps_;
 
   VkInstance instance_;
   VkDebugUtilsMessengerEXT debug_messenger_;
@@ -212,9 +216,15 @@ class HelloTriangleApplication {
   }
 
   void MainLoop() {
+    auto previous = ClockType::now();
     while (!glfwWindowShouldClose(window_)) {
       glfwPollEvents();
       DrawFrame();
+      const auto now = ClockType::now();
+      const auto delta = now - previous;
+      fps_.Tick(delta);
+      previous = now;
+      LOG(INFO) << fps_.CurrentEstimate();
     }
 
     vkDeviceWaitIdle(device_);
@@ -1369,7 +1379,7 @@ int main() {
   HelloTriangleApplication app;
 
   try {
-    app.run();
+    app.Run();
   } catch (const std::exception& e) {
     std::cerr << e.what() << std::endl;
     return EXIT_FAILURE;

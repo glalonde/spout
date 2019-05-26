@@ -21,6 +21,7 @@ cc_binary(
     deps = [
         "//base",
         "//src:eigen_glm",
+        "//src:fps_estimator",
         "@com_github_gtruc_glm//:glm",
     ],
 )
