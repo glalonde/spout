@@ -12,6 +12,8 @@ e.g. `pacman -S sdl2`
 
 Also gperftools for the profiler, and pprof to view the profiles
 
+GLFW and vulkan for vulkan examples
+
 ---
 Here's the final version of the previous incarnation(click for video). I'm still getting backt to this point with the code in this repo, but it is on a far better foundation.
 
