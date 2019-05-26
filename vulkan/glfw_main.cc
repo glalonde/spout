@@ -281,7 +281,9 @@ class HelloTriangleApplication {
   }
 
   void RecreateSwapChain() {
-    int width = 0, height = 0;
+    int width = 0;
+    int height = 0;
+    glfwGetFramebufferSize(window_, &width, &height);
     while (width == 0 || height == 0) {
       glfwGetFramebufferSize(window_, &width, &height);
       glfwWaitEvents();
@@ -304,8 +306,7 @@ class HelloTriangleApplication {
 
   void CreateInstance() {
     if (kVulkanDebugMode && !CheckValidationLayerSupport()) {
-      throw std::runtime_error(
-          "validation layers requested, but not available!");
+      LOG(FATAL) << "Validation layers requested but not available.";
     }
 
     VkApplicationInfo app_info = {};
@@ -377,7 +378,7 @@ class HelloTriangleApplication {
     vkEnumeratePhysicalDevices(instance_, &device_count, devices.data());
 
     for (const auto& device : devices) {
-      if (isDeviceSuitable(device)) {
+      if (IsDeviceSuitable(device)) {
         physical_device_ = device;
         break;
       }
@@ -441,13 +442,13 @@ class HelloTriangleApplication {
 
   void CreateSwapChain() {
     SwapChainSupportDetails swap_chain_support =
-        querySwapChainSupport(physical_device_);
+        QuerySwapChainSupport(physical_device_);
 
     VkSurfaceFormatKHR surfaceFormat =
         chooseSwapSurfaceFormat(swap_chain_support.formats);
     VkPresentModeKHR presentMode =
-        chooseSwapPresentMode(swap_chain_support.present_modes);
-    VkExtent2D extent = chooseSwapExtent(swap_chain_support.capabilities);
+        ChooseSwapPresentMode(swap_chain_support.present_modes);
+    VkExtent2D extent = ChooseSwapExtent(swap_chain_support.capabilities);
 
     uint32_t imageCount = swap_chain_support.capabilities.minImageCount + 1;
     if (swap_chain_support.capabilities.maxImageCount > 0 &&
@@ -681,13 +682,6 @@ class HelloTriangleApplication {
     colorBlending.blendConstants[2] = 0.0f;
     colorBlending.blendConstants[3] = 0.0f;
 
-    /*
-   VkPushConstantRange push_constant_range = {};
-   push_constant_range.offset = 0;
-   push_constant_range.size = sizeof(UniformBufferObject);
-   push_constant_range.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-   */
-
     VkPipelineLayoutCreateInfo pipeline_layout_info = {};
     pipeline_layout_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
     pipeline_layout_info.setLayoutCount = 1;
@@ -875,30 +869,6 @@ class HelloTriangleApplication {
                        VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                    &uniform_buffers_[i], &uniform_buffers_memory_[i]);
     }
-
-    /*
-  VkBuffer staging_buffer;
-  VkDeviceMemory staging_buffer_memory;
-  CreateBuffer(buffer_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-               VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                   VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-               &staging_buffer, &staging_buffer_memory);
-
-  void* data;
-  vkMapMemory(device_, staging_buffer_memory, 0, buffer_size, 0, &data);
-  std::memcpy(data, kIndices.data(), static_cast<size_t>(buffer_size));
-  vkUnmapMemory(device_, staging_buffer_memory);
-
-  CreateBuffer(
-      buffer_size,
-      VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &index_buffer_,
-      &index_buffer_memory_);
-
-  CopyBuffer(staging_buffer, index_buffer_, buffer_size);
-  vkDestroyBuffer(device_, staging_buffer, nullptr);
-  vkFreeMemory(device_, staging_buffer_memory, nullptr);
-  */
   }
 
   void CopyBuffer(VkBuffer src_buff, VkBuffer dest_buff, VkDeviceSize size) {
@@ -1054,8 +1024,7 @@ class HelloTriangleApplication {
                             &render_finished_semaphores_[i]) != VK_SUCCESS ||
           vkCreateFence(device_, &fenceInfo, nullptr, &in_flight_fences_[i]) !=
               VK_SUCCESS) {
-        throw std::runtime_error(
-            "failed to create synchronization objects for a frame!");
+        LOG(FATAL) << "Failed to create synchronization objects for a frame.";
       }
     }
   }
@@ -1191,22 +1160,22 @@ class HelloTriangleApplication {
     return available_formats[0];
   }
 
-  VkPresentModeKHR chooseSwapPresentMode(
+  VkPresentModeKHR ChooseSwapPresentMode(
       const std::vector<VkPresentModeKHR>& available_present_modes) {
     VkPresentModeKHR best_mode = VK_PRESENT_MODE_FIFO_KHR;
 
-    for (const auto& availablePresentMode : available_present_modes) {
-      if (availablePresentMode == VK_PRESENT_MODE_MAILBOX_KHR) {
-        return availablePresentMode;
-      } else if (availablePresentMode == VK_PRESENT_MODE_IMMEDIATE_KHR) {
-        best_mode = availablePresentMode;
+    for (const auto& mode : available_present_modes) {
+      if (mode == VK_PRESENT_MODE_MAILBOX_KHR) {
+        return mode;
+      } else if (mode == VK_PRESENT_MODE_IMMEDIATE_KHR) {
+        best_mode = mode;
       }
     }
 
     return best_mode;
   }
 
-  VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities) {
+  VkExtent2D ChooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities) {
     if (capabilities.currentExtent.width !=
         std::numeric_limits<uint32_t>::max()) {
       return capabilities.currentExtent;
@@ -1228,7 +1197,7 @@ class HelloTriangleApplication {
     }
   }
 
-  SwapChainSupportDetails querySwapChainSupport(VkPhysicalDevice device) {
+  SwapChainSupportDetails QuerySwapChainSupport(VkPhysicalDevice device) {
     SwapChainSupportDetails details;
 
     vkGetPhysicalDeviceSurfaceCapabilitiesKHR(device, surface_,
@@ -1257,14 +1226,14 @@ class HelloTriangleApplication {
     return details;
   }
 
-  bool isDeviceSuitable(VkPhysicalDevice device) {
+  bool IsDeviceSuitable(VkPhysicalDevice device) {
     QueueFamilyIndices indices = FindQueueFamilies(device);
 
     bool extensions_supported = CheckDeviceExtensionSupport(device);
 
     bool swap_chain_adequate = false;
     if (extensions_supported) {
-      SwapChainSupportDetails swap_chain_support = querySwapChainSupport(device);
+      SwapChainSupportDetails swap_chain_support = QuerySwapChainSupport(device);
       swap_chain_adequate = !swap_chain_support.formats.empty() &&
                           !swap_chain_support.present_modes.empty();
     }
