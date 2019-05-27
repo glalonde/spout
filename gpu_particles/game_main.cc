@@ -34,17 +34,13 @@ void TestLoop() {
   params.mantissa_bits = 12;
   params.emitter_params.cell_size = CellSize<uint32_t>(params.mantissa_bits);
   ParticleSim sim(window_width, window_height, params);
-  FPSEstimator fps(FromSeconds(2), 60.0);
+  FPSEstimator fps(FromSeconds(1), 60.0);
   double dt = params.dt;
   ControllerInput input;
-  TimePoint previous_cycle = ClockType::now();
   while (!input.quit) {
     input = sim.Update(dt);
-    const auto now = ClockType::now();
-    const auto delta = now - previous_cycle;
-    previous_cycle = now;
-    double estimated_fps = fps.Tick(delta);
-    LOG(INFO) << estimated_fps;
+    fps.Tick();
+    LOG(INFO) << fps.CurrentEstimate();
   }
 }
 

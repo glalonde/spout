@@ -157,3 +157,13 @@ cc_binary(
         "@com_github_google_benchmark//:benchmark_main",
     ],
 )
+
+cc_test(
+    name = "time_test",
+    srcs = ["time_test.cc"],
+    deps = [
+        ":googletest",
+        ":time",
+        ":wall_timer",
+    ],
+)

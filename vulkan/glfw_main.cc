@@ -11,6 +11,7 @@
 #include <optional>
 #include <set>
 #include <stdexcept>
+#include <thread>
 #include <vector>
 
 #include "base/file.h"
@@ -216,17 +217,12 @@ class HelloTriangleApplication {
   }
 
   void MainLoop() {
-    auto previous = ClockType::now();
     while (!glfwWindowShouldClose(window_)) {
       glfwPollEvents();
       DrawFrame();
-      const auto now = ClockType::now();
-      const auto delta = now - previous;
-      fps_.Tick(delta);
-      previous = now;
-      LOG(INFO) << fps_.CurrentEstimate();
+      fps_.Tick();
+      LOG(INFO) << "FPS Estimate: " << fps_.CurrentEstimate();
     }
-
     vkDeviceWaitIdle(device_);
   }
 

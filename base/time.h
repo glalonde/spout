@@ -1,9 +1,10 @@
 #pragma once
 #include <chrono>
 #include <iostream>
+#include <thread>
 #include "base/logging.h"
 
-using ClockType = std::chrono::steady_clock;
+using ClockType = std::chrono::high_resolution_clock;
 using TimePoint = ClockType::time_point;
 using Duration = ClockType::duration;
 
@@ -54,6 +55,17 @@ constexpr inline Duration FromHz(double hz) {
 // Turns a Duration period into hertz.
 inline double ToHz(Duration period) {
   return 1.0 / ToSeconds<double>(period);
+}
+
+// Uses native sleep until the accuracy limit, then busy waits.
+inline void HighResSleepFor(Duration d) {
+  const auto start = std::chrono::high_resolution_clock::now();
+  const auto end = start + d;
+  static constexpr Duration kNativeAccuracy = FromSeconds<double>(0.0005);
+  const Duration remainder = d % kNativeAccuracy;
+  std::this_thread::sleep_for(d - remainder);
+  while (std::chrono::high_resolution_clock::now() < end) {
+  }
 }
 
 // String formatting
