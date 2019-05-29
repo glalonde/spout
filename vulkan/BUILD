@@ -25,3 +25,12 @@ cc_binary(
         "@com_github_gtruc_glm//:glm",
     ],
 )
+
+cc_library(
+    name = "vulkan_memory_allocator",
+    srcs = ["vulkan_memory_allocator.cc"],
+    hdrs = ["vulkan_memory_allocator.h"],
+    deps = [
+        "@com_github_vulkan_memory_allocator//:vulkan_memory_allocator",
+    ],
+)

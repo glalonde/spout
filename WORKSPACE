@@ -60,3 +60,10 @@ http_archive(
     strip_prefix = "glm-master",
     urls = ["https://github.com/g-truc/glm/archive/master.zip"],
 )
+
+http_archive(
+    name = "com_github_vulkan_memory_allocator",
+    build_file = "@//third_party:vulkan_memory_allocator.BUILD",
+    strip_prefix = "VulkanMemoryAllocator-master",
+    urls = ["https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator/archive/master.zip"],
+)
