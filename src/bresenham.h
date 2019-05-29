@@ -347,7 +347,7 @@ void BresenhamExperimentLowRes(const Vector2u32& pos, const Vector2i& vel,
   Vector2i delta_i = end_pos_i - pos_i;
 
   Vector2i start_remainder =
-      Vector2u32::Constant(kHalfCell<uint32_t, 8>).template cast<int>() -
+      Vector2u32::Constant(kHalfCellSize<uint32_t, 8>).template cast<int>() -
       get_remainder(pos).template cast<int>();
   start_remainder = start_remainder.cwiseProduct(step);
   *vel_out = vel;
@@ -440,7 +440,7 @@ void BresenhamExperimentLowResDestructive(const Vector2u32& pos,
   Vector2i delta_i = end_pos_i - pos_i;
 
   Vector2i start_remainder =
-      Vector2u32::Constant(kHalfCell<uint32_t, 8>).template cast<int>() -
+      Vector2u32::Constant(kHalfCellSize<uint32_t, 8>).template cast<int>() -
       get_remainder(pos).template cast<int>();
   start_remainder = start_remainder.cwiseProduct(step);
   *vel_out = vel;

@@ -22,6 +22,4 @@ class AnimatedCanvas {
   Duration target_cycle_time_;
   ImageViewer viewer_;
   FPSEstimator fps_;
-  TimePoint current_frame_finish_;
-  TimePoint next_frame_finish_;
 };
