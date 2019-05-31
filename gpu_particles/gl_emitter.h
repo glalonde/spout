@@ -20,7 +20,8 @@ class Emitter {
  private:
   void InitEmitterShader();
   void MakeParticleBuffer();
-  void Emit(int num_emitted, Vector2u32 start_pos, Vector2u32 end_pos);
+  void Emit(int num_emitted, float dt, Vector2u32 start_pos,
+            Vector2u32 end_pos);
 
   // Emitter constants
   EmitterParameters params_;

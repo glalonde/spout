@@ -18,6 +18,12 @@ inline T ToSeconds(Duration duration) {
       .count();
 }
 
+template <class T>
+inline T ToNanoseconds(Duration duration) {
+  return std::chrono::duration<T, std::chrono::nanoseconds::period>(duration)
+      .count();
+}
+
 // Converts a time point to the number of seconds since the epoch of its
 // corresponding clock.
 template <class T>

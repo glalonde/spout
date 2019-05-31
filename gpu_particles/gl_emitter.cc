@@ -1,5 +1,6 @@
 #include "gpu_particles/gl_emitter.h"
 #include <cmath>
+#include "base/time.h"
 #include "graphics/check_opengl_errors.h"
 #include "graphics/load_shader.h"
 
@@ -22,7 +23,7 @@ void Emitter::EmitOverTime(float dt, Vector2u32 start_pos, Vector2u32 end_pos) {
     const int num_emissions =
         static_cast<int>(emission_progress_ / emission_period_);
     emission_progress_ -= num_emissions * emission_period_;
-    Emit(num_emissions, start_pos, end_pos);
+    Emit(num_emissions, dt, start_pos, end_pos);
   }
   return;
 }
@@ -45,7 +46,8 @@ void Emitter::MakeParticleBuffer() {
   CHECK(CheckGLErrors());
 }
 
-void Emitter::Emit(int num_emitted, Vector2u32 start_pos, Vector2u32 end_pos) {
+void Emitter::Emit(int num_emitted, float dt, Vector2u32 start_pos,
+                   Vector2u32 end_pos) {
   // Execute the emitter shader
   glUseProgram(emitter_program_);
   glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0 /* bind index */,
@@ -67,6 +69,9 @@ void Emitter::Emit(int num_emitted, Vector2u32 start_pos, Vector2u32 end_pos) {
               params_.emission_speed_min * params_.cell_size);
   glUniform1f(glGetUniformLocation(emitter_program_, "emit_velocity_max"),
               params_.emission_speed_max * params_.cell_size);
+  glUniform1f(glGetUniformLocation(emitter_program_, "dt"), dt);
+  glUniform1ui(glGetUniformLocation(emitter_program_, "random_seed_int"),
+               ToNanoseconds<uint32_t>(FromSeconds<float>(time_)));
   const int group_size = std::min(num_particles_, 512);
   const int num_groups = (num_particles_ + group_size - 1) / group_size;
   glad_glDispatchCompute(num_groups, 1, 1);
