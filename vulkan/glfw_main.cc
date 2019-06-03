@@ -18,6 +18,7 @@
 #include "base/logging.h"
 #include "src/eigen_glm.h"
 #include "src/fps_estimator.h"
+#include "vulkan/vma_wrapper.h"
 
 #include "glm/glm.hpp"
 #include "glm/gtc/matrix_transform.hpp"
@@ -161,6 +162,7 @@ class HelloTriangleApplication {
   VkDescriptorPool descriptor_pool_;
   std::vector<VkDescriptorSet> descriptor_sets_;
 
+  std::unique_ptr<VMAWrapper> allocator_;
   VkBuffer vertex_buffer_;
   VkDeviceMemory vertex_buffer_memory_;
   VkBuffer index_buffer_;
@@ -200,6 +202,7 @@ class HelloTriangleApplication {
     CreateSurface();
     PickPhysicalDevice();
     CreateLogicalDevice();
+    CreateAllocator();
     CreateSwapChain();
     CreateImageViews();
     CreateRenderPass();
@@ -214,6 +217,10 @@ class HelloTriangleApplication {
     CreateDescriptorSets();
     CreateCommandBuffers();
     CreateSyncObjects();
+  }
+
+  void CreateAllocator() {
+    allocator_ = std::make_unique<VMAWrapper>(physical_device_, device_);
   }
 
   void MainLoop() {
@@ -257,6 +264,8 @@ class HelloTriangleApplication {
     CleanupSwapChain();
 
     vkDestroyDescriptorSetLayout(device_, descriptor_set_layout_, nullptr);
+
+    allocator_.reset();
 
     vkDestroyBuffer(device_, index_buffer_, nullptr);
     vkFreeMemory(device_, index_buffer_memory_, nullptr);
@@ -815,17 +824,8 @@ class HelloTriangleApplication {
   void CreateVertexBuffer() {
     VkDeviceSize buffer_size = sizeof(kVertices[0]) * kVertices.size();
 
-    VkBuffer staging_buffer;
-    VkDeviceMemory staging_buffer_memory;
-    CreateBuffer(buffer_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                     VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                 &staging_buffer, &staging_buffer_memory);
-
-    void* data;
-    vkMapMemory(device_, staging_buffer_memory, 0, buffer_size, 0, &data);
-    std::memcpy(data, kVertices.data(), static_cast<size_t>(buffer_size));
-    vkUnmapMemory(device_, staging_buffer_memory);
+    auto staging =
+        allocator_->AllocateStagingBuffer(buffer_size, kVertices.data());
 
     CreateBuffer(
         buffer_size,
@@ -833,25 +833,15 @@ class HelloTriangleApplication {
         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &vertex_buffer_,
         &vertex_buffer_memory_);
 
-    CopyBuffer(staging_buffer, vertex_buffer_, buffer_size);
-    vkDestroyBuffer(device_, staging_buffer, nullptr);
-    vkFreeMemory(device_, staging_buffer_memory, nullptr);
+    CopyBuffer(staging.buffer, vertex_buffer_, buffer_size);
+    allocator_->Free(staging);
   }
 
   void CreateIndexBuffer() {
     VkDeviceSize buffer_size = sizeof(kIndices[0]) * kIndices.size();
 
-    VkBuffer staging_buffer;
-    VkDeviceMemory staging_buffer_memory;
-    CreateBuffer(buffer_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                     VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                 &staging_buffer, &staging_buffer_memory);
-
-    void* data;
-    vkMapMemory(device_, staging_buffer_memory, 0, buffer_size, 0, &data);
-    std::memcpy(data, kIndices.data(), static_cast<size_t>(buffer_size));
-    vkUnmapMemory(device_, staging_buffer_memory);
+    auto staging =
+        allocator_->AllocateStagingBuffer(buffer_size, kIndices.data());
 
     CreateBuffer(
         buffer_size,
@@ -859,9 +849,8 @@ class HelloTriangleApplication {
         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &index_buffer_,
         &index_buffer_memory_);
 
-    CopyBuffer(staging_buffer, index_buffer_, buffer_size);
-    vkDestroyBuffer(device_, staging_buffer, nullptr);
-    vkFreeMemory(device_, staging_buffer_memory, nullptr);
+    CopyBuffer(staging.buffer, index_buffer_, buffer_size);
+    allocator_->Free(staging);
   }
 
   void CreateUniformBuffers() {
