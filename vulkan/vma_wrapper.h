@@ -9,20 +9,31 @@ class VMAWrapper {
   VMAWrapper(VkPhysicalDevice physical_device, VkDevice device);
   ~VMAWrapper();
 
-  struct Allocation {
+  struct Buffer {
     VkBuffer buffer;
     VmaAllocation allocation;
   };
 
   // Staging buffer. Source from CPU. If source_data is not nullptr, then the
   // allocation will be mapped and the source data will be copied in.
-  Allocation AllocateStagingBuffer(uint64_t size,
-                                   const void* source_data = nullptr);
+  Buffer AllocateStagingBuffer(uint64_t size,
+                               const void* source_data = nullptr);
 
-  void Free(Allocation all);
+  Buffer CreateGPUBuffer(uint64_t size, VkBufferUsageFlags usage);
+
+  // For direct CPU to GPU mapping (no staging / explicit transfer)
+  Buffer CreateCPUToGPUBuffer(uint64_t size, VkBufferUsageFlags usage);
+
+  void CopyToBuffer(Buffer buffer, const void* source_data, size_t size);
+
+  void Free(Buffer all);
 
  private:
   static VmaAllocator ConstructAllocator(VkPhysicalDevice physical_device,
                                          VkDevice device);
+
+  Buffer CreateBuffer(uint64_t size, VkBufferUsageFlags usage,
+                      VmaMemoryUsage vma_usage);
+
   VmaAllocator allocator_;
 };

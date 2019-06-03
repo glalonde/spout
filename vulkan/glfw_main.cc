@@ -163,12 +163,9 @@ class HelloTriangleApplication {
   std::vector<VkDescriptorSet> descriptor_sets_;
 
   std::unique_ptr<VMAWrapper> allocator_;
-  VkBuffer vertex_buffer_;
-  VkDeviceMemory vertex_buffer_memory_;
-  VkBuffer index_buffer_;
-  VkDeviceMemory index_buffer_memory_;
-  std::vector<VkBuffer> uniform_buffers_;
-  std::vector<VkDeviceMemory> uniform_buffers_memory_;
+  VMAWrapper::Buffer vertex_buffer_;
+  VMAWrapper::Buffer index_buffer_;
+  std::vector<VMAWrapper::Buffer> uniform_buffers_;
 
   std::vector<VkCommandBuffer> command_buffers_;
 
@@ -253,8 +250,7 @@ class HelloTriangleApplication {
     vkDestroySwapchainKHR(device_, swap_chain_, nullptr);
 
     for (size_t i = 0; i < swap_chain_images_.size(); i++) {
-      vkDestroyBuffer(device_, uniform_buffers_[i], nullptr);
-      vkFreeMemory(device_, uniform_buffers_memory_[i], nullptr);
+      allocator_->Free(uniform_buffers_[i]);
     }
 
     vkDestroyDescriptorPool(device_, descriptor_pool_, nullptr);
@@ -265,13 +261,9 @@ class HelloTriangleApplication {
 
     vkDestroyDescriptorSetLayout(device_, descriptor_set_layout_, nullptr);
 
+    allocator_->Free(index_buffer_);
+    allocator_->Free(vertex_buffer_);
     allocator_.reset();
-
-    vkDestroyBuffer(device_, index_buffer_, nullptr);
-    vkFreeMemory(device_, index_buffer_memory_, nullptr);
-
-    vkDestroyBuffer(device_, vertex_buffer_, nullptr);
-    vkFreeMemory(device_, vertex_buffer_memory_, nullptr);
 
     for (size_t i = 0; i < kMaxFramesInFlight; i++) {
       vkDestroySemaphore(device_, render_finished_semaphores_[i], nullptr);
@@ -803,7 +795,7 @@ class HelloTriangleApplication {
 
     for (size_t i = 0; i < swap_chain_images_.size(); i++) {
       VkDescriptorBufferInfo buffer_info = {};
-      buffer_info.buffer = uniform_buffers_[i];
+      buffer_info.buffer = uniform_buffers_[i].buffer;
       buffer_info.offset = 0;
       buffer_info.range = sizeof(UniformBufferObject);
 
@@ -823,46 +815,33 @@ class HelloTriangleApplication {
 
   void CreateVertexBuffer() {
     VkDeviceSize buffer_size = sizeof(kVertices[0]) * kVertices.size();
-
     auto staging =
         allocator_->AllocateStagingBuffer(buffer_size, kVertices.data());
-
-    CreateBuffer(
+    vertex_buffer_ = allocator_->CreateGPUBuffer(
         buffer_size,
-        VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &vertex_buffer_,
-        &vertex_buffer_memory_);
-
-    CopyBuffer(staging.buffer, vertex_buffer_, buffer_size);
+        VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+    CopyBuffer(staging.buffer, vertex_buffer_.buffer, buffer_size);
     allocator_->Free(staging);
   }
 
   void CreateIndexBuffer() {
     VkDeviceSize buffer_size = sizeof(kIndices[0]) * kIndices.size();
-
     auto staging =
         allocator_->AllocateStagingBuffer(buffer_size, kIndices.data());
-
-    CreateBuffer(
+    index_buffer_ = allocator_->CreateGPUBuffer(
         buffer_size,
-        VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &index_buffer_,
-        &index_buffer_memory_);
-
-    CopyBuffer(staging.buffer, index_buffer_, buffer_size);
+        VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
+    CopyBuffer(staging.buffer, index_buffer_.buffer, buffer_size);
     allocator_->Free(staging);
   }
 
   void CreateUniformBuffers() {
     VkDeviceSize buffer_size = sizeof(UniformBufferObject);
     uniform_buffers_.resize(swap_chain_images_.size());
-    uniform_buffers_memory_.resize(swap_chain_images_.size());
 
     for (size_t i = 0; i < swap_chain_images_.size(); i++) {
-      CreateBuffer(buffer_size, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-                   VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                       VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                   &uniform_buffers_[i], &uniform_buffers_memory_[i]);
+      uniform_buffers_[i] = allocator_->CreateCPUToGPUBuffer(
+          buffer_size, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
     }
   }
 
@@ -981,11 +960,11 @@ class HelloTriangleApplication {
 
       vkCmdBindPipeline(command_buffers_[i], VK_PIPELINE_BIND_POINT_GRAPHICS,
                         graphics_pipeline_);
-      VkBuffer vertex_buffers[] = {vertex_buffer_};
+      VkBuffer vertex_buffers[] = {vertex_buffer_.buffer};
       VkDeviceSize offsets[] = {0};
       vkCmdBindVertexBuffers(command_buffers_[i], 0, 1, vertex_buffers,
                              offsets);
-      vkCmdBindIndexBuffer(command_buffers_[i], index_buffer_, 0,
+      vkCmdBindIndexBuffer(command_buffers_[i], index_buffer_.buffer, 0,
                            VK_INDEX_TYPE_UINT16);
       vkCmdBindDescriptorSets(command_buffers_[i],
                               VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout_,
@@ -1130,12 +1109,8 @@ class HelloTriangleApplication {
                                   0.1f, 10.0f);
 
     ubo.proj(1, 1) *= -1;
-
-    void* data;
-    vkMapMemory(device_, uniform_buffers_memory_[current_image], 0, sizeof(ubo),
-                0, &data);
-    std::memcpy(data, &ubo, sizeof(ubo));
-    vkUnmapMemory(device_, uniform_buffers_memory_[current_image]);
+    allocator_->CopyToBuffer(uniform_buffers_[current_image], &ubo,
+                             sizeof(ubo));
   }
 
   VkSurfaceFormatKHR chooseSwapSurfaceFormat(

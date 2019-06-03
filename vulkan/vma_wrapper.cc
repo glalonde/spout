@@ -18,27 +18,50 @@ VmaAllocator VMAWrapper::ConstructAllocator(VkPhysicalDevice physical_device,
   return allocator;
 }
 
-VMAWrapper::Allocation VMAWrapper::AllocateStagingBuffer(
-    uint64_t size, const void* source_data) {
-  VkBufferCreateInfo buffer_info = {VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
-  buffer_info.size = size;
-  buffer_info.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-  VmaAllocationCreateInfo alloc_info = {};
-  alloc_info.usage = VMA_MEMORY_USAGE_CPU_ONLY;
-  Allocation allocation;
-  vmaCreateBuffer(allocator_, &buffer_info, &alloc_info, &allocation.buffer,
-                  &allocation.allocation, nullptr);
+VMAWrapper::Buffer VMAWrapper::AllocateStagingBuffer(uint64_t size,
+                                                     const void* source_data) {
+  Buffer buffer = CreateBuffer(size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                               VMA_MEMORY_USAGE_CPU_ONLY);
 
   if (source_data != nullptr) {
-    void* mapped_data;
-    vmaMapMemory(allocator_, allocation.allocation, &mapped_data);
-    std::memcpy(mapped_data, source_data, static_cast<size_t>(size));
-    vmaUnmapMemory(allocator_, allocation.allocation);
+    CopyToBuffer(buffer, source_data, size);
   }
 
-  return allocation;
+  return buffer;
 }
 
-void VMAWrapper::Free(Allocation all) {
+void VMAWrapper::Free(Buffer all) {
   vmaDestroyBuffer(allocator_, all.buffer, all.allocation);
+}
+
+VMAWrapper::Buffer VMAWrapper::CreateGPUBuffer(uint64_t size,
+                                               VkBufferUsageFlags usage) {
+  return CreateBuffer(size, usage, VMA_MEMORY_USAGE_GPU_ONLY);
+}
+
+VMAWrapper::Buffer VMAWrapper::CreateCPUToGPUBuffer(uint64_t size,
+                                                    VkBufferUsageFlags usage) {
+  return CreateBuffer(size, usage, VMA_MEMORY_USAGE_CPU_TO_GPU);
+}
+
+VMAWrapper::Buffer VMAWrapper::CreateBuffer(uint64_t size,
+                                            VkBufferUsageFlags usage,
+                                            VmaMemoryUsage vma_usage) {
+  VkBufferCreateInfo buffer_info = {VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+  buffer_info.size = size;
+  buffer_info.usage = usage;
+  VmaAllocationCreateInfo alloc_info = {};
+  alloc_info.usage = vma_usage;
+  Buffer buffer;
+  vmaCreateBuffer(allocator_, &buffer_info, &alloc_info, &buffer.buffer,
+                  &buffer.allocation, nullptr);
+  return buffer;
+}
+
+void VMAWrapper::CopyToBuffer(Buffer buffer, const void* source_data,
+                              size_t size) {
+  void* mapped_data;
+  vmaMapMemory(allocator_, buffer.allocation, &mapped_data);
+  std::memcpy(mapped_data, source_data, size);
+  vmaUnmapMemory(allocator_, buffer.allocation);
 }
