@@ -20,6 +20,7 @@ cc_binary(
     ],
     deps = [
         ":vma_wrapper",
+        ":vulkan_utils",
         "//base",
         "//src:eigen_glm",
         "//src:fps_estimator",
@@ -33,6 +34,15 @@ cc_library(
     hdrs = ["vulkan_memory_allocator.h"],
     deps = [
         "@com_github_vulkan_memory_allocator//:vulkan_memory_allocator",
+    ],
+)
+
+cc_library(
+    name = "vulkan_utils",
+    srcs = ["vulkan_utils.cc"],
+    hdrs = ["vulkan_utils.h"],
+    deps = [
+        "//base:logging",
     ],
 )
 

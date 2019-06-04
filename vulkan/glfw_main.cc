@@ -19,6 +19,7 @@
 #include "src/eigen_glm.h"
 #include "src/fps_estimator.h"
 #include "vulkan/vma_wrapper.h"
+#include "vulkan/vulkan_utils.h"
 
 #include "glm/glm.hpp"
 #include "glm/gtc/matrix_transform.hpp"
@@ -41,28 +42,7 @@ static constexpr bool kVulkanDebugMode = false;
 static constexpr bool kVulkanDebugMode = true;
 #endif
 
-VkResult CreateDebugUtilsMessengerEXT(
-    VkInstance instance, const VkDebugUtilsMessengerCreateInfoEXT* pCreateInfo,
-    const VkAllocationCallbacks* pAllocator,
-    VkDebugUtilsMessengerEXT* debug_messenger) {
-  auto func = (PFN_vkCreateDebugUtilsMessengerEXT)vkGetInstanceProcAddr(
-      instance, "vkCreateDebugUtilsMessengerEXT");
-  if (func != nullptr) {
-    return func(instance, pCreateInfo, pAllocator, debug_messenger);
-  } else {
-    return VK_ERROR_EXTENSION_NOT_PRESENT;
-  }
-}
 
-void DestroyDebugUtilsMessengerEXT(VkInstance instance,
-                                   VkDebugUtilsMessengerEXT debug_messenger,
-                                   const VkAllocationCallbacks* pAllocator) {
-  auto func = (PFN_vkDestroyDebugUtilsMessengerEXT)vkGetInstanceProcAddr(
-      instance, "vkDestroyDebugUtilsMessengerEXT");
-  if (func != nullptr) {
-    func(instance, debug_messenger, pAllocator);
-  }
-}
 
 struct QueueFamilyIndices {
   std::optional<uint32_t> graphics_family;
@@ -137,7 +117,7 @@ class HelloTriangleApplication {
   FPSEstimator fps_;
 
   VkInstance instance_;
-  VkDebugUtilsMessengerEXT debug_messenger_;
+  std::unique_ptr<VulkanDebugMessenger> debug_messenger_;
   VkSurfaceKHR surface_;
 
   VkPhysicalDevice physical_device_ = VK_NULL_HANDLE;
@@ -195,7 +175,9 @@ class HelloTriangleApplication {
 
   void InitVulkan() {
     CreateInstance();
-    SetupDebugMessenger();
+    if (kVulkanDebugMode) {
+      debug_messenger_ = std::make_unique<VulkanDebugMessenger>(instance_);
+    }
     CreateSurface();
     PickPhysicalDevice();
     CreateLogicalDevice();
@@ -275,10 +257,7 @@ class HelloTriangleApplication {
 
     vkDestroyDevice(device_, nullptr);
 
-    if (kVulkanDebugMode) {
-      DestroyDebugUtilsMessengerEXT(instance_, debug_messenger_, nullptr);
-    }
-
+    debug_messenger_.reset();
     vkDestroySurfaceKHR(instance_, surface_, nullptr);
     vkDestroyInstance(instance_, nullptr);
 
@@ -328,7 +307,7 @@ class HelloTriangleApplication {
     create_info.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
     create_info.pApplicationInfo = &app_info;
 
-    auto extensions = getRequiredExtensions();
+    auto extensions = GetRequiredExtensions();
     create_info.enabledExtensionCount =
         static_cast<uint32_t>(extensions.size());
     create_info.ppEnabledExtensionNames = extensions.data();
@@ -343,26 +322,6 @@ class HelloTriangleApplication {
 
     if (vkCreateInstance(&create_info, nullptr, &instance_) != VK_SUCCESS) {
       LOG(FATAL) << "Failed to create instance.";
-    }
-  }
-
-  void SetupDebugMessenger() {
-    if (!kVulkanDebugMode) return;
-
-    VkDebugUtilsMessengerCreateInfoEXT create_info = {};
-    create_info.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
-    create_info.messageSeverity =
-        VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT |
-        VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
-        VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
-    create_info.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
-                              VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
-                              VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
-    create_info.pfnUserCallback = DebugCallback;
-
-    if (CreateDebugUtilsMessengerEXT(instance_, &create_info, nullptr,
-                                     &debug_messenger_) != VK_SUCCESS) {
-      LOG(FATAL) << "Failed to setup debug messenger.";
     }
   }
 
@@ -501,7 +460,7 @@ class HelloTriangleApplication {
     vkGetSwapchainImagesKHR(device_, swap_chain_, &imageCount,
                             swap_chain_images_.data());
 
-    swap_chain_image_format_ = surfaceFormat.format;
+    swap_chain_image_format_ = surface_format.format;
     swap_chain_extent_ = extent;
   }
 
@@ -1224,7 +1183,7 @@ class HelloTriangleApplication {
     return indices;
   }
 
-  std::vector<const char*> getRequiredExtensions() {
+  std::vector<const char*> GetRequiredExtensions() {
     uint32_t glfw_extension_count = 0;
     const char** glfw_extensions;
     glfw_extensions = glfwGetRequiredInstanceExtensions(&glfw_extension_count);
@@ -1262,34 +1221,6 @@ class HelloTriangleApplication {
     }
 
     return true;
-  }
-
-  static VKAPI_ATTR VkBool32 VKAPI_CALL DebugCallback(
-      VkDebugUtilsMessageSeverityFlagBitsEXT severity,
-      VkDebugUtilsMessageTypeFlagsEXT type,
-      const VkDebugUtilsMessengerCallbackDataEXT* data, void* pUserData) {
-    switch (severity) {
-      case VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT: {
-        LOG(INFO) << data->pMessage;
-        break;
-      }
-      case VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT: {
-        LOG(INFO) << data->pMessage;
-        break;
-      }
-      case VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT: {
-        LOG(WARNING) << data->pMessage;
-        break;
-      }
-      case VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT: {
-        LOG(ERROR) << data->pMessage;
-        break;
-      }
-      default:
-        LOG(ERROR) << data->pMessage;
-        break;
-    }
-    return VK_FALSE;
   }
 };
 
