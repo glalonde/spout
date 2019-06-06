@@ -12,18 +12,14 @@ http_archive(
     urls = ["https://github.com/google/googletest/archive/master.zip"],
 )
 
-# Only required for glog, everything else uses absl flags
-http_archive(
-    name = "com_github_gflags_gflags",
-    strip_prefix = "gflags-2.2.2",
-    urls = [
-        "https://mirror.bazel.build/github.com/gflags/gflags/archive/v2.2.2.tar.gz",
-        "https://github.com/gflags/gflags/archive/v2.2.2.tar.gz",
-    ],
-)
-
 http_archive(
     name = "com_google_glog",
+    build_file_content =
+        """
+licenses(['notice'])
+load(':bazel/glog.bzl', 'glog_library')
+glog_library(with_gflags=0)
+""",
     strip_prefix = "glog-master",
     urls = ["https://github.com/google/glog/archive/master.zip"],
 )
