@@ -13,7 +13,7 @@
 #include "src/random.h"
 #include "src/mobile_object.h"
 
-DEFINE_int32(emission_rate, 100, "Number of particles per second");
+ABSL_FLAG(int32_t, emission_rate, 100, "Number of particles per second");
 
 void RenderParticle(const Vector2d& pos, Image<PixelType::RGBAU8>* data) {
   Vector2i pos_i = pos.cast<int>();
@@ -158,6 +158,6 @@ void Demo(double emission_rate) {
 
 int main(int argc, char** argv) {
   Init(argc, argv);
-  Demo(FLAGS_emission_rate);
+  Demo(absl::GetFlag(FLAGS_emission_rate));
   return 0;
 }

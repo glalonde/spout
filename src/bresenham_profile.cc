@@ -9,9 +9,9 @@
 #include "src/demo_utils.h"
 #include "src/random.h"
 
-DEFINE_int32(num_particles, 100, "Number of particles");
-DEFINE_bool(floating_point, false, "Use floating point?");
-DEFINE_bool(low_res, false, "Use floating point?");
+ABSL_FLAG(int32_t, num_particles, 100, "Number of particles");
+ABSL_FLAG(bool, floating_point, false, "Use floating point?");
+ABSL_FLAG(bool, low_res, false, "Use floating point?");
 
 void DemoLowResInteger(int num_particles) {
   const double kFps = 60.0;
@@ -143,12 +143,12 @@ void DemoFloatingPoint(int num_particles) {
 
 int main(int argc, char** argv) {
   Init(argc, argv);
-  if (FLAGS_floating_point) {
-    DemoFloatingPoint(FLAGS_num_particles);
-  } else if (FLAGS_low_res) {
-    DemoLowResInteger(FLAGS_num_particles);
+  if (absl::GetFlag(FLAGS_floating_point)) {
+    DemoFloatingPoint(absl::GetFlag(FLAGS_num_particles));
+  } else if (absl::GetFlag(FLAGS_low_res)) {
+    DemoLowResInteger(absl::GetFlag(FLAGS_num_particles));
   } else {
-    DemoInteger(FLAGS_num_particles);
+    DemoInteger(absl::GetFlag(FLAGS_num_particles));
   }
   return 0;
 }

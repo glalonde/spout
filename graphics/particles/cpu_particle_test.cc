@@ -8,9 +8,9 @@
 #include "src/random.h"
 #include "src/so2.h"
 
-DEFINE_int32(num_particles, 512, "Number of particles");
-DEFINE_double(damage_rate, 1.0, "Damage rate");
-DEFINE_double(dt, .016, "Simulation rate");
+ABSL_FLAG(int32_t, num_particles, 512, "Number of particles");
+ABSL_FLAG(double, damage_rate, 1.0, "Damage rate");
+ABSL_FLAG(double, dt, .016, "Simulation rate");
 
 static constexpr int kMantissaBits = 8;
 
@@ -79,15 +79,16 @@ void TestLoop(int num_particles) {
                   &particles);
 
   IntParticle next;
-  double dt = FLAGS_dt;
+  double dt = absl::GetFlag(FLAGS_dt);
   bool done = false;
   auto* data = canvas.data();
   while (!done) {
     RenderEnvironment(environment, data);
     for (int i = 0; i < num_particles; ++i) {
       BresenhamExperimentLowResDestructive(
-          particles[i].position, particles[i].velocity, dt, FLAGS_damage_rate,
-          &environment, &next.position, &next.velocity);
+          particles[i].position, particles[i].velocity, dt,
+          absl::GetFlag(FLAGS_damage_rate), &environment, &next.position,
+          &next.velocity);
       particles[i] = next;
       LOG(INFO) << next.position.transpose() << ", " << next.velocity.transpose();
       RenderParticle(next.position, data);
@@ -99,6 +100,6 @@ void TestLoop(int num_particles) {
 
 int main(int argc, char* argv[]) {
   Init(argc, argv);
-  TestLoop(FLAGS_num_particles);
+  TestLoop(absl::GetFlag(FLAGS_num_particles));
   return 0;
 }

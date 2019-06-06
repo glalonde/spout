@@ -6,6 +6,8 @@ cc_library(
     copts = ["-DHAVE_UNWIND_H"],
     deps = [
         "@com_github_gflags_gflags//:gflags",
+        "@com_google_absl//absl/flags:flag",
+        "@com_google_absl//absl/flags:parse",
         "@com_google_glog//:glog",
     ],
 )

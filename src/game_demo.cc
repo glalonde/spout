@@ -16,7 +16,7 @@
 #include "src/random.h"
 #include "src/scrolling_manager.h"
 
-DEFINE_int32(emission_rate, 100, "Number of particles per second");
+ABSL_FLAG(int32_t, emission_rate, 100, "Number of particles per second");
 
 // Most of the major parts glued together
 void RenderShip(const ScrollingManager& scroller, const Ship& ship,
@@ -259,6 +259,6 @@ void Demo(double emission_rate) {
 
 int main(int argc, char** argv) {
   Init(argc, argv);
-  Demo(FLAGS_emission_rate);
+  Demo(absl::GetFlag(FLAGS_emission_rate));
   return 0;
 }

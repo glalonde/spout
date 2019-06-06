@@ -16,15 +16,15 @@
 #include "src/bresenham.h"
 #include "src/so2.h"
 
-DEFINE_bool(debug, false, "Debug mode");
-DEFINE_int32(color_map_index, 0, "Color map index, see color_maps.h");
-DEFINE_double(damage_rate, 1.0, "Damage rate");
-DEFINE_double(dt, .016, "Simulation rate");
-DEFINE_int32(pixel_size, 4, "Pixel size");
-DEFINE_double(particle_speed, 250.0, "Particle speed");
-DEFINE_double(emission_rate, 250.0, "Particle emission rate");
-DEFINE_double(min_life, 1.0, "Min particle life");
-DEFINE_double(max_life, 5.0, "Max particle life");
+ABSL_FLAG(bool, debug, false, "Debug mode");
+ABSL_FLAG(int32_t, color_map_index, 0, "Color map index, see color_maps.h");
+ABSL_FLAG(double, damage_rate, 1.0, "Damage rate");
+ABSL_FLAG(double, dt, .016, "Simulation rate");
+ABSL_FLAG(int32_t, pixel_size, 4, "Pixel size");
+ABSL_FLAG(double, particle_speed, 250.0, "Particle speed");
+ABSL_FLAG(double, emission_rate, 250.0, "Particle emission rate");
+ABSL_FLAG(double, min_life, 1.0, "Min particle life");
+ABSL_FLAG(double, max_life, 5.0, "Max particle life");
 
 static constexpr int kMantissaBits = 14;
 
@@ -185,7 +185,7 @@ class ParticleSim {
     glUniform1i(glGetUniformLocation(particle_program_, "buffer_height"),
                 grid_dims_[1]);
     glUniform1f(glGetUniformLocation(particle_program_, "damage_rate"),
-                FLAGS_damage_rate);
+                absl::GetFlag(FLAGS_damage_rate));
     glUniform1i(glGetUniformLocation(particle_program_, "kMantissaBits"),
                 kMantissaBits);
     const int group_size = std::min(num_particles_, 512);
@@ -206,7 +206,7 @@ class ParticleSim {
     glUniform1i(glGetUniformLocation(particle_program_, "buffer_height"),
                 grid_dims_[1]);
     glUniform1f(glGetUniformLocation(particle_program_, "damage_rate"),
-                FLAGS_damage_rate);
+                absl::GetFlag(FLAGS_damage_rate));
     glUniform1i(glGetUniformLocation(particle_program_, "kMantissaBits"),
                 kMantissaBits);
     glad_glDispatchCompute(1, 1, 1);
@@ -393,8 +393,9 @@ class ParticleSim {
   }
 
   void InitEmitter() {
-    emitter_ = std::make_unique<Emitter>(FLAGS_emission_rate, FLAGS_min_life,
-                                         FLAGS_max_life);
+    emitter_ = std::make_unique<Emitter>(absl::GetFlag(FLAGS_emission_rate),
+                                         absl::GetFlag(FLAGS_min_life),
+                                         absl::GetFlag(FLAGS_max_life));
   }
 
   void MakeShipBuffer(const IntParticle& init) {
@@ -555,7 +556,7 @@ class ParticleSim {
 
     const auto format = GL_RGB32F;
 
-    const ColorMap map = kAllColorMaps[FLAGS_color_map_index];
+    const ColorMap map = kAllColorMaps[absl::GetFlag(FLAGS_color_map_index)];
 
     // Eigen is column major by default meaning columns are stored contiguously,
     // meaning we want each component of a given color on the same column.
@@ -609,8 +610,8 @@ class ParticleSim {
                        Eigen::Map<Vector<IntParticle, Eigen::Dynamic>> data) {
     std::mt19937 gen(0);
     auto magnitude_dist = UniformRandomDistribution<double>(
-        FLAGS_particle_speed * cell_size_ * .75,
-        FLAGS_particle_speed * cell_size_ * 1.25);
+        absl::GetFlag(FLAGS_particle_speed) * cell_size_ * .75,
+        absl::GetFlag(FLAGS_particle_speed) * cell_size_ * 1.25);
     auto angle_dist = UniformRandomDistribution<double>(-M_PI, M_PI);
     for (int i = 0; i < num_particles_; ++i) {
       data[i].position =
@@ -656,13 +657,13 @@ class ParticleSim {
 void TestLoop() {
   int window_width = 1440;
   int window_height = 900;
-  int pixel_size = FLAGS_pixel_size;
+  int pixel_size = absl::GetFlag(FLAGS_pixel_size);
   int grid_width = window_width / pixel_size;
   int grid_height = window_height / pixel_size;
 
   ParticleSim sim(window_width, window_height, grid_width, grid_height);
 
-  double dt = FLAGS_dt;
+  double dt = absl::GetFlag(FLAGS_dt);
   sim.ToggleFullScreen();
   ControllerInput input;
   while (!input.quit) {

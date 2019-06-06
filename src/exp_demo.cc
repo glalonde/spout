@@ -11,7 +11,7 @@
 #include "src/int_grid.h"
 #include "src/random.h"
 
-DEFINE_bool(run_demo, false, "run demo?");
+ABSL_FLAG(bool, run_demo, false, "run demo?");
 
 void RenderParticle(const Vector2u32& pos, Image<PixelType::RGBAU8>* data) {
   auto get_cell = [](const Vector2u32& vec) -> Vector2i {
@@ -70,7 +70,7 @@ void Demo() {
 
 int main(int argc, char** argv) {
   Init(argc, argv);
-  if (FLAGS_run_demo) {
+  if (absl::GetFlag(FLAGS_run_demo)) {
     Demo();
   }
   return 0;

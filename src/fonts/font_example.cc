@@ -4,7 +4,7 @@
 #include "base/init.h"
 #include "src/fonts/font8x8.h"
 
-DEFINE_string(text, "ayy lmao", "Text to render.");
+ABSL_FLAG(std::string, text, "ayy lmao", "Text to render.");
 
 void Render(const uint8_t* bitmap) {
   for (int x = 0; x < 8; x++) {
@@ -26,5 +26,5 @@ int RenderLine(const std::string& text) {
 
 int main(int argc, char** argv) {
   Init(argc, argv);
-  RenderLine(FLAGS_text);
+  RenderLine(absl::GetFlag(FLAGS_text));
 }

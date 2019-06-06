@@ -3,13 +3,13 @@
 #include "base/construction_macros.h"
 #include "base/logging.h"
 
-DEFINE_string(profile_output, "", "Output path for profiler file");
+ABSL_FLAG(std::string, profile_output, "", "Output path for profiler file");
 
 class ScopedProfiler {
  public:
   NO_COPY_NO_MOVE_NO_ASSIGN(ScopedProfiler);
 
-  ScopedProfiler() : ScopedProfiler(FLAGS_profile_output) {}
+  ScopedProfiler() : ScopedProfiler(absl::GetFlag(FLAGS_profile_output)) {}
 
   ScopedProfiler(const std::string& profile_output) : started_(false) {
     if (profile_output.empty()) {

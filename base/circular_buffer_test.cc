@@ -2,9 +2,9 @@
 #include "base/googletest.h"
 
 GTEST_TEST(CircularBuffer, Smoke) {
-  CircularBuffer<int> dubs(10);
+  CircularBuffer<int> dubs(10, 0);
   for (int i = 0; i < dubs.Capacity(); ++i) {
-    EXPECT_EQ(dubs.NextOverwritten(), nullptr);
+    EXPECT_EQ(dubs.NextOverwritten(), &dubs.data()[i]);
     dubs.Push(i);
   }
   EXPECT_EQ(dubs.NextOverwritten(), &dubs.data()[0]);

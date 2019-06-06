@@ -12,6 +12,7 @@ http_archive(
     urls = ["https://github.com/google/googletest/archive/master.zip"],
 )
 
+# Only required for glog, everything else uses absl flags
 http_archive(
     name = "com_github_gflags_gflags",
     strip_prefix = "gflags-2.2.2",

@@ -9,8 +9,8 @@
 #include "graphics/animated_canvas.h"
 #include "src/level_generators.h"
 
-DEFINE_int32(level_number, 1, "Level number");
-DEFINE_int32(color_map, 1, "Color map index");
+ABSL_FLAG(int32_t, level_number, 1, "Level number");
+ABSL_FLAG(int32_t, color_map, 1, "Color map index");
 
 static constexpr uint8_t kWall = std::numeric_limits<uint8_t>::max();
 static const PixelType::RGBAU8 kWallColor = {0, 0, 255, 255};
@@ -66,9 +66,10 @@ void Demo(int level_number) {
   // Loop
   bool done = false;
   auto* data = canvas.data();
-  CHECK_GE(FLAGS_color_map, 0);
-  CHECK_LT(FLAGS_color_map, kAllColorMaps.size());
-  const auto color_map = kAllColorMaps[FLAGS_color_map];
+  const int32_t color_map_flag = absl::GetFlag(FLAGS_color_map);
+  CHECK_GE(color_map_flag, 0);
+  CHECK_LT(color_map_flag, kAllColorMaps.size());
+  const auto color_map = kAllColorMaps[color_map_flag];
   while (!done) {
     RenderEnvironment(environment, color_map, data);
     done = canvas.Tick().quit;
@@ -77,6 +78,6 @@ void Demo(int level_number) {
 
 int main(int argc, char** argv) {
   Init(argc, argv);
-  Demo(FLAGS_level_number);
+  Demo(absl::GetFlag(FLAGS_level_number));
   return 0;
 }

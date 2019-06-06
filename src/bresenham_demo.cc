@@ -10,7 +10,7 @@
 #include "src/random.h"
 #include "src/demo_utils.h"
 
-DEFINE_int32(num_particles, 100, "Number of particles");
+ABSL_FLAG(int32_t, num_particles, 100, "Number of particles");
 
 void RenderParticle(const Vector2u32& pos, Image<PixelType::RGBAU8>* data) {
   auto get_cell = [](const Vector2u32& vec) -> Vector2i {
@@ -73,6 +73,6 @@ void Demo(int num_particles) {
 
 int main(int argc, char** argv) {
   Init(argc, argv);
-  Demo(FLAGS_num_particles);
+  Demo(absl::GetFlag(FLAGS_num_particles));
   return 0;
 }

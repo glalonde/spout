@@ -1,4 +1,5 @@
 #pragma once
-#include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <glog/stl_logging.h>
+#include "absl/flags/flag.h"
+#include "absl/flags/parse.h"
