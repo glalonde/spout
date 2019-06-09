@@ -1057,21 +1057,12 @@ bool HelloQuadApplication::CheckValidationLayerSupport() {
 
   std::vector<VkLayerProperties> available_layers(layer_count);
   vkEnumerateInstanceLayerProperties(&layer_count, available_layers.data());
-
-  for (const char* layer_name : kValidationLayers) {
-    bool layer_found = false;
-
-    for (const auto& layer_properties : available_layers) {
-      if (strcmp(layer_name, layer_properties.layerName) == 0) {
-        layer_found = true;
-        break;
-      }
-    }
-
-    if (!layer_found) {
-      return false;
-    }
+  std::unordered_set<std::string> layer_set;
+  for (const auto& prop : available_layers) {
+    layer_set.emplace(prop.layerName);
   }
-
-  return true;
+  return std::all_of(kValidationLayers.begin(), kValidationLayers.end(),
+                     [&layer_set](const auto& layer_name) {
+                       return layer_set.count(layer_name);
+                     });
 }
