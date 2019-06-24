@@ -25,6 +25,7 @@ cc_library(
     ],
     deps = [
         "//base:logging",
+        "@com_google_absl//absl/algorithm:container",
     ],
 )
 

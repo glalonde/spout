@@ -203,7 +203,7 @@ void HelloQuadApplication::PickPhysicalDevice() {
   vkEnumeratePhysicalDevices(instance_, &device_count, devices.data());
 
   for (const auto& device : devices) {
-    if (IsDeviceSuitable(device)) {
+    if (IsDeviceSuitable(surface_, device, kDeviceExtensions)) {
       physical_device_ = device;
       break;
     }
@@ -215,7 +215,7 @@ void HelloQuadApplication::PickPhysicalDevice() {
 }
 
 void HelloQuadApplication::CreateLogicalDevice() {
-  QueueFamilyIndices indices = FindQueueFamilies(physical_device_);
+  QueueFamilyIndices indices = FindQueueFamilies(surface_, physical_device_);
 
   std::vector<VkDeviceQueueCreateInfo> queue_create_infos;
   std::unordered_set<uint32_t> unique_queue_families = {
@@ -266,7 +266,7 @@ void HelloQuadApplication::CreateLogicalDevice() {
 
 void HelloQuadApplication::CreateSwapChain() {
   SwapChainSupportDetails swap_chain_support =
-      QuerySwapChainSupport(physical_device_);
+      QuerySwapChainSupport(surface_, physical_device_);
 
   VkSurfaceFormatKHR surface_format =
       ChooseSwapSurfaceFormat(swap_chain_support.formats);
@@ -291,7 +291,7 @@ void HelloQuadApplication::CreateSwapChain() {
   create_info.imageArrayLayers = 1;
   create_info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
 
-  QueueFamilyIndices indices = FindQueueFamilies(physical_device_);
+  QueueFamilyIndices indices = FindQueueFamilies(surface_, physical_device_);
   uint32_t queueFamilyIndices[] = {indices.graphics_family.value(),
                                    indices.present_family.value()};
 
@@ -563,7 +563,8 @@ void HelloQuadApplication::CreateFramebuffers() {
 }
 
 void HelloQuadApplication::CreateCommandPool() {
-  QueueFamilyIndices queue_family_indices = FindQueueFamilies(physical_device_);
+  QueueFamilyIndices queue_family_indices =
+      FindQueueFamilies(surface_, physical_device_);
 
   VkCommandPoolCreateInfo pool_info = {};
   pool_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
@@ -933,107 +934,6 @@ VkExtent2D HelloQuadApplication::ChooseSwapExtent(
 
     return actual_extent;
   }
-}
-
-SwapChainSupportDetails HelloQuadApplication::QuerySwapChainSupport(
-    VkPhysicalDevice device) {
-  SwapChainSupportDetails details;
-
-  vkGetPhysicalDeviceSurfaceCapabilitiesKHR(device, surface_,
-                                            &details.capabilities);
-
-  uint32_t format_count;
-  vkGetPhysicalDeviceSurfaceFormatsKHR(device, surface_, &format_count,
-                                       nullptr);
-
-  if (format_count != 0) {
-    details.formats.resize(format_count);
-    vkGetPhysicalDeviceSurfaceFormatsKHR(device, surface_, &format_count,
-                                         details.formats.data());
-  }
-
-  uint32_t present_mode_count;
-  vkGetPhysicalDeviceSurfacePresentModesKHR(device, surface_,
-                                            &present_mode_count, nullptr);
-
-  if (present_mode_count != 0) {
-    details.present_modes.resize(present_mode_count);
-    vkGetPhysicalDeviceSurfacePresentModesKHR(
-        device, surface_, &present_mode_count, details.present_modes.data());
-  }
-
-  return details;
-}
-
-bool HelloQuadApplication::IsDeviceSuitable(VkPhysicalDevice device) {
-  QueueFamilyIndices indices = FindQueueFamilies(device);
-
-  bool extensions_supported = CheckDeviceExtensionSupport(device);
-
-  bool swap_chain_adequate = false;
-  if (extensions_supported) {
-    SwapChainSupportDetails swap_chain_support = QuerySwapChainSupport(device);
-    swap_chain_adequate = !swap_chain_support.formats.empty() &&
-                          !swap_chain_support.present_modes.empty();
-  }
-
-  return indices.is_complete() && extensions_supported && swap_chain_adequate;
-}
-
-bool HelloQuadApplication::CheckDeviceExtensionSupport(
-    VkPhysicalDevice device) {
-  uint32_t extension_count;
-  vkEnumerateDeviceExtensionProperties(device, nullptr, &extension_count,
-                                       nullptr);
-
-  std::vector<VkExtensionProperties> available_extensions(extension_count);
-  vkEnumerateDeviceExtensionProperties(device, nullptr, &extension_count,
-                                       available_extensions.data());
-
-  std::unordered_set<std::string> required_extensions(kDeviceExtensions.begin(),
-                                                      kDeviceExtensions.end());
-
-  for (const auto& extension : available_extensions) {
-    required_extensions.erase(extension.extensionName);
-  }
-
-  return required_extensions.empty();
-}
-
-QueueFamilyIndices HelloQuadApplication::FindQueueFamilies(
-    VkPhysicalDevice device) {
-  QueueFamilyIndices indices;
-
-  uint32_t queue_family_count = 0;
-  vkGetPhysicalDeviceQueueFamilyProperties(device, &queue_family_count,
-                                           nullptr);
-
-  std::vector<VkQueueFamilyProperties> queue_families(queue_family_count);
-  vkGetPhysicalDeviceQueueFamilyProperties(device, &queue_family_count,
-                                           queue_families.data());
-
-  int i = 0;
-  for (const auto& queue_family : queue_families) {
-    if (queue_family.queueCount > 0 &&
-        queue_family.queueFlags & VK_QUEUE_GRAPHICS_BIT) {
-      indices.graphics_family = i;
-    }
-
-    VkBool32 present_support = false;
-    vkGetPhysicalDeviceSurfaceSupportKHR(device, i, surface_, &present_support);
-
-    if (queue_family.queueCount > 0 && present_support) {
-      indices.present_family = i;
-    }
-
-    if (indices.is_complete()) {
-      break;
-    }
-
-    i++;
-  }
-
-  return indices;
 }
 
 std::vector<const char*> HelloQuadApplication::GetRequiredExtensions() {

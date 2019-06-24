@@ -1,4 +1,6 @@
 build --cxxopt=-std=c++17
+build --linkopt=-stdlib=libc++
+build --cxxopt=-stdlib=libc++
 build --copt=-Wall
 build --copt=-Wno-unused-function
 build --copt=-Wno-strict-overflow

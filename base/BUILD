@@ -137,6 +137,7 @@ cc_test(
 cc_library(
     name = "base",
     deps = [
+        ":error_xor",
         ":file",
         ":format",
         ":init",
@@ -166,5 +167,22 @@ cc_test(
         ":googletest",
         ":time",
         ":wall_timer",
+    ],
+)
+
+cc_library(
+    name = "error_xor",
+    hdrs = ["error_xor.h"],
+    deps = [
+        ":logging",
+    ],
+)
+
+cc_test(
+    name = "error_xor_test",
+    srcs = ["error_xor_test.cc"],
+    deps = [
+        ":error_xor",
+        ":googletest",
     ],
 )

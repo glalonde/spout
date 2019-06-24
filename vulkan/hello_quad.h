@@ -31,21 +31,6 @@ static constexpr bool kVulkanDebugMode = false;
 static constexpr bool kVulkanDebugMode = true;
 #endif
 
-struct QueueFamilyIndices {
-  std::optional<uint32_t> graphics_family;
-  std::optional<uint32_t> present_family;
-
-  bool is_complete() {
-    return graphics_family.has_value() && present_family.has_value();
-  }
-};
-
-struct SwapChainSupportDetails {
-  VkSurfaceCapabilitiesKHR capabilities;
-  std::vector<VkSurfaceFormatKHR> formats;
-  std::vector<VkPresentModeKHR> present_modes;
-};
-
 struct Vertex {
   Vector2f position;
   Vector3f color;
@@ -206,14 +191,6 @@ class HelloQuadApplication {
       const std::vector<VkPresentModeKHR>& available_present_modes);
 
   VkExtent2D ChooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities);
-
-  SwapChainSupportDetails QuerySwapChainSupport(VkPhysicalDevice device);
-
-  bool IsDeviceSuitable(VkPhysicalDevice device);
-
-  bool CheckDeviceExtensionSupport(VkPhysicalDevice device);
-
-  QueueFamilyIndices FindQueueFamilies(VkPhysicalDevice device);
 
   std::vector<const char*> GetRequiredExtensions();
 

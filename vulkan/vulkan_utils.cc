@@ -61,3 +61,85 @@ VKAPI_ATTR VkBool32 VKAPI_CALL VulkanDebugMessenger::DebugCallback(
   }
   return VK_FALSE;
 }
+
+QueueFamilyIndices FindQueueFamilies(VkSurfaceKHR surface,
+                                     VkPhysicalDevice device) {
+  QueueFamilyIndices indices;
+
+  uint32_t queue_family_count = 0;
+  vkGetPhysicalDeviceQueueFamilyProperties(device, &queue_family_count,
+                                           nullptr);
+
+  std::vector<VkQueueFamilyProperties> queue_families(queue_family_count);
+  vkGetPhysicalDeviceQueueFamilyProperties(device, &queue_family_count,
+                                           queue_families.data());
+
+  int i = 0;
+  for (const auto& queue_family : queue_families) {
+    if (queue_family.queueCount > 0 &&
+        queue_family.queueFlags & VK_QUEUE_GRAPHICS_BIT) {
+      indices.graphics_family = i;
+    }
+
+    VkBool32 present_support = false;
+    vkGetPhysicalDeviceSurfaceSupportKHR(device, i, surface, &present_support);
+
+    if (queue_family.queueCount > 0 && present_support) {
+      indices.present_family = i;
+    }
+
+    if (indices.is_complete()) {
+      break;
+    }
+
+    i++;
+  }
+
+  return indices;
+}
+
+bool IsDeviceSuitable(
+    VkSurfaceKHR surface, VkPhysicalDevice device,
+    const std::vector<const char*>& required_device_extensions) {
+  QueueFamilyIndices indices = FindQueueFamilies(surface, device);
+  const bool extensions_supported =
+      CheckDeviceExtensionSupport(device, required_device_extensions);
+  bool swap_chain_adequate = false;
+  if (extensions_supported) {
+    SwapChainSupportDetails swap_chain_support =
+        QuerySwapChainSupport(surface, device);
+    swap_chain_adequate = !swap_chain_support.formats.empty() &&
+                          !swap_chain_support.present_modes.empty();
+  }
+
+  return indices.is_complete() && extensions_supported && swap_chain_adequate;
+}
+
+SwapChainSupportDetails QuerySwapChainSupport(VkSurfaceKHR surface,
+                                              VkPhysicalDevice device) {
+  SwapChainSupportDetails details;
+
+  vkGetPhysicalDeviceSurfaceCapabilitiesKHR(device, surface,
+                                            &details.capabilities);
+
+  uint32_t format_count;
+  vkGetPhysicalDeviceSurfaceFormatsKHR(device, surface, &format_count, nullptr);
+
+  if (format_count != 0) {
+    details.formats.resize(format_count);
+    vkGetPhysicalDeviceSurfaceFormatsKHR(device, surface, &format_count,
+                                         details.formats.data());
+  }
+
+  uint32_t present_mode_count;
+  vkGetPhysicalDeviceSurfacePresentModesKHR(device, surface,
+                                            &present_mode_count, nullptr);
+
+  if (present_mode_count != 0) {
+    details.present_modes.resize(present_mode_count);
+    vkGetPhysicalDeviceSurfacePresentModesKHR(
+        device, surface, &present_mode_count, details.present_modes.data());
+  }
+
+  return details;
+}
