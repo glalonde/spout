@@ -20,8 +20,9 @@ VmaAllocator VMAWrapper::ConstructAllocator(VkPhysicalDevice physical_device,
 
 VMAWrapper::Buffer VMAWrapper::AllocateStagingBuffer(uint64_t size,
                                                      const void* source_data) {
-  Buffer buffer = CreateBuffer(size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                               VMA_MEMORY_USAGE_CPU_ONLY);
+  Buffer buffer = CreateBuffer(
+      size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+      VMA_MEMORY_USAGE_CPU_ONLY, {});
 
   if (source_data != nullptr) {
     CopyToBuffer(buffer, source_data, size);
@@ -34,22 +35,31 @@ void VMAWrapper::Free(Buffer all) {
   vmaDestroyBuffer(allocator_, all.buffer, all.allocation);
 }
 
-VMAWrapper::Buffer VMAWrapper::CreateGPUBuffer(uint64_t size,
-                                               VkBufferUsageFlags usage) {
-  return CreateBuffer(size, usage, VMA_MEMORY_USAGE_GPU_ONLY);
+VMAWrapper::Buffer VMAWrapper::CreateGPUBuffer(
+    uint64_t size, VkBufferUsageFlags usage,
+    std::vector<uint32_t> queue_families) {
+  return CreateBuffer(size, usage, VMA_MEMORY_USAGE_GPU_ONLY, queue_families);
 }
 
-VMAWrapper::Buffer VMAWrapper::CreateCPUToGPUBuffer(uint64_t size,
-                                                    VkBufferUsageFlags usage) {
-  return CreateBuffer(size, usage, VMA_MEMORY_USAGE_CPU_TO_GPU);
+VMAWrapper::Buffer VMAWrapper::CreateCPUToGPUBuffer(
+    uint64_t size, VkBufferUsageFlags usage,
+    std::vector<uint32_t> queue_families) {
+  return CreateBuffer(size, usage, VMA_MEMORY_USAGE_CPU_TO_GPU, queue_families);
 }
 
-VMAWrapper::Buffer VMAWrapper::CreateBuffer(uint64_t size,
-                                            VkBufferUsageFlags usage,
-                                            VmaMemoryUsage vma_usage) {
+VMAWrapper::Buffer VMAWrapper::CreateBuffer(
+    uint64_t size, VkBufferUsageFlags usage, VmaMemoryUsage vma_usage,
+    const std::vector<uint32_t>& queue_families) {
   VkBufferCreateInfo buffer_info = {VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
   buffer_info.size = size;
   buffer_info.usage = usage;
+  if (queue_families.size() > 1) {
+    buffer_info.sharingMode = VK_SHARING_MODE_CONCURRENT;
+    buffer_info.queueFamilyIndexCount = queue_families.size();
+    buffer_info.pQueueFamilyIndices = queue_families.data();
+  } else {
+    buffer_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+  }
   VmaAllocationCreateInfo alloc_info = {};
   alloc_info.usage = vma_usage;
   Buffer buffer;

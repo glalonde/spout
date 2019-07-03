@@ -14,23 +14,6 @@
 #include "vulkan/vma_wrapper.h"
 #include "vulkan/vulkan_utils.h"
 
-const int WIDTH = 800;
-const int HEIGHT = 600;
-
-static constexpr int kMaxFramesInFlight = 2;
-
-static const std::vector<const char*> kValidationLayers = {
-    "VK_LAYER_KHRONOS_validation"};
-
-static const std::vector<const char*> kDeviceExtensions = {
-    VK_KHR_SWAPCHAIN_EXTENSION_NAME};
-
-#ifdef NDEBUG
-static constexpr bool kVulkanDebugMode = false;
-#else
-static constexpr bool kVulkanDebugMode = true;
-#endif
-
 struct Vertex {
   Vector2f position;
   Vector3f color;
@@ -193,6 +176,4 @@ class HelloQuadApplication {
   VkExtent2D ChooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities);
 
   std::vector<const char*> GetRequiredExtensions();
-
-  bool CheckValidationLayerSupport();
 };

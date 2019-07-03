@@ -68,5 +68,30 @@ cc_binary(
     srcs = ["hello_quad_main.cc"],
     deps = [
         ":hello_quad",
+        "//base:init",
+    ],
+)
+
+cc_library(
+    name = "hello_compute",
+    srcs = ["hello_compute.cc"],
+    hdrs = ["hello_compute.h"],
+    linkopts = [
+        "-lvulkan",
+    ],
+    deps = [
+        ":vma_wrapper",
+        ":vulkan_utils",
+        "//base:logging",
+        "//src:image",
+    ],
+)
+
+cc_binary(
+    name = "hello_compute_main",
+    srcs = ["hello_compute_main.cc"],
+    deps = [
+        ":hello_compute",
+        "//base:init",
     ],
 )

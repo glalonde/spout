@@ -7,6 +7,23 @@
 #include "base/time.h"
 #include "src/eigen_glm.h"
 
+const int WIDTH = 800;
+const int HEIGHT = 600;
+
+static constexpr int kMaxFramesInFlight = 2;
+
+static const std::vector<const char*> kValidationLayers = {
+    "VK_LAYER_KHRONOS_validation"};
+
+static const std::vector<const char*> kDeviceExtensions = {
+    VK_KHR_SWAPCHAIN_EXTENSION_NAME};
+
+#ifdef NDEBUG
+static constexpr bool kVulkanDebugMode = false;
+#else
+static constexpr bool kVulkanDebugMode = true;
+#endif
+
 HelloQuadApplication::HelloQuadApplication() : fps_(FromSeconds(1.0), 60.0) {}
 
 void HelloQuadApplication::Run() {
@@ -36,6 +53,7 @@ void HelloQuadApplication::FramebufferResizeCallback(GLFWwindow* window,
 void HelloQuadApplication::InitVulkan() {
   CreateInstance();
   if (kVulkanDebugMode) {
+    LOG(INFO) << "Running in DEBUG mode.";
     debug_messenger_ = std::make_unique<VulkanDebugMessenger>(instance_);
   }
   CreateSurface();
@@ -151,7 +169,7 @@ void HelloQuadApplication::RecreateSwapChain() {
 }
 
 void HelloQuadApplication::CreateInstance() {
-  if (kVulkanDebugMode && !CheckValidationLayerSupport()) {
+  if (kVulkanDebugMode && !CheckValidationLayerSupport(kValidationLayers)) {
     LOG(FATAL) << "Validation layers requested but not available.";
   }
 
@@ -192,26 +210,23 @@ void HelloQuadApplication::CreateSurface() {
 }
 
 void HelloQuadApplication::PickPhysicalDevice() {
-  uint32_t device_count = 0;
-  vkEnumeratePhysicalDevices(instance_, &device_count, nullptr);
-
-  if (device_count == 0) {
-    LOG(FATAL) << "Failed to find GPU with Vulkan support.";
-  }
-
-  std::vector<VkPhysicalDevice> devices(device_count);
-  vkEnumeratePhysicalDevices(instance_, &device_count, devices.data());
-
-  for (const auto& device : devices) {
-    if (IsDeviceSuitable(surface_, device, kDeviceExtensions)) {
-      physical_device_ = device;
-      break;
+  auto is_suitable = [this](VkPhysicalDevice device) {
+    if (!CheckDeviceExtensionSupport(device, kDeviceExtensions)) {
+      return false;
     }
-  }
-
-  if (physical_device_ == VK_NULL_HANDLE) {
-    LOG(FATAL) << "Failed to find suitable GPU.";
-  }
+    QueueFamilyIndices indices = FindQueueFamilies(surface_, device);
+    if (!indices.graphics_family || !indices.present_family) {
+      return false;
+    }
+    SwapChainSupportDetails swap_chain_support =
+        QuerySwapChainSupport(surface_, device);
+    if (swap_chain_support.formats.empty() ||
+        swap_chain_support.present_modes.empty()) {
+      return false;
+    }
+    return true;
+  };
+  physical_device_ = FindPhysicalDevice(instance_, is_suitable);
 }
 
 void HelloQuadApplication::CreateLogicalDevice() {
@@ -221,13 +236,13 @@ void HelloQuadApplication::CreateLogicalDevice() {
   std::unordered_set<uint32_t> unique_queue_families = {
       indices.graphics_family.value(), indices.present_family.value()};
 
-  float queuePriority = 1.0f;
+  float queue_priority = 1.0f;
   for (uint32_t queue_family : unique_queue_families) {
     VkDeviceQueueCreateInfo queue_create_info = {};
     queue_create_info.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
     queue_create_info.queueFamilyIndex = queue_family;
     queue_create_info.queueCount = 1;
-    queue_create_info.pQueuePriorities = &queuePriority;
+    queue_create_info.pQueuePriorities = &queue_priority;
     queue_create_infos.push_back(queue_create_info);
   }
 
@@ -274,17 +289,17 @@ void HelloQuadApplication::CreateSwapChain() {
       ChooseSwapPresentMode(swap_chain_support.present_modes);
   VkExtent2D extent = ChooseSwapExtent(swap_chain_support.capabilities);
 
-  uint32_t imageCount = swap_chain_support.capabilities.minImageCount + 1;
+  uint32_t image_count = swap_chain_support.capabilities.minImageCount + 1;
   if (swap_chain_support.capabilities.maxImageCount > 0 &&
-      imageCount > swap_chain_support.capabilities.maxImageCount) {
-    imageCount = swap_chain_support.capabilities.maxImageCount;
+      image_count > swap_chain_support.capabilities.maxImageCount) {
+    image_count = swap_chain_support.capabilities.maxImageCount;
   }
 
   VkSwapchainCreateInfoKHR create_info = {};
   create_info.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
   create_info.surface = surface_;
 
-  create_info.minImageCount = imageCount;
+  create_info.minImageCount = image_count;
   create_info.imageFormat = surface_format.format;
   create_info.imageColorSpace = surface_format.colorSpace;
   create_info.imageExtent = extent;
@@ -292,13 +307,13 @@ void HelloQuadApplication::CreateSwapChain() {
   create_info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
 
   QueueFamilyIndices indices = FindQueueFamilies(surface_, physical_device_);
-  uint32_t queueFamilyIndices[] = {indices.graphics_family.value(),
-                                   indices.present_family.value()};
 
+  std::array<uint32_t, 2> queue_family_indices = {
+      indices.graphics_family.value(), indices.present_family.value()};
   if (indices.graphics_family != indices.present_family) {
     create_info.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
-    create_info.queueFamilyIndexCount = 2;
-    create_info.pQueueFamilyIndices = queueFamilyIndices;
+    create_info.queueFamilyIndexCount = queue_family_indices.size();
+    create_info.pQueueFamilyIndices = queue_family_indices.data();
   } else {
     create_info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
   }
@@ -313,9 +328,9 @@ void HelloQuadApplication::CreateSwapChain() {
     LOG(FATAL) << "Failed to create swap chain.";
   }
 
-  vkGetSwapchainImagesKHR(device_, swap_chain_, &imageCount, nullptr);
-  swap_chain_images_.resize(imageCount);
-  vkGetSwapchainImagesKHR(device_, swap_chain_, &imageCount,
+  vkGetSwapchainImagesKHR(device_, swap_chain_, &image_count, nullptr);
+  swap_chain_images_.resize(image_count);
+  vkGetSwapchainImagesKHR(device_, swap_chain_, &image_count,
                           swap_chain_images_.data());
 
   swap_chain_image_format_ = surface_format.format;
@@ -949,29 +964,4 @@ std::vector<const char*> HelloQuadApplication::GetRequiredExtensions() {
   }
 
   return extensions;
-}
-
-bool HelloQuadApplication::CheckValidationLayerSupport() {
-  uint32_t layer_count;
-  vkEnumerateInstanceLayerProperties(&layer_count, nullptr);
-
-  std::vector<VkLayerProperties> available_layers(layer_count);
-  vkEnumerateInstanceLayerProperties(&layer_count, available_layers.data());
-
-  for (const char* layer_name : kValidationLayers) {
-    bool layer_found = false;
-
-    for (const auto& layer_properties : available_layers) {
-      if (strcmp(layer_name, layer_properties.layerName) == 0) {
-        layer_found = true;
-        break;
-      }
-    }
-
-    if (!layer_found) {
-      return false;
-    }
-  }
-
-  return true;
 }

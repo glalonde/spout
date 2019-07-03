@@ -1,5 +1,7 @@
 #pragma once
 
+#include <vector>
+
 #include "vulkan/vulkan_memory_allocator.h"
 
 // https://gpuopen-librariesandsdks.github.io/VulkanMemoryAllocator/html/usage_patterns.html
@@ -19,10 +21,12 @@ class VMAWrapper {
   Buffer AllocateStagingBuffer(uint64_t size,
                                const void* source_data = nullptr);
 
-  Buffer CreateGPUBuffer(uint64_t size, VkBufferUsageFlags usage);
+  Buffer CreateGPUBuffer(uint64_t size, VkBufferUsageFlags usage,
+                         std::vector<uint32_t> queue_families = {});
 
   // For direct CPU to GPU mapping (no staging / explicit transfer)
-  Buffer CreateCPUToGPUBuffer(uint64_t size, VkBufferUsageFlags usage);
+  Buffer CreateCPUToGPUBuffer(uint64_t size, VkBufferUsageFlags usage,
+                              std::vector<uint32_t> queue_families = {});
 
   void CopyToBuffer(Buffer buffer, const void* source_data, size_t size);
 
@@ -32,8 +36,11 @@ class VMAWrapper {
   static VmaAllocator ConstructAllocator(VkPhysicalDevice physical_device,
                                          VkDevice device);
 
+  // Pass a vector of queue_family indices if this is to be used by multiple
+  // queue families (sets sharing mode to CONCURRENT, otherwise its EXCLUSIVE)
   Buffer CreateBuffer(uint64_t size, VkBufferUsageFlags usage,
-                      VmaMemoryUsage vma_usage);
+                      VmaMemoryUsage vma_usage,
+                      const std::vector<uint32_t>& queue_families);
 
   VmaAllocator allocator_;
 };

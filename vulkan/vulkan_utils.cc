@@ -76,43 +76,32 @@ QueueFamilyIndices FindQueueFamilies(VkSurfaceKHR surface,
 
   int i = 0;
   for (const auto& queue_family : queue_families) {
+    // Graphics queue
     if (queue_family.queueCount > 0 &&
         queue_family.queueFlags & VK_QUEUE_GRAPHICS_BIT) {
       indices.graphics_family = i;
     }
 
-    VkBool32 present_support = false;
-    vkGetPhysicalDeviceSurfaceSupportKHR(device, i, surface, &present_support);
-
-    if (queue_family.queueCount > 0 && present_support) {
-      indices.present_family = i;
+    // Compute queue
+    if (queue_family.queueCount > 0 &&
+        queue_family.queueFlags & VK_QUEUE_COMPUTE_BIT) {
+      indices.compute_family = i;
     }
 
-    if (indices.is_complete()) {
-      break;
+    // Present queue
+    if (surface != VK_NULL_HANDLE) {
+      VkBool32 present_support = false;
+      vkGetPhysicalDeviceSurfaceSupportKHR(device, i, surface,
+                                           &present_support);
+      if (queue_family.queueCount > 0 && present_support) {
+        indices.present_family = i;
+      }
     }
 
     i++;
   }
 
   return indices;
-}
-
-bool IsDeviceSuitable(
-    VkSurfaceKHR surface, VkPhysicalDevice device,
-    const std::vector<const char*>& required_device_extensions) {
-  QueueFamilyIndices indices = FindQueueFamilies(surface, device);
-  const bool extensions_supported =
-      CheckDeviceExtensionSupport(device, required_device_extensions);
-  bool swap_chain_adequate = false;
-  if (extensions_supported) {
-    SwapChainSupportDetails swap_chain_support =
-        QuerySwapChainSupport(surface, device);
-    swap_chain_adequate = !swap_chain_support.formats.empty() &&
-                          !swap_chain_support.present_modes.empty();
-  }
-
-  return indices.is_complete() && extensions_supported && swap_chain_adequate;
 }
 
 SwapChainSupportDetails QuerySwapChainSupport(VkSurfaceKHR surface,
