@@ -600,7 +600,6 @@ void HelloQuadApplication::CreateDescriptorPool() {
   pool_info.poolSizeCount = 1;
   pool_info.pPoolSizes = &pool_size;
   pool_info.maxSets = static_cast<uint32_t>(swap_chain_images_.size());
-  ;
 
   if (vkCreateDescriptorPool(device_, &pool_info, nullptr, &descriptor_pool_) !=
       VK_SUCCESS) {

@@ -20,6 +20,7 @@ void ComputeApplication::Run(int width, int height) {
   height_ = height;
   InitVulkan();
   MakeBuffers();
+  CreateDescriptorSetLayout();
 }
 
 void ComputeApplication::InitVulkan() {
@@ -127,4 +128,72 @@ void ComputeApplication::MakeBuffers() {
   storage_buffer_ = allocator_->CreateGPUBuffer(
       buffer_size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
   staging_buffer_ = allocator_->AllocateStagingBuffer(buffer_size, nullptr);
+}
+
+void ComputeApplication::CreateDescriptorSetLayout() {
+  // The descriptor set layout allows us to specify how to access the buffer
+  // from the shader. This binds to:
+  // layout(std140, binding = 0) buffer buf
+  VkDescriptorSetLayoutBinding layout_binding = {};
+  layout_binding.binding = 0;
+  layout_binding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+  layout_binding.descriptorCount = 1;
+  layout_binding.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+
+  VkDescriptorSetLayoutCreateInfo layout_info = {};
+  layout_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+  layout_info.bindingCount = 1;
+  layout_info.pBindings = &layout_binding;
+
+  if (vkCreateDescriptorSetLayout(device_, &layout_info, nullptr,
+                                  &descriptor_set_layout_) != VK_SUCCESS) {
+    LOG(FATAL) << "Failed to create descriptor set layout.";
+  }
+}
+
+void ComputeApplication::CreateDescriptorPool() {
+  VkDescriptorPoolSize pool_size = {};
+  pool_size.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+  pool_size.descriptorCount = 1;
+  VkDescriptorPoolCreateInfo pool_info = {};
+  pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+  pool_info.poolSizeCount = 1;
+  pool_info.pPoolSizes = &pool_size;
+  pool_info.maxSets = 1;
+
+  if (vkCreateDescriptorPool(device_, &pool_info, nullptr, &descriptor_pool_) !=
+      VK_SUCCESS) {
+    LOG(FATAL) << "Failed to create descriptor pool.";
+  }
+}
+
+void ComputeApplication::CreateDescriptorSet() {
+  // Allocate the descriptor set from the pool
+  VkDescriptorSetAllocateInfo alloc_info = {};
+  alloc_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+  alloc_info.descriptorPool = descriptor_pool_;
+  alloc_info.descriptorSetCount = 1;
+  alloc_info.pSetLayouts = &descriptor_set_layout_;
+  if (vkAllocateDescriptorSets(device_, &alloc_info, &descriptor_set_) !=
+      VK_SUCCESS) {
+    LOG(FATAL) << "Failed to allocate descriptor sets.";
+  }
+
+  // Connect the buffer to the descriptor set
+  VkDescriptorBufferInfo buffer_info = {};
+  buffer_info.buffer = storage_buffer_.buffer;
+  buffer_info.offset = 0;
+  buffer_info.range = sizeof(UniformBufferObject);
+
+  VkWriteDescriptorSet descriptor_write = {};
+  descriptor_write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+  descriptor_write.dstSet = descriptor_sets_[i];
+  descriptor_write.dstBinding = 0;
+  descriptor_write.dstArrayElement = 0;
+  descriptor_write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+  descriptor_write.descriptorCount = 1;
+  descriptor_write.pBufferInfo = &buffer_info;
+  descriptor_write.pImageInfo = nullptr;        // Optional
+  descriptor_write.pTexelBufferView = nullptr;  // Optional
+  vkUpdateDescriptorSets(device_, 1, &descriptor_write, 0, nullptr);
 }
