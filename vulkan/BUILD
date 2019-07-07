@@ -88,6 +88,7 @@ cc_library(
         ":vma_wrapper",
         ":vulkan_utils",
         "//base:logging",
+        "//src:convert",
         "//src:image",
     ],
 )

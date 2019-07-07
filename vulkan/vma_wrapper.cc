@@ -75,3 +75,11 @@ void VMAWrapper::CopyToBuffer(Buffer buffer, const void* source_data,
   std::memcpy(mapped_data, source_data, size);
   vmaUnmapMemory(allocator_, buffer.allocation);
 }
+
+void VMAWrapper::MapBuffer(Buffer buffer, void** mapped_data) {
+  vmaMapMemory(allocator_, buffer.allocation, mapped_data);
+}
+
+void VMAWrapper::UnmapBuffer(Buffer buffer) {
+  vmaUnmapMemory(allocator_, buffer.allocation);
+}

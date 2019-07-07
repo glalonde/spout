@@ -41,6 +41,8 @@ class VMAWrapper {
                               std::vector<uint32_t> queue_families = {});
 
   void CopyToBuffer(Buffer buffer, const void* source_data, size_t size);
+  void MapBuffer(Buffer buffer, void** mapped_data);
+  void UnmapBuffer(Buffer buffer);
 
   void Free(Buffer all);
 

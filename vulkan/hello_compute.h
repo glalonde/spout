@@ -26,6 +26,8 @@ class ComputeApplication {
   void CreateCommandPool();
   void CreateCommandBuffer();
   void RunCommandBuffer();
+  void CopyBuffer(VkBuffer src_buff, VkBuffer dest_buff, VkDeviceSize size);
+  void SaveRenderedImage();
   void Cleanup();
 
   VkInstance instance_;

@@ -1,4 +1,5 @@
 #include "vulkan/hello_compute.h"
+#include "src/convert.h"
 #include "src/image.h"
 
 #ifdef NDEBUG
@@ -28,6 +29,7 @@ void ComputeApplication::Run(int width, int height) {
   CreateCommandPool();
   CreateCommandBuffer();
   RunCommandBuffer();
+  SaveRenderedImage();
   Cleanup();
 }
 
@@ -309,7 +311,7 @@ void ComputeApplication::RunCommandBuffer() {
   }
 
   if (vkQueueSubmit(compute_queue_, 1, &submit_info, fence) != VK_SUCCESS) {
-    LOG(FATAL) << "Filted to submit compute command buffer.";
+    LOG(FATAL) << "Failed to submit compute command buffer.";
   }
   // The command will not have finished executing until the fence is signalled.
   if (vkWaitForFences(device_, 1, &fence, VK_TRUE, 100000000000) !=
@@ -317,6 +319,63 @@ void ComputeApplication::RunCommandBuffer() {
     LOG(FATAL) << "Failed to wait for fence.";
   }
   vkDestroyFence(device_, fence, NULL);
+}
+
+void ComputeApplication::CopyBuffer(VkBuffer src_buff, VkBuffer dest_buff,
+                                    VkDeviceSize size) {
+  VkCommandBufferAllocateInfo alloc_info = {};
+  alloc_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+  alloc_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+  alloc_info.commandPool = command_pool_;
+  alloc_info.commandBufferCount = 1;
+
+  VkCommandBuffer command_buffer;
+  vkAllocateCommandBuffers(device_, &alloc_info, &command_buffer);
+
+  VkCommandBufferBeginInfo begin_info = {};
+  begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+  begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+  vkBeginCommandBuffer(command_buffer, &begin_info);
+
+  VkBufferCopy copy_region = {};
+  copy_region.srcOffset = 0;  // Optional
+  copy_region.dstOffset = 0;  // Optional
+  copy_region.size = size;
+  vkCmdCopyBuffer(command_buffer, src_buff, dest_buff, 1, &copy_region);
+  vkEndCommandBuffer(command_buffer);
+
+  VkSubmitInfo submit_info = {};
+  submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+  submit_info.commandBufferCount = 1;
+  submit_info.pCommandBuffers = &command_buffer;
+
+  vkQueueSubmit(compute_queue_, 1, &submit_info, VK_NULL_HANDLE);
+  vkQueueWaitIdle(compute_queue_);
+  vkFreeCommandBuffers(device_, command_pool_, 1, &command_buffer);
+}
+
+void ComputeApplication::SaveRenderedImage() {
+  // Copy from storage to staging
+  const int size = storage_buffer_.GetSize(*allocator_);
+  CopyBuffer(storage_buffer_.buffer, staging_buffer_.buffer, size);
+  // Map staging to an local memory
+  void* mapped_data;
+  allocator_->MapBuffer(staging_buffer_, &mapped_data);
+  constexpr int kNumChannels = 4;
+
+  // Map the local memory to an eigen matrix.
+  Eigen::Map<
+      Eigen::Array<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>>
+  mapped_array(static_cast<float*>(mapped_data), height_,
+               width_ * kNumChannels);
+  Image<PixelType::RGBAU8> out(height_, width_);
+  for (int i = 0; i < height_; ++i) {
+    for (int j = 0; j < width_; ++j) {
+      out(i, j) = Convert<PixelType::RGBAU8>(
+          mapped_array.block<1, kNumChannels>(i, j * kNumChannels));
+    }
+  }
+  LOG(INFO) << "Final image: " << out.rows() << ", " << out.cols();
 }
 
 void ComputeApplication::Cleanup() {
