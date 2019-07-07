@@ -23,6 +23,7 @@ void ComputeApplication::Run(int width, int height) {
   CreateDescriptorSetLayout();
   CreateDescriptorPool();
   CreateDescriptorSet();
+  CreateComputePipeline();
 }
 
 void ComputeApplication::InitVulkan() {
@@ -200,5 +201,34 @@ void ComputeApplication::CreateDescriptorSet() {
 
 void ComputeApplication::CreateComputePipeline() {
   // Compile shaders
+  VkShaderModule shader_module =
+      CreateShaderModule(device_, "vulkan/shaders/mandelbrot.comp.spv")
+          .ValueOrDie();
 
+  VkPipelineShaderStageCreateInfo shader_stage_info = {};
+  shader_stage_info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+  shader_stage_info.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+  shader_stage_info.module = shader_module;
+  shader_stage_info.pName = "main";
+
+  // The pipeline layout allows the pipeline to access descriptor sets. So we
+  // just specify the descriptor set layout we created earlier.
+  VkPipelineLayoutCreateInfo pipeline_layout_info = {};
+  pipeline_layout_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+  pipeline_layout_info.setLayoutCount = 1;
+  pipeline_layout_info.pSetLayouts = &descriptor_set_layout_;
+  if (vkCreatePipelineLayout(device_, &pipeline_layout_info, nullptr,
+                             &pipeline_layout_) != VK_SUCCESS) {
+    LOG(FATAL) << "Failed to create pipeline layout.";
+  }
+
+  VkComputePipelineCreateInfo pipeline_info = {};
+  pipeline_info.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+  pipeline_info.stage = shader_stage_info;
+  pipeline_info.layout = pipeline_layout_;
+
+  if (vkCreateComputePipelines(device_, VK_NULL_HANDLE, 1, &pipeline_info, NULL,
+                               &compute_pipeline_) != VK_SUCCESS) {
+    LOG(FATAL) << "Failed to create compute pipeline.";
+  }
 }

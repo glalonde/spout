@@ -41,5 +41,6 @@ class ComputeApplication {
   VkDescriptorPool descriptor_pool_;
   VkDescriptorSet descriptor_set_;
 
-
+  VkPipelineLayout pipeline_layout_;
+  VkPipeline compute_pipeline_;
 };
