@@ -716,7 +716,8 @@ void HelloQuadApplication::CreateCommandBuffers() {
   alloc_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
   alloc_info.commandPool = command_pool_;
   alloc_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-  alloc_info.commandBufferCount = (uint32_t)command_buffers_.size();
+  alloc_info.commandBufferCount =
+      static_cast<uint32_t>(command_buffers_.size());
 
   if (vkAllocateCommandBuffers(device_, &alloc_info, command_buffers_.data()) !=
       VK_SUCCESS) {

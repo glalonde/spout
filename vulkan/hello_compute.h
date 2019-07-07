@@ -23,6 +23,10 @@ class ComputeApplication {
   void CreateDescriptorPool();
   void CreateDescriptorSet();
   void CreateComputePipeline();
+  void CreateCommandPool();
+  void CreateCommandBuffer();
+  void RunCommandBuffer();
+  void Cleanup();
 
   VkInstance instance_;
   std::unique_ptr<VulkanDebugMessenger> debug_messenger_;
@@ -34,6 +38,7 @@ class ComputeApplication {
   // This stuff needs to be redone when the size changes.
   int width_;
   int height_;
+  int workgroup_size_;
   VMAWrapper::Buffer storage_buffer_;
   VMAWrapper::Buffer staging_buffer_;
 
@@ -43,4 +48,7 @@ class ComputeApplication {
 
   VkPipelineLayout pipeline_layout_;
   VkPipeline compute_pipeline_;
+
+  VkCommandPool command_pool_;
+  VkCommandBuffer command_buffer_;
 };

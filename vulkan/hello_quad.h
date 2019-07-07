@@ -59,7 +59,6 @@ const std::vector<uint16_t> kIndices = {0, 1, 2, 2, 3, 0};
 class HelloQuadApplication {
  public:
   HelloQuadApplication();
-
   void Run();
 
  private:

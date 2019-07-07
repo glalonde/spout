@@ -18,12 +18,17 @@ void ComputeApplication::Run(int width, int height) {
   LOG(INFO) << "Running with width=" << width << ", height=" << height;
   width_ = width;
   height_ = height;
+  workgroup_size_ = 32;
   InitVulkan();
   MakeBuffers();
   CreateDescriptorSetLayout();
   CreateDescriptorPool();
   CreateDescriptorSet();
   CreateComputePipeline();
+  CreateCommandPool();
+  CreateCommandBuffer();
+  RunCommandBuffer();
+  Cleanup();
 }
 
 void ComputeApplication::InitVulkan() {
@@ -198,7 +203,6 @@ void ComputeApplication::CreateDescriptorSet() {
   vkUpdateDescriptorSets(device_, 1, &descriptor_write, 0, nullptr);
 }
 
-
 void ComputeApplication::CreateComputePipeline() {
   // Compile shaders
   VkShaderModule shader_module =
@@ -227,8 +231,106 @@ void ComputeApplication::CreateComputePipeline() {
   pipeline_info.stage = shader_stage_info;
   pipeline_info.layout = pipeline_layout_;
 
-  if (vkCreateComputePipelines(device_, VK_NULL_HANDLE, 1, &pipeline_info, NULL,
-                               &compute_pipeline_) != VK_SUCCESS) {
+  if (vkCreateComputePipelines(device_, VK_NULL_HANDLE, 1, &pipeline_info,
+                               nullptr, &compute_pipeline_) != VK_SUCCESS) {
     LOG(FATAL) << "Failed to create compute pipeline.";
   }
+  vkDestroyShaderModule(device_, shader_module, nullptr);
+}
+
+void ComputeApplication::CreateCommandPool() {
+  QueueFamilyIndices queue_family_indices =
+      FindQueueFamilies(nullptr, physical_device_);
+  VkCommandPoolCreateInfo pool_info = {};
+  pool_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+  pool_info.queueFamilyIndex = queue_family_indices.compute_family.value();
+  if (vkCreateCommandPool(device_, &pool_info, nullptr, &command_pool_) !=
+      VK_SUCCESS) {
+    LOG(FATAL) << "Failed to create command pool.";
+  }
+}
+
+void ComputeApplication::CreateCommandBuffer() {
+  VkCommandBufferAllocateInfo alloc_info = {};
+  alloc_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+  alloc_info.commandPool = command_pool_;
+  // if the command buffer is primary, it can be directly submitted to queues.
+  // A secondary buffer has to be called from some primary command buffer, and
+  // cannot be directly submitted to a queue. To keep things simple, we use a
+  // primary command buffer.
+  alloc_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+  alloc_info.commandBufferCount = 1;
+  if (vkAllocateCommandBuffers(device_, &alloc_info, &command_buffer_) !=
+      VK_SUCCESS) {
+    LOG(FATAL) << "Failed to allocate command buffer.";
+  }
+
+  // Start recording commands into the newly allocated command buffer.
+  VkCommandBufferBeginInfo begin_info = {};
+  begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+  // Only submitted and used once.
+  begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+  if (vkBeginCommandBuffer(command_buffer_, &begin_info) != VK_SUCCESS) {
+    LOG(FATAL) << "Failed to begin recording rommand buffer.";
+  }
+
+  // We need to bind a pipeline, AND a descriptor set before we dispatch. The
+  // validation layer will NOT give warnings if you forget these, so be very
+  // careful not to forget them.
+  vkCmdBindPipeline(command_buffer_, VK_PIPELINE_BIND_POINT_COMPUTE,
+                    compute_pipeline_);
+  vkCmdBindDescriptorSets(command_buffer_, VK_PIPELINE_BIND_POINT_COMPUTE,
+                          pipeline_layout_, 0, 1, &descriptor_set_, 0, nullptr);
+
+  // Calling vkCmdDispatch basically starts the compute pipeline, and executes
+  // the compute shader.
+  vkCmdDispatch(
+      command_buffer_,
+      static_cast<uint32_t>(std::ceil(width_ / float(workgroup_size_))),
+      static_cast<uint32_t>(std::ceil(height_ / float(workgroup_size_))), 1);
+
+  if (vkEndCommandBuffer(command_buffer_) != VK_SUCCESS) {
+    LOG(FATAL) << "Failed to record command buffer.";
+  }
+}
+
+void ComputeApplication::RunCommandBuffer() {
+  VkSubmitInfo submit_info = {};
+  submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+  submit_info.commandBufferCount = 1;
+  submit_info.pCommandBuffers = &command_buffer_;
+
+  VkFence fence;
+  VkFenceCreateInfo fence_create_info = {};
+  fence_create_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+  fence_create_info.flags = 0;
+  if (vkCreateFence(device_, &fence_create_info, NULL, &fence) != VK_SUCCESS) {
+    LOG(FATAL) << "Failed to create fence.";
+  }
+
+  if (vkQueueSubmit(compute_queue_, 1, &submit_info, fence) != VK_SUCCESS) {
+    LOG(FATAL) << "Filted to submit compute command buffer.";
+  }
+  // The command will not have finished executing until the fence is signalled.
+  if (vkWaitForFences(device_, 1, &fence, VK_TRUE, 100000000000) !=
+      VK_SUCCESS) {
+    LOG(FATAL) << "Failed to wait for fence.";
+  }
+  vkDestroyFence(device_, fence, NULL);
+}
+
+void ComputeApplication::Cleanup() {
+  vkFreeCommandBuffers(device_, command_pool_, 1, &command_buffer_);
+  vkDestroyPipeline(device_, compute_pipeline_, nullptr);
+  vkDestroyPipelineLayout(device_, pipeline_layout_, nullptr);
+  vkDestroyDescriptorPool(device_, descriptor_pool_, nullptr);
+  vkDestroyDescriptorSetLayout(device_, descriptor_set_layout_, nullptr);
+  allocator_->Free(storage_buffer_);
+  allocator_->Free(staging_buffer_);
+  allocator_.reset();
+
+  vkDestroyCommandPool(device_, command_pool_, nullptr);
+  vkDestroyDevice(device_, nullptr);
+  debug_messenger_.reset();
+  vkDestroyInstance(instance_, nullptr);
 }
