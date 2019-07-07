@@ -9,9 +9,13 @@ static constexpr bool kVulkanDebugMode = false;
 static constexpr bool kVulkanDebugMode = true;
 #endif
 
+// These are needed when creating the vulkan Instance, and the environment must
+// have them installed.
 static const std::vector<const char*> kValidationLayers = {
     "VK_LAYER_KHRONOS_validation"};
 
+// These are needed when creating a logical device, and the physical device
+// needs to support them.
 static const std::vector<const char*> kDeviceExtensions = {};
 
 ComputeApplication::ComputeApplication() {}
@@ -214,11 +218,27 @@ void ComputeApplication::CreateComputePipeline() {
       CreateShaderModule(device_, "vulkan/shaders/mandelbrot.comp.spv")
           .ValueOrDie();
 
+  // Create a specialization so we can change the workgroup size in the shader
+  // definition. This corresponds with `layout (constant_id = 0)`
+  std::array<VkSpecializationMapEntry, 3> spec_constants({});
+  for (int i = 0; i < spec_constants.size(); ++i) {
+    spec_constants[i].constantID = i;
+    spec_constants[i].offset = i * sizeof(int32_t);
+    spec_constants[i].size = sizeof(int32_t);
+  }
+  std::array<int32_t, 3> constant_data = {workgroup_size_, workgroup_size_, 1};
+  VkSpecializationInfo specialization_info = {};
+  specialization_info.mapEntryCount = spec_constants.size();
+  specialization_info.pMapEntries = spec_constants.data();
+  specialization_info.dataSize = sizeof(int32_t) * spec_constants.size();
+  specialization_info.pData = constant_data.data();
+
   VkPipelineShaderStageCreateInfo shader_stage_info = {};
   shader_stage_info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
   shader_stage_info.stage = VK_SHADER_STAGE_COMPUTE_BIT;
   shader_stage_info.module = shader_module;
   shader_stage_info.pName = "main";
+  shader_stage_info.pSpecializationInfo = &specialization_info;
 
   // The pipeline layout allows the pipeline to access descriptor sets. So we
   // just specify the descriptor set layout we created earlier.
@@ -313,6 +333,7 @@ void ComputeApplication::RunCommandBuffer() {
     LOG(FATAL) << "Failed to create fence.";
   }
 
+  LOG(INFO) << "Submitting commands";
   if (vkQueueSubmit(compute_queue_, 1, &submit_info, fence) != VK_SUCCESS) {
     LOG(FATAL) << "Failed to submit compute command buffer.";
   }
@@ -321,6 +342,7 @@ void ComputeApplication::RunCommandBuffer() {
       VK_SUCCESS) {
     LOG(FATAL) << "Failed to wait for fence.";
   }
+  LOG(INFO) << "Done";
   vkDestroyFence(device_, fence, NULL);
 }
 
