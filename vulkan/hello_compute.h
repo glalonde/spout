@@ -22,6 +22,7 @@ class ComputeApplication {
   void CreateDescriptorSetLayout();
   void CreateDescriptorPool();
   void CreateDescriptorSet();
+  void CreateComputePipeline();
 
   VkInstance instance_;
   std::unique_ptr<VulkanDebugMessenger> debug_messenger_;
@@ -39,4 +40,6 @@ class ComputeApplication {
   VkDescriptorSetLayout descriptor_set_layout_;
   VkDescriptorPool descriptor_pool_;
   VkDescriptorSet descriptor_set_;
+
+
 };

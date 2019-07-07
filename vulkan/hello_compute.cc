@@ -21,6 +21,8 @@ void ComputeApplication::Run(int width, int height) {
   InitVulkan();
   MakeBuffers();
   CreateDescriptorSetLayout();
+  CreateDescriptorPool();
+  CreateDescriptorSet();
 }
 
 void ComputeApplication::InitVulkan() {
@@ -183,17 +185,20 @@ void ComputeApplication::CreateDescriptorSet() {
   VkDescriptorBufferInfo buffer_info = {};
   buffer_info.buffer = storage_buffer_.buffer;
   buffer_info.offset = 0;
-  buffer_info.range = sizeof(UniformBufferObject);
+  buffer_info.range = VK_WHOLE_SIZE;
 
   VkWriteDescriptorSet descriptor_write = {};
   descriptor_write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-  descriptor_write.dstSet = descriptor_sets_[i];
+  descriptor_write.dstSet = descriptor_set_;
   descriptor_write.dstBinding = 0;
-  descriptor_write.dstArrayElement = 0;
-  descriptor_write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+  descriptor_write.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
   descriptor_write.descriptorCount = 1;
   descriptor_write.pBufferInfo = &buffer_info;
-  descriptor_write.pImageInfo = nullptr;        // Optional
-  descriptor_write.pTexelBufferView = nullptr;  // Optional
   vkUpdateDescriptorSets(device_, 1, &descriptor_write, 0, nullptr);
+}
+
+
+void ComputeApplication::CreateComputePipeline() {
+  // Compile shaders
+
 }

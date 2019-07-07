@@ -14,6 +14,18 @@ class VMAWrapper {
   struct Buffer {
     VkBuffer buffer;
     VmaAllocation allocation;
+
+    // TODO(glalonde) consider stashing the pointer to the allocator internally,
+    // and maybe caching stuff like size.
+    VmaAllocationInfo GetInfo(const VMAWrapper& allocator) const {
+      VmaAllocationInfo info;
+      vmaGetAllocationInfo(allocator.allocator_, allocation,
+                           &info);
+      return info;
+    }
+    VkDeviceSize GetSize(const VMAWrapper& allocator) const {
+      return GetInfo(allocator).size;
+    }
   };
 
   // Staging buffer. Source from CPU. If source_data is not nullptr, then the

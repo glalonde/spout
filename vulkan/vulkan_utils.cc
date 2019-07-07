@@ -1,4 +1,5 @@
 #include "vulkan/vulkan_utils.h"
+#include "base/file.h"
 #include "base/logging.h"
 
 VulkanDebugMessenger::VulkanDebugMessenger(VkInstance instance)
@@ -131,4 +132,24 @@ SwapChainSupportDetails QuerySwapChainSupport(VkSurfaceKHR surface,
   }
 
   return details;
+}
+
+ErrorXor<VkShaderModule> CreateShaderModule(VkDevice device,
+                                            const std::string_view& path) {
+  auto maybe_shader_code = TryReadFile(path);
+  if (!maybe_shader_code) {
+    return std::move(*maybe_shader_code.ErrorOrNull());
+  }
+  const std::string& code = maybe_shader_code.ValueOrDie();
+  VkShaderModuleCreateInfo create_info = {};
+  create_info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+  create_info.codeSize = code.size();
+  create_info.pCode = reinterpret_cast<const uint32_t*>(&code);
+
+  VkShaderModule shader_module;
+  if (vkCreateShaderModule(device, &create_info, nullptr, &shader_module) !=
+      VK_SUCCESS) {
+    return TraceError("Failed to create shader module.");
+  }
+  return shader_module;
 }

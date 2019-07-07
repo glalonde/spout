@@ -24,6 +24,8 @@ cc_library(
         "-lvulkan",
     ],
     deps = [
+        "//base:error_xor",
+        "//base:file",
         "//base:logging",
         "@com_google_absl//absl/algorithm:container",
     ],

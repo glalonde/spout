@@ -3,6 +3,7 @@
 #include <optional>
 #include <vector>
 #include "absl/algorithm/container.h"
+#include "base/error_xor.h"
 #include "base/logging.h"
 
 // Debug messenger requires extension `VK_EXT_DEBUG_UTILS_EXTENSION_NAME`
@@ -89,3 +90,5 @@ VkPhysicalDevice FindPhysicalDevice(VkInstance instance, F filter) {
   }
   LOG(FATAL) << "Failed to find suitable GPU.";
 }
+
+ErrorXor<VkShaderModule> CreateShaderModule(const std::string_view& path);
