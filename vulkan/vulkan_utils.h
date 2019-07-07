@@ -91,4 +91,5 @@ VkPhysicalDevice FindPhysicalDevice(VkInstance instance, F filter) {
   LOG(FATAL) << "Failed to find suitable GPU.";
 }
 
-ErrorXor<VkShaderModule> CreateShaderModule(const std::string_view& path);
+ErrorXor<VkShaderModule> CreateShaderModule(VkDevice device,
+                                            const std::string_view& path);

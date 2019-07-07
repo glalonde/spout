@@ -11,3 +11,8 @@ glsl_to_spirv(
     name = "vert_shader",
     main = "shader.vert",
 )
+
+glsl_to_spirv(
+    name = "mandelbrot",
+    main = "mandelbrot.comp",
+)

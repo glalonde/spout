@@ -78,6 +78,9 @@ cc_library(
     name = "hello_compute",
     srcs = ["hello_compute.cc"],
     hdrs = ["hello_compute.h"],
+    data = [
+        "//vulkan/shaders:mandelbrot",
+    ],
     linkopts = [
         "-lvulkan",
     ],

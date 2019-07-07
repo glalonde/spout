@@ -163,8 +163,6 @@ class HelloQuadApplication {
 
   void DrawFrame();
 
-  VkShaderModule CreateShaderModule(const std::string& code);
-
   void UpdateUniformBuffer(uint32_t current_image);
 
   VkSurfaceFormatKHR ChooseSwapSurfaceFormat(

@@ -427,11 +427,12 @@ void HelloQuadApplication::CreateDescriptorSetLayout() {
 }
 
 void HelloQuadApplication::CreateGraphicsPipeline() {
-  auto vert_shader_code = ReadFileOrDie("vulkan/shaders/shader.vert.spv");
-  auto frag_shader_code = ReadFileOrDie("vulkan/shaders/shader.frag.spv");
-
-  VkShaderModule vert_shader_module = CreateShaderModule(vert_shader_code);
-  VkShaderModule frag_shader_module = CreateShaderModule(frag_shader_code);
+  VkShaderModule vert_shader_module =
+      CreateShaderModule(device_, "vulkan/shaders/shader.vert.spv")
+          .ValueOrDie();
+  VkShaderModule frag_shader_module =
+      CreateShaderModule(device_, "vulkan/shaders/shader.frag.spv")
+          .ValueOrDie();
 
   VkPipelineShaderStageCreateInfo vert_shader_stage_info = {};
   vert_shader_stage_info.sType =
@@ -856,22 +857,6 @@ void HelloQuadApplication::DrawFrame() {
   }
 
   current_frame_ = (current_frame_ + 1) % kMaxFramesInFlight;
-}
-
-VkShaderModule HelloQuadApplication::CreateShaderModule(
-    const std::string& code) {
-  VkShaderModuleCreateInfo create_info = {};
-  create_info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-  create_info.codeSize = code.size();
-  create_info.pCode = reinterpret_cast<const uint32_t*>(code.data());
-
-  VkShaderModule shader_module;
-  if (vkCreateShaderModule(device_, &create_info, nullptr, &shader_module) !=
-      VK_SUCCESS) {
-    LOG(FATAL) << "Failed to create shader module.";
-  }
-
-  return shader_module;
 }
 
 void HelloQuadApplication::UpdateUniformBuffer(uint32_t current_image) {
