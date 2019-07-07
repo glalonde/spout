@@ -7,12 +7,16 @@ Live streaming some of the programming ony my youtube channel: https://www.youtu
 
 ---
 
-Need to install sdl2 externally:
-e.g. `pacman -S sdl2`
-
-Also gperftools for the profiler, and pprof to view the profiles
+Required deps depends on which targets you're building. At a minimum you'll need `bazel` and `clang` set up for C++17. After that, `SDL2` or `GLFW` for some parts. OpenGL, and Vulkan for other parts. gperftools, pprof.
 
 ---
-Here's the final version of the previous incarnation(click for video). I'm still getting backt to this point with the code in this repo, but it is on a far better foundation.
+* `archaeology` has some old versions that probably don't really compile or do anything anymore.
+* `base` has some generic utilities
+* `src` has the SDL based version with CPU physics and OpenGL graphics. Currently the closest to an actual game.
+* `graphics` has some attempt at modular OpenGL graphics.
+* `gpu_particles` has an implementation of physics with OpenGL, but isn't really a playable game.
+* `vulkan` has some vulkan tutorials implemented. A graphics pipeline, and a compute pipeline.
+---
+Here's the final version of the previous incarnation(click for video). I'm still getting back to this point with the code in this repo, but it is on a far better foundation.
 
 [![Watch the video](https://img.youtube.com/vi/ByFWa8JPO0c/maxresdefault.jpg)](https://youtu.be/ByFWa8JPO0c)
