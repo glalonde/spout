@@ -1,6 +1,7 @@
 #include "vulkan/hello_compute.h"
 #include "src/convert.h"
 #include "src/image.h"
+#include "src/image_io.h"
 
 #ifdef NDEBUG
 static constexpr bool kVulkanDebugMode = false;
@@ -15,7 +16,8 @@ static const std::vector<const char*> kDeviceExtensions = {};
 
 ComputeApplication::ComputeApplication() {}
 
-void ComputeApplication::Run(int width, int height) {
+void ComputeApplication::Run(int width, int height,
+                             const std::string& dest_path) {
   LOG(INFO) << "Running with width=" << width << ", height=" << height;
   width_ = width;
   height_ = height;
@@ -29,7 +31,7 @@ void ComputeApplication::Run(int width, int height) {
   CreateCommandPool();
   CreateCommandBuffer();
   RunCommandBuffer();
-  SaveRenderedImage();
+  SaveRenderedImage(dest_path);
   Cleanup();
 }
 
@@ -136,7 +138,8 @@ void ComputeApplication::CreateAllocator() {
 void ComputeApplication::MakeBuffers() {
   VkDeviceSize buffer_size = sizeof(PixelType::RGBAF32) * width_ * height_;
   storage_buffer_ = allocator_->CreateGPUBuffer(
-      buffer_size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+      buffer_size,
+      VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
   staging_buffer_ = allocator_->AllocateStagingBuffer(buffer_size, nullptr);
 }
 
@@ -354,28 +357,35 @@ void ComputeApplication::CopyBuffer(VkBuffer src_buff, VkBuffer dest_buff,
   vkFreeCommandBuffers(device_, command_pool_, 1, &command_buffer);
 }
 
-void ComputeApplication::SaveRenderedImage() {
+void ComputeApplication::SaveRenderedImage(const std::string& dest_path) {
   // Copy from storage to staging
   const int size = storage_buffer_.GetSize(*allocator_);
   CopyBuffer(storage_buffer_.buffer, staging_buffer_.buffer, size);
-  // Map staging to an local memory
-  void* mapped_data;
-  allocator_->MapBuffer(staging_buffer_, &mapped_data);
   constexpr int kNumChannels = 4;
-
-  // Map the local memory to an eigen matrix.
-  Eigen::Map<
-      Eigen::Array<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>>
-  mapped_array(static_cast<float*>(mapped_data), height_,
-               width_ * kNumChannels);
   Image<PixelType::RGBAU8> out(height_, width_);
-  for (int i = 0; i < height_; ++i) {
-    for (int j = 0; j < width_; ++j) {
-      out(i, j) = Convert<PixelType::RGBAU8>(
-          mapped_array.block<1, kNumChannels>(i, j * kNumChannels));
+  {
+    // Map staging to an local memory
+    void* mapped_data;
+    allocator_->MapBuffer(staging_buffer_, &mapped_data);
+
+    // Map the local memory to an eigen matrix.
+    Eigen::Map<
+        Eigen::Array<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>>
+    mapped_array(static_cast<float*>(mapped_data), height_,
+                 width_ * kNumChannels);
+    for (int i = 0; i < height_; ++i) {
+      for (int j = 0; j < width_; ++j) {
+        out(i, j) = Convert<PixelType::RGBAU8, PixelType::RGBAF32>(
+            mapped_array.block<1, kNumChannels>(i, j * kNumChannels));
+      }
     }
+    allocator_->UnmapBuffer(staging_buffer_);
   }
-  LOG(INFO) << "Final image: " << out.rows() << ", " << out.cols();
+  if (WriteImage(out, dest_path)) {
+    LOG(INFO) << "Successfully wrote image to: " << dest_path;
+  } else {
+    LOG(ERROR) << "Failed to write image to: " << dest_path;
+  }
 }
 
 void ComputeApplication::Cleanup() {

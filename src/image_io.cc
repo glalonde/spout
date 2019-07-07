@@ -27,7 +27,7 @@ std::optional<Image<PixelType::RGBAU8>> ReadImage(const std::string& path) {
   return out;
 }
 
-void WriteImage(const Image<PixelType::RGBAU8>& image,
+bool WriteImage(const Image<PixelType::RGBAU8>& image,
                 const std::string& path) {
   constexpr int kNumChannels = PixelType::RGBAU8::RowsAtCompileTime;
   // Swap col-major to row-major
@@ -38,8 +38,11 @@ void WriteImage(const Image<PixelType::RGBAU8>& image,
   stbi_write_png_compression_level = 20;
   int result = stbi_write_png(path.c_str(), swapped.cols(), swapped.rows(),
                               kNumChannels, swapped.data(), stride);
-  if (result != 0) {
+  if (result == 0) {
     LOG(ERROR) << "Failed to write image to " << path
                << ", return code: " << result;
+    return false;
+  } else {
+    return true;
   }
 }

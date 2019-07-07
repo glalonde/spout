@@ -5,10 +5,12 @@
 #include "vulkan/vma_wrapper.h"
 #include "vulkan/vulkan_utils.h"
 
+// Compute-only demo that makes a mandelbrot set image, based off:
+// https://github.com/Erkaman/vulkan_minimal_compute
 class ComputeApplication {
  public:
   ComputeApplication();
-  void Run(int width, int height);
+  void Run(int width, int height, const std::string& output_path);
 
  private:
   std::vector<const char*> GetRequiredInstanceExtensions();
@@ -27,7 +29,7 @@ class ComputeApplication {
   void CreateCommandBuffer();
   void RunCommandBuffer();
   void CopyBuffer(VkBuffer src_buff, VkBuffer dest_buff, VkDeviceSize size);
-  void SaveRenderedImage();
+  void SaveRenderedImage(const std::string& dest_path);
   void Cleanup();
 
   VkInstance instance_;

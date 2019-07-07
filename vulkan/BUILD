@@ -90,6 +90,7 @@ cc_library(
         "//base:logging",
         "//src:convert",
         "//src:image",
+        "//src:image_io",
     ],
 )
 
