@@ -102,3 +102,33 @@ cc_binary(
         "//base:init",
     ],
 )
+
+cc_library(
+    name = "game_controller",
+    srcs = ["game_controller.cc"],
+    hdrs = ["game_controller.h"],
+    data = [
+        "//vulkan/shaders:frag_shader",
+        "//vulkan/shaders:vert_shader",
+    ],
+    linkopts = [
+        "-lglfw",
+        "-lvulkan",
+    ],
+    deps = [
+        ":vma_wrapper",
+        ":vulkan_utils",
+        "//base",
+        "//src:eigen_glm",
+        "//src:fps_estimator",
+    ],
+)
+
+cc_binary(
+    name = "game_main",
+    srcs = ["game_main.cc"],
+    deps = [
+        ":game_controller",
+        "//base:init",
+    ],
+)

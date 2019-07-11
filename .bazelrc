@@ -1,6 +1,7 @@
-build --cxxopt=-std=c++17
+build --extra_toolchains=@llvm_toolchain//:cc-toolchain-linux
+build --copt=-std=c++17
+build --copt=-stdlib=libc++
 build --linkopt=-stdlib=libc++
-build --cxxopt=-stdlib=libc++
 build --copt=-Wall
 build --copt=-Wno-unused-function
 build --copt=-Wno-strict-overflow
@@ -10,7 +11,6 @@ build --copt=-O3
 build --copt=-march=native
 build --copt=-Wno-unused-local-typedefs
 build --copt=-g
-#build --linkopt=-ltcmalloc
 build --strip never
 build --dynamic_mode off
 build --compilation_mode opt
