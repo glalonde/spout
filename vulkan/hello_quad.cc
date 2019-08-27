@@ -18,12 +18,6 @@ static const std::vector<const char*> kValidationLayers = {
 static const std::vector<const char*> kDeviceExtensions = {
     VK_KHR_SWAPCHAIN_EXTENSION_NAME};
 
-#ifdef NDEBUG
-static constexpr bool kVulkanDebugMode = false;
-#else
-static constexpr bool kVulkanDebugMode = true;
-#endif
-
 HelloQuadApplication::HelloQuadApplication() : fps_(FromSeconds(1.0), 60.0) {}
 
 void HelloQuadApplication::Run() {

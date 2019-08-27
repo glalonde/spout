@@ -3,12 +3,6 @@
 #include "src/image.h"
 #include "src/image_io.h"
 
-#ifdef NDEBUG
-static constexpr bool kVulkanDebugMode = false;
-#else
-static constexpr bool kVulkanDebugMode = true;
-#endif
-
 // These are needed when creating the vulkan Instance, and the environment must
 // have them installed.
 static const std::vector<const char*> kValidationLayers = {

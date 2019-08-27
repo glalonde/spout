@@ -1,10 +1,10 @@
 #pragma once
-#include <vulkan/vulkan.h>
 #include <optional>
 #include <vector>
 #include "absl/algorithm/container.h"
 #include "base/error_xor.h"
 #include "base/logging.h"
+#include "vulkan/vulkan.h"
 
 // Debug messenger requires extension `VK_EXT_DEBUG_UTILS_EXTENSION_NAME`
 class VulkanDebugMessenger {

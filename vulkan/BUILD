@@ -17,13 +17,32 @@ cc_library(
 )
 
 cc_library(
-    name = "vulkan_utils",
-    srcs = ["vulkan_utils.cc"],
-    hdrs = ["vulkan_utils.h"],
+    name = "vulkan",
+    hdrs = ["vulkan.h"],
     linkopts = [
         "-lvulkan",
     ],
     deps = [
+    ],
+)
+
+cc_library(
+    name = "glfw",
+    hdrs = ["glfw.h"],
+    linkopts = [
+        "-lglfw",
+    ],
+    deps = [
+        ":vulkan",
+    ],
+)
+
+cc_library(
+    name = "vulkan_utils",
+    srcs = ["vulkan_utils.cc"],
+    hdrs = ["vulkan_utils.h"],
+    deps = [
+        ":vulkan",
         "//base:error_xor",
         "//base:file",
         "//base:logging",
@@ -52,11 +71,8 @@ cc_library(
         "//vulkan/shaders:frag_shader",
         "//vulkan/shaders:vert_shader",
     ],
-    linkopts = [
-        "-lglfw",
-        "-lvulkan",
-    ],
     deps = [
+        ":glfw",
         ":vma_wrapper",
         ":vulkan_utils",
         "//base",
@@ -80,9 +96,6 @@ cc_library(
     hdrs = ["hello_compute.h"],
     data = [
         "//vulkan/shaders:mandelbrot",
-    ],
-    linkopts = [
-        "-lvulkan",
     ],
     deps = [
         ":vma_wrapper",

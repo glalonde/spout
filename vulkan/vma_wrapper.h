@@ -1,5 +1,4 @@
 #pragma once
-
 #include <vector>
 
 #include "vulkan/vulkan_memory_allocator.h"
