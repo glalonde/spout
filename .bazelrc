@@ -1,6 +1,6 @@
 build --extra_toolchains=@llvm_toolchain//:cc-toolchain-linux
-build --copt=-std=c++17
-build --copt=-stdlib=libc++
+build --cxxopt=-std=c++17
+build --cxxopt=-stdlib=libc++
 build --linkopt=-stdlib=libc++
 build --copt=-Wall
 build --copt=-Wno-unused-function

@@ -127,6 +127,7 @@ cc_library(
 cc_binary(
     name = "game_main",
     srcs = ["game_main.cc"],
+    linkstatic = True,
     deps = [
         ":game_controller",
         "//base:init",
