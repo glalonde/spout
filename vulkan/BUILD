@@ -124,13 +124,10 @@ cc_library(
         "//vulkan/shaders:frag_shader",
         "//vulkan/shaders:vert_shader",
     ],
-    linkopts = [
-        "-lglfw",
-        "-lvulkan",
-    ],
     deps = [
         ":vma_wrapper",
         ":vulkan_utils",
+        ":glfw",
         "//base",
         "//src:eigen_glm",
         "//src:fps_estimator",
