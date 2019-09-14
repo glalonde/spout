@@ -380,7 +380,7 @@ void ComputeApplication::SaveRenderedImage(const std::string& dest_path) {
   constexpr int kNumChannels = 4;
   Image<PixelType::RGBAU8> out(height_, width_);
   {
-    // Map staging to an local memory
+    // Map staging to local memory
     void* mapped_data;
     allocator_->MapBuffer(staging_buffer_, &mapped_data);
 

@@ -19,6 +19,7 @@ cc_library(
         "//base",
         "//src:eigen_glm",
         "//src:fps_estimator",
+        "//src:image_io",
         "//vulkan:glfw",
         "//vulkan:vma_wrapper",
         "//vulkan:vulkan_utils",

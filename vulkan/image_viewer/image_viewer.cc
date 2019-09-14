@@ -6,7 +6,10 @@
 #include "base/logging.h"
 #include "base/time.h"
 #include "src/eigen_glm.h"
+#include "src/image_io.h"
 #include "vulkan/glfw.h"
+
+ABSL_FLAG(std::string, image_path, "", "Image path");
 
 const int WIDTH = 800;
 const int HEIGHT = 600;
@@ -19,9 +22,19 @@ static const std::vector<const char*> kValidationLayers = {
 static const std::vector<const char*> kDeviceExtensions = {
     VK_KHR_SWAPCHAIN_EXTENSION_NAME};
 
-void LoadImage(const std::string& path) {
+const std::vector<Vertex> kVertices = {{{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
+                                       {{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
+                                       {{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}},
+                                       {{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}}};
+
+const std::vector<uint16_t> kIndices = {0, 1, 2, 2, 3, 0};
+
+void ImageViewerApplication::LoadImage(const std::string& path) {
   auto maybe_image = ReadImage(path);
   CHECK(maybe_image);
+  LOG(INFO) << Size(*maybe_image);
+  auto staging_buffer = allocator_->AllocateStagingBuffer(Size(*maybe_image),
+                                                          maybe_image->data());
 }
 
 ImageViewerApplication::ImageViewerApplication()
@@ -67,6 +80,9 @@ void ImageViewerApplication::InitVulkan() {
   CreateDescriptorSetLayout();
   CreateGraphicsPipeline();
   CreateFramebuffers();
+
+  LoadImage(absl::GetFlag(FLAGS_image_path));
+
   CreateCommandPool();
   CreateVertexBuffer();
   CreateIndexBuffer();
