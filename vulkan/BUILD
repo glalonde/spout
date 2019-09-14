@@ -60,6 +60,7 @@ cc_library(
     deps = [
         ":vulkan_memory_allocator",
         "//base:logging",
+        "@com_google_absl//absl/container:inlined_vector",
     ],
 )
 
@@ -125,9 +126,9 @@ cc_library(
         "//vulkan/shaders:vert_shader",
     ],
     deps = [
+        ":glfw",
         ":vma_wrapper",
         ":vulkan_utils",
-        ":glfw",
         "//base",
         "//src:eigen_glm",
         "//src:fps_estimator",

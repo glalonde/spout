@@ -1,6 +1,7 @@
 #pragma once
 #include <vector>
 
+#include "absl/container/inlined_vector.h"
 #include "vulkan/vulkan_memory_allocator.h"
 
 // https://gpuopen-librariesandsdks.github.io/VulkanMemoryAllocator/html/usage_patterns.html
@@ -10,20 +11,31 @@ class VMAWrapper {
   VMAWrapper(VkPhysicalDevice physical_device, VkDevice device);
   ~VMAWrapper();
 
+  VmaAllocationInfo GetInfo(const VmaAllocation& allocation) const {
+    VmaAllocationInfo info;
+    vmaGetAllocationInfo(allocator_, allocation, &info);
+    return info;
+  }
+
   struct Buffer {
     VkBuffer buffer;
     VmaAllocation allocation;
 
     // TODO(glalonde) consider stashing the pointer to the allocator internally,
     // and maybe caching stuff like size.
-    VmaAllocationInfo GetInfo(const VMAWrapper& allocator) const {
-      VmaAllocationInfo info;
-      vmaGetAllocationInfo(allocator.allocator_, allocation,
-                           &info);
-      return info;
-    }
     VkDeviceSize GetSize(const VMAWrapper& allocator) const {
-      return GetInfo(allocator).size;
+      return allocator.GetInfo(allocation).size;
+    }
+  };
+
+  struct Image {
+    VkImage image;
+    VmaAllocation allocation;
+
+    // TODO(glalonde) consider stashing the pointer to the allocator internally,
+    // and maybe caching stuff like size.
+    VkDeviceSize GetSize(const VMAWrapper& allocator) const {
+      return allocator.GetInfo(allocation).size;
     }
   };
 
@@ -54,6 +66,11 @@ class VMAWrapper {
   Buffer CreateBuffer(uint64_t size, VkBufferUsageFlags usage,
                       VmaMemoryUsage vma_usage,
                       const std::vector<uint32_t>& queue_families);
+
+  Image CreateImage(const absl::InlinedVector<uint32_t, 3>& dimensions,
+                    VkFormat format, VkImageUsageFlags usage,
+                    VmaMemoryUsage vma_usage,
+                    const std::vector<uint32_t>& queue_families);
 
   VmaAllocator allocator_;
 };
