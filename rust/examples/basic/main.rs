@@ -5,7 +5,7 @@ use gfx_backend_metal as back;
 #[cfg(feature = "vulkan")]
 use gfx_backend_vulkan as back;
 
-use log::{debug, error, info, trace, warn};
+use ::log::{debug, error, info, trace, warn};
 use winit::{
     dpi::LogicalSize,
     event::{Event, WindowEvent},

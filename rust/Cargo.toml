@@ -27,14 +27,11 @@ path = "examples/basic/main.rs"
 [dependencies]
 gfx-hal = "0.4.1"
 image = "0.21"
-log = "*"
-env_logger = "*"
-ansi_term = "*"
-floating-duration = "*"
 gflags = "0.3.2"
 winit = { version = "0.20.0-alpha4", features = ["web-sys"] }
 glsl-to-spirv = "0.1.4"
-scrub_log = "*"
+scrub_log = "0.1.0"
+log = "*"
 
 [dependencies.gfx-backend-vulkan]
 features = ["x11"]
