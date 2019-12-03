@@ -1,0 +1,45 @@
+[package]
+name = "spout_rust"
+version = "0.1.0"
+authors = ["Geoffrey Lalonde <lalondegeoffrey@gmail.com>"]
+edition = "2018"
+
+[features]
+default = ["no_backend"]
+vulkan = ["gfx-backend-vulkan"]
+no_backend = ["gfx-backend-empty"]
+unstable = []
+
+[[bin]]
+name = "compute"
+path = "examples/compute/main.rs"
+
+[[bin]]
+name = "color-uniform"
+path = "examples/color-uniform/main.rs"
+
+[[bin]]
+name = "basic"
+path = "examples/basic/main.rs"
+
+[dependencies]
+gfx-hal = "0.4.1"
+image = "0.21"
+log = "0.4"
+gflags = "0.3.2"
+winit = { version = "0.20.0-alpha4", features = ["web-sys"] }
+
+[target.'cfg(debug_assertions)'.dependencies]
+env_logger = "0.6"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+glsl-to-spirv = "0.1.4"
+
+[dependencies.gfx-backend-vulkan]
+gfx-backend-vulkan = "0.4.0"
+features = ["x11"]
+optional = true
+
+[dependencies.gfx-backend-empty]
+gfx-backend-vulkan = "0.4.0"
+optional = true
