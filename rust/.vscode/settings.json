@@ -1,5 +1,3 @@
 {
-    "rust.features": [
-        "vulkan"
-    ]
+    "rust.features": []
 }

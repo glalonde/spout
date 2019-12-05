@@ -1,0 +1,17 @@
+#version 450
+#extension GL_GOOGLE_include_directive : enable
+#include "noise2d.h"
+layout(local_size_x = 1) in;
+
+layout(set = 0, binding = 0) buffer PrimeIndices {
+    vec2[] points;
+}; // this is used as both input and output for convenience
+
+float rand(vec2 st) {
+  return (snoise(st) + 1.0) / 2.0;
+}
+
+void main() {
+  uint index = gl_GlobalInvocationID.x;
+  indices[index] = rand(points[index]);
+}
