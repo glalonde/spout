@@ -1335,7 +1335,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "spout_rust"
+name = "spout"
 version = "0.1.0"
 dependencies = [
  "gflags 0.3.2 (registry+https://github.com/rust-lang/crates.io-index)",
