@@ -16,6 +16,8 @@ scrub_log = "0.1.1"
 log = "*"
 wgpu = "*"
 shaderc = "*"
+walkdir = "2.2.9"
+lazy_static = "*"
 
 [build-dependencies]
 log = "*"
