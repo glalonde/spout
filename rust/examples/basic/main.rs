@@ -1,4 +1,4 @@
-use ::log::{debug, error, info, trace, warn};
+use ::log::{error, info};
 use winit::{
     dpi::LogicalSize,
     event::{Event, WindowEvent},

@@ -1335,12 +1335,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "spout_rust"
+name = "spout"
 version = "0.1.0"
 dependencies = [
  "gflags 0.3.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "glsl-to-spirv 0.1.7 (registry+https://github.com/rust-lang/crates.io-index)",
  "image 0.21.3 (registry+https://github.com/rust-lang/crates.io-index)",
+ "lazy_static 1.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "log 0.4.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "phf 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "scrub_log 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",

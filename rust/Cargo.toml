@@ -1,15 +1,11 @@
 [package]
-name = "spout_rust"
+name = "spout"
 version = "0.1.0"
 authors = ["Geoffrey Lalonde <lalondegeoffrey@gmail.com>"]
 edition = "2018"
 
 [features]
 default = []
-
-[[bin]]
-name = "basic"
-path = "examples/basic/main.rs"
 
 [dependencies]
 image = "0.21"
@@ -20,6 +16,8 @@ scrub_log = "0.1.1"
 log = "*"
 wgpu = "*"
 shaderc = "*"
+walkdir = "2.2.9"
+lazy_static = "*"
 
 [build-dependencies]
 log = "*"
