@@ -20,6 +20,13 @@ pub mod shader_utils {
             info!("Found shader: {}", entry.path().display());
         }
     }
+
+    #[macro_export]
+    macro_rules! include_shader {
+        ( $shader_name:expr ) => {
+            include_bytes!(concat!(env!("OUT_DIR"), "/", "shaders", "/", $shader_name))
+        };
+    }
 }
 
 #[cfg(test)]
@@ -29,6 +36,7 @@ mod tests {
     #[test]
     fn internal() {
         scrub_log::init().unwrap();
-        shader_utils::print_output_directory();
+        shader_utils::list_shaders();
+        let _test_bytes = include_shader!("collatz.comp.spv");
     }
 }

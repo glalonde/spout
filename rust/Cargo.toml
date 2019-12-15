@@ -18,6 +18,8 @@ wgpu = "*"
 shaderc = "*"
 walkdir = "2.2.9"
 lazy_static = "*"
+zerocopy = "0.2"
+futures = "0.3"
 
 [build-dependencies]
 log = "*"
