@@ -1,9 +1,6 @@
-use spout::shader_utils;
-use std::{convert::TryInto as _, str::FromStr};
-use wgpu;
-use zerocopy::AsBytes as _;
+use std::str::FromStr;
 
-async fn run() {
+fn main() {
     scrub_log::init().unwrap();
 
     // For now this just panics if you didn't pass numbers. Could add proper error handling.
@@ -15,15 +12,12 @@ async fn run() {
         .map(|s| u32::from_str(&s).expect("You must pass a list of positive integers!"))
         .collect();
 
-    let slice_size = numbers.len() * std::mem::size_of::<u32>();
-    let size = slice_size as wgpu::BufferAddress;
+    let size = (numbers.len() * std::mem::size_of::<u32>()) as wgpu::BufferAddress;
 
-    let adapter = wgpu::Adapter::request(
-        &wgpu::RequestAdapterOptions {
-            power_preference: wgpu::PowerPreference::Default,
-        },
-        wgpu::BackendBit::PRIMARY,
-    )
+    let adapter = wgpu::Adapter::request(&wgpu::RequestAdapterOptions {
+        power_preference: wgpu::PowerPreference::Default,
+        backends: wgpu::BackendBit::PRIMARY,
+    })
     .unwrap();
 
     let (device, mut queue) = adapter.request_device(&wgpu::DeviceDescriptor {
@@ -33,14 +27,16 @@ async fn run() {
         limits: wgpu::Limits::default(),
     });
 
-    let cs = include_bytes!("shader.comp.spv");
+    let cs = spout::include_shader!("collatz.comp.spv");
     let cs_module =
         device.create_shader_module(&wgpu::read_spirv(std::io::Cursor::new(&cs[..])).unwrap());
 
-    let staging_buffer = device.create_buffer_with_data(
-        numbers.as_slice().as_bytes(),
-        wgpu::BufferUsage::MAP_READ | wgpu::BufferUsage::COPY_DST | wgpu::BufferUsage::COPY_SRC,
-    );
+    let staging_buffer = device
+        .create_buffer_mapped(
+            numbers.len(),
+            wgpu::BufferUsage::MAP_READ | wgpu::BufferUsage::COPY_DST | wgpu::BufferUsage::COPY_SRC,
+        )
+        .fill_from_slice(&numbers);
 
     let storage_buffer = device.create_buffer(&wgpu::BufferDescriptor {
         size,
@@ -95,17 +91,9 @@ async fn run() {
 
     queue.submit(&[encoder.finish()]);
 
-    if let Ok(mapping) = staging_buffer.map_read(0u64, size).await {
-        let times: Box<[u32]> = mapping
-            .as_slice()
-            .chunks_exact(4)
-            .map(|b| u32::from_ne_bytes(b.try_into().unwrap()))
-            .collect();
-
-        println!("Times: {:?}", times);
-    }
-}
-
-fn main() {
-    futures::executor::block_on(run());
+    staging_buffer.map_read_async(0, size, |result: wgpu::BufferMapAsyncResult<&[u32]>| {
+        if let Ok(mapping) = result {
+            println!("Times: {:?}", mapping.data);
+        }
+    });
 }
