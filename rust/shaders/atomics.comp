@@ -28,5 +28,6 @@ void main() {
   p.position = clamp(p.position, ivec2(0, 0), texture_size);
   particles[gid] = p;
   // Add value to col, row
-  imageAtomicAdd(counter_texture, ivec2(0, 0), 1);
+  imageAtomicAdd(counter_texture, ivec2(0, 0), 3);
+  imageAtomicOr(counter_texture, ivec2(0,0), 1);
 }
