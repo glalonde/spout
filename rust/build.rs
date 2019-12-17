@@ -53,6 +53,7 @@ fn main() {
 
     let mut compiler = shaderc::Compiler::new().unwrap();
     let mut options = shaderc::CompileOptions::new().unwrap();
+    options.set_target_env(env: TargetEnv, version: u32)
     options.set_include_callback(get_include_source);
 
     // Create destination path if necessary

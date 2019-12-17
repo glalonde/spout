@@ -1,4 +1,4 @@
-#version 450
+#version 450 core
 layout(local_size_x = 512, local_size_y = 1, local_size_z = 1) in;
 
 struct Particle {
@@ -9,10 +9,24 @@ struct Particle {
 layout(std430, binding = 0) buffer Particles {
   Particle particles[];
 };
+layout (binding = 1, r32ui) uniform uimage2D counter_texture;
+
+ivec2 wrap_position(ivec2 p, ivec2 bounds) {
+  return p - (p / bounds) * bounds;
+}
+
+Particle update_particle(Particle p) {
+  p.position += p.velocity;
+  return p;
+}
 
 void main() {
   uint gid = gl_GlobalInvocationID.x;
   Particle p = particles[gid];
-  p.position += p.velocity;
+  p = update_particle(p);
+  ivec2 texture_size = imageSize(counter_texture);
+  p.position = clamp(p.position, ivec2(0, 0), texture_size);
   particles[gid] = p;
+  // Add value to col, row
+  imageAtomicAdd(counter_texture, ivec2(0, 0), 1);
 }
