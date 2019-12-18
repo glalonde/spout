@@ -1,7 +1,9 @@
 #include "src/image_io.h"
 #include "base/logging.h"
 #define STB_IMAGE_IMPLEMENTATION
+#define STB_IMAGE_WRITE_IMPLEMENTATION
 #include <stb_image.h>
+#include <stb_image_write.h>
 
 std::optional<Image<PixelType::RGBAU8>> ReadImage(const std::string& path) {
   int width, height, n_channels;
@@ -23,4 +25,24 @@ std::optional<Image<PixelType::RGBAU8>> ReadImage(const std::string& path) {
   }
   stbi_image_free(data);
   return out;
+}
+
+bool WriteImage(const Image<PixelType::RGBAU8>& image,
+                const std::string& path) {
+  constexpr int kNumChannels = PixelType::RGBAU8::RowsAtCompileTime;
+  // Swap col-major to row-major
+  Eigen::Array<PixelType::RGBAU8, Eigen::Dynamic, Eigen::Dynamic,
+               Eigen::RowMajor>
+      swapped = image;
+  const int stride = sizeof(PixelType::RGBAU8) * swapped.cols();
+  stbi_write_png_compression_level = 20;
+  int result = stbi_write_png(path.c_str(), swapped.cols(), swapped.rows(),
+                              kNumChannels, swapped.data(), stride);
+  if (result == 0) {
+    LOG(ERROR) << "Failed to write image to " << path
+               << ", return code: " << result;
+    return false;
+  } else {
+    return true;
+  }
 }

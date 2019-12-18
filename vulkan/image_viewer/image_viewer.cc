@@ -1,4 +1,4 @@
-#include "vulkan/hello_quad.h"
+#include "vulkan/image_viewer/image_viewer.h"
 
 #include <unordered_set>
 
@@ -6,6 +6,10 @@
 #include "base/logging.h"
 #include "base/time.h"
 #include "src/eigen_glm.h"
+#include "src/image_io.h"
+#include "vulkan/glfw.h"
+
+ABSL_FLAG(std::string, image_path, "", "Image path");
 
 const int WIDTH = 800;
 const int HEIGHT = 600;
@@ -18,16 +22,32 @@ static const std::vector<const char*> kValidationLayers = {
 static const std::vector<const char*> kDeviceExtensions = {
     VK_KHR_SWAPCHAIN_EXTENSION_NAME};
 
-HelloQuadApplication::HelloQuadApplication() : fps_(FromSeconds(1.0), 60.0) {}
+const std::vector<Vertex> kVertices = {{{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
+                                       {{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
+                                       {{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}},
+                                       {{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}}};
 
-void HelloQuadApplication::Run() {
+const std::vector<uint16_t> kIndices = {0, 1, 2, 2, 3, 0};
+
+void ImageViewerApplication::LoadImage(const std::string& path) {
+  auto maybe_image = ReadImage(path);
+  CHECK(maybe_image);
+  LOG(INFO) << Size(*maybe_image);
+  auto staging_buffer = allocator_->AllocateStagingBuffer(Size(*maybe_image),
+                                                          maybe_image->data());
+}
+
+ImageViewerApplication::ImageViewerApplication()
+    : fps_(FromSeconds(1.0), 60.0) {}
+
+void ImageViewerApplication::Run() {
   InitWindow();
   InitVulkan();
   MainLoop();
   Cleanup();
 }
 
-void HelloQuadApplication::InitWindow() {
+void ImageViewerApplication::InitWindow() {
   glfwInit();
 
   glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
@@ -37,14 +57,14 @@ void HelloQuadApplication::InitWindow() {
   glfwSetFramebufferSizeCallback(window_, FramebufferResizeCallback);
 }
 
-void HelloQuadApplication::FramebufferResizeCallback(GLFWwindow* window,
-                                                     int width, int height) {
-  auto app =
-      reinterpret_cast<HelloQuadApplication*>(glfwGetWindowUserPointer(window));
+void ImageViewerApplication::FramebufferResizeCallback(GLFWwindow* window,
+                                                       int width, int height) {
+  auto app = reinterpret_cast<ImageViewerApplication*>(
+      glfwGetWindowUserPointer(window));
   app->framebuffer_resized_ = true;
 }
 
-void HelloQuadApplication::InitVulkan() {
+void ImageViewerApplication::InitVulkan() {
   CreateInstance();
   if (kVulkanDebugMode) {
     LOG(INFO) << "Running in DEBUG mode.";
@@ -60,6 +80,9 @@ void HelloQuadApplication::InitVulkan() {
   CreateDescriptorSetLayout();
   CreateGraphicsPipeline();
   CreateFramebuffers();
+
+  LoadImage(absl::GetFlag(FLAGS_image_path));
+
   CreateCommandPool();
   CreateVertexBuffer();
   CreateIndexBuffer();
@@ -70,11 +93,11 @@ void HelloQuadApplication::InitVulkan() {
   CreateSyncObjects();
 }
 
-void HelloQuadApplication::CreateAllocator() {
+void ImageViewerApplication::CreateAllocator() {
   allocator_ = std::make_unique<VMAWrapper>(physical_device_, device_);
 }
 
-void HelloQuadApplication::MainLoop() {
+void ImageViewerApplication::MainLoop() {
   while (!glfwWindowShouldClose(window_)) {
     glfwPollEvents();
     DrawFrame();
@@ -84,7 +107,7 @@ void HelloQuadApplication::MainLoop() {
   vkDeviceWaitIdle(device_);
 }
 
-void HelloQuadApplication::CleanupSwapChain() {
+void ImageViewerApplication::CleanupSwapChain() {
   for (auto framebuffer : swap_chain_frame_buffers_) {
     vkDestroyFramebuffer(device_, framebuffer, nullptr);
   }
@@ -110,7 +133,7 @@ void HelloQuadApplication::CleanupSwapChain() {
   vkDestroyDescriptorPool(device_, descriptor_pool_, nullptr);
 }
 
-void HelloQuadApplication::Cleanup() {
+void ImageViewerApplication::Cleanup() {
   CleanupSwapChain();
 
   vkDestroyDescriptorSetLayout(device_, descriptor_set_layout_, nullptr);
@@ -138,7 +161,7 @@ void HelloQuadApplication::Cleanup() {
   glfwTerminate();
 }
 
-void HelloQuadApplication::RecreateSwapChain() {
+void ImageViewerApplication::RecreateSwapChain() {
   int width = 0;
   int height = 0;
   glfwGetFramebufferSize(window_, &width, &height);
@@ -162,7 +185,7 @@ void HelloQuadApplication::RecreateSwapChain() {
   CreateCommandBuffers();
 }
 
-void HelloQuadApplication::CreateInstance() {
+void ImageViewerApplication::CreateInstance() {
   if (kVulkanDebugMode && !CheckValidationLayerSupport(kValidationLayers)) {
     LOG(FATAL) << "Validation layers requested but not available.";
   }
@@ -196,14 +219,14 @@ void HelloQuadApplication::CreateInstance() {
   }
 }
 
-void HelloQuadApplication::CreateSurface() {
+void ImageViewerApplication::CreateSurface() {
   if (glfwCreateWindowSurface(instance_, window_, nullptr, &surface_) !=
       VK_SUCCESS) {
     LOG(FATAL) << "Failed to create window surface.";
   }
 }
 
-void HelloQuadApplication::PickPhysicalDevice() {
+void ImageViewerApplication::PickPhysicalDevice() {
   auto is_suitable = [this](VkPhysicalDevice device) {
     if (!CheckDeviceExtensionSupport(device, kDeviceExtensions)) {
       return false;
@@ -223,7 +246,7 @@ void HelloQuadApplication::PickPhysicalDevice() {
   physical_device_ = FindPhysicalDevice(instance_, is_suitable);
 }
 
-void HelloQuadApplication::CreateLogicalDevice() {
+void ImageViewerApplication::CreateLogicalDevice() {
   QueueFamilyIndices indices = FindQueueFamilies(surface_, physical_device_);
 
   std::vector<VkDeviceQueueCreateInfo> queue_create_infos;
@@ -273,7 +296,7 @@ void HelloQuadApplication::CreateLogicalDevice() {
   vkGetDeviceQueue(device_, indices.present_family.value(), 0, &present_queue_);
 }
 
-void HelloQuadApplication::CreateSwapChain() {
+void ImageViewerApplication::CreateSwapChain() {
   SwapChainSupportDetails swap_chain_support =
       QuerySwapChainSupport(surface_, physical_device_);
 
@@ -331,7 +354,7 @@ void HelloQuadApplication::CreateSwapChain() {
   swap_chain_extent_ = extent;
 }
 
-void HelloQuadApplication::CreateImageViews() {
+void ImageViewerApplication::CreateImageViews() {
   swap_chain_image_views_.resize(swap_chain_images_.size());
 
   for (size_t i = 0; i < swap_chain_images_.size(); i++) {
@@ -357,7 +380,7 @@ void HelloQuadApplication::CreateImageViews() {
   }
 }
 
-void HelloQuadApplication::CreateRenderPass() {
+void ImageViewerApplication::CreateRenderPass() {
   VkAttachmentDescription color_attachment = {};
   color_attachment.format = swap_chain_image_format_;
   color_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
@@ -401,7 +424,7 @@ void HelloQuadApplication::CreateRenderPass() {
   }
 }
 
-void HelloQuadApplication::CreateDescriptorSetLayout() {
+void ImageViewerApplication::CreateDescriptorSetLayout() {
   VkDescriptorSetLayoutBinding ubo_layout_binding = {};
   ubo_layout_binding.binding = 0;
   ubo_layout_binding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
@@ -420,7 +443,7 @@ void HelloQuadApplication::CreateDescriptorSetLayout() {
   }
 }
 
-void HelloQuadApplication::CreateGraphicsPipeline() {
+void ImageViewerApplication::CreateGraphicsPipeline() {
   VkShaderModule vert_shader_module =
       CreateShaderModule(device_, "vulkan/shaders/shader.vert.spv")
           .ValueOrDie();
@@ -550,7 +573,7 @@ void HelloQuadApplication::CreateGraphicsPipeline() {
   vkDestroyShaderModule(device_, vert_shader_module, nullptr);
 }
 
-void HelloQuadApplication::CreateFramebuffers() {
+void ImageViewerApplication::CreateFramebuffers() {
   swap_chain_frame_buffers_.resize(swap_chain_image_views_.size());
 
   for (size_t i = 0; i < swap_chain_image_views_.size(); i++) {
@@ -572,7 +595,7 @@ void HelloQuadApplication::CreateFramebuffers() {
   }
 }
 
-void HelloQuadApplication::CreateCommandPool() {
+void ImageViewerApplication::CreateCommandPool() {
   QueueFamilyIndices queue_family_indices =
       FindQueueFamilies(surface_, physical_device_);
 
@@ -586,7 +609,7 @@ void HelloQuadApplication::CreateCommandPool() {
   }
 }
 
-void HelloQuadApplication::CreateDescriptorPool() {
+void ImageViewerApplication::CreateDescriptorPool() {
   VkDescriptorPoolSize pool_size = {};
   pool_size.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
   pool_size.descriptorCount = static_cast<uint32_t>(swap_chain_images_.size());
@@ -602,7 +625,7 @@ void HelloQuadApplication::CreateDescriptorPool() {
   }
 }
 
-void HelloQuadApplication::CreateDescriptorSets() {
+void ImageViewerApplication::CreateDescriptorSets() {
   std::vector<VkDescriptorSetLayout> layouts(swap_chain_images_.size(),
                                              descriptor_set_layout_);
   VkDescriptorSetAllocateInfo alloc_info = {};
@@ -638,7 +661,7 @@ void HelloQuadApplication::CreateDescriptorSets() {
   }
 }
 
-void HelloQuadApplication::CreateVertexBuffer() {
+void ImageViewerApplication::CreateVertexBuffer() {
   VkDeviceSize buffer_size = sizeof(kVertices[0]) * kVertices.size();
   auto staging =
       allocator_->AllocateStagingBuffer(buffer_size, kVertices.data());
@@ -649,7 +672,7 @@ void HelloQuadApplication::CreateVertexBuffer() {
   allocator_->Free(staging);
 }
 
-void HelloQuadApplication::CreateIndexBuffer() {
+void ImageViewerApplication::CreateIndexBuffer() {
   VkDeviceSize buffer_size = sizeof(kIndices[0]) * kIndices.size();
   auto staging =
       allocator_->AllocateStagingBuffer(buffer_size, kIndices.data());
@@ -660,7 +683,7 @@ void HelloQuadApplication::CreateIndexBuffer() {
   allocator_->Free(staging);
 }
 
-void HelloQuadApplication::CreateUniformBuffers() {
+void ImageViewerApplication::CreateUniformBuffers() {
   VkDeviceSize buffer_size = sizeof(UniformBufferObject);
   uniform_buffers_.resize(swap_chain_images_.size());
 
@@ -670,8 +693,8 @@ void HelloQuadApplication::CreateUniformBuffers() {
   }
 }
 
-void HelloQuadApplication::CopyBuffer(VkBuffer src_buff, VkBuffer dest_buff,
-                                      VkDeviceSize size) {
+void ImageViewerApplication::CopyBuffer(VkBuffer src_buff, VkBuffer dest_buff,
+                                        VkDeviceSize size) {
   VkCommandBufferAllocateInfo alloc_info = {};
   alloc_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
   alloc_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
@@ -703,7 +726,7 @@ void HelloQuadApplication::CopyBuffer(VkBuffer src_buff, VkBuffer dest_buff,
   vkFreeCommandBuffers(device_, command_pool_, 1, &command_buffer);
 }
 
-void HelloQuadApplication::CreateCommandBuffers() {
+void ImageViewerApplication::CreateCommandBuffers() {
   command_buffers_.resize(swap_chain_frame_buffers_.size());
 
   VkCommandBufferAllocateInfo alloc_info = {};
@@ -761,7 +784,7 @@ void HelloQuadApplication::CreateCommandBuffers() {
   }
 }
 
-void HelloQuadApplication::CreateSyncObjects() {
+void ImageViewerApplication::CreateSyncObjects() {
   image_available_semaphores_.resize(kMaxFramesInFlight);
   render_finished_semaphores_.resize(kMaxFramesInFlight);
   in_flight_fences_.resize(kMaxFramesInFlight);
@@ -785,7 +808,7 @@ void HelloQuadApplication::CreateSyncObjects() {
   }
 }
 
-void HelloQuadApplication::DrawFrame() {
+void ImageViewerApplication::DrawFrame() {
   vkWaitForFences(device_, 1, &in_flight_fences_[current_frame_], VK_TRUE,
                   std::numeric_limits<uint64_t>::max());
 
@@ -854,7 +877,7 @@ void HelloQuadApplication::DrawFrame() {
   current_frame_ = (current_frame_ + 1) % kMaxFramesInFlight;
 }
 
-void HelloQuadApplication::UpdateUniformBuffer(uint32_t current_image) {
+void ImageViewerApplication::UpdateUniformBuffer(uint32_t current_image) {
   static auto start_time = ClockType::now();
   auto current_time = ClockType::now();
   float time = ToSeconds<float>(current_time - start_time);
@@ -875,7 +898,7 @@ void HelloQuadApplication::UpdateUniformBuffer(uint32_t current_image) {
   allocator_->CopyToBuffer(uniform_buffers_[current_image], &ubo, sizeof(ubo));
 }
 
-VkSurfaceFormatKHR HelloQuadApplication::ChooseSwapSurfaceFormat(
+VkSurfaceFormatKHR ImageViewerApplication::ChooseSwapSurfaceFormat(
     const std::vector<VkSurfaceFormatKHR>& available_formats) {
   if (available_formats.size() == 1 &&
       available_formats[0].format == VK_FORMAT_UNDEFINED) {
@@ -892,7 +915,7 @@ VkSurfaceFormatKHR HelloQuadApplication::ChooseSwapSurfaceFormat(
   return available_formats[0];
 }
 
-VkPresentModeKHR HelloQuadApplication::ChooseSwapPresentMode(
+VkPresentModeKHR ImageViewerApplication::ChooseSwapPresentMode(
     const std::vector<VkPresentModeKHR>& available_present_modes) {
   VkPresentModeKHR best_mode = VK_PRESENT_MODE_FIFO_KHR;
 
@@ -907,7 +930,7 @@ VkPresentModeKHR HelloQuadApplication::ChooseSwapPresentMode(
   return best_mode;
 }
 
-VkExtent2D HelloQuadApplication::ChooseSwapExtent(
+VkExtent2D ImageViewerApplication::ChooseSwapExtent(
     const VkSurfaceCapabilitiesKHR& capabilities) {
   if (capabilities.currentExtent.width !=
       std::numeric_limits<uint32_t>::max()) {
@@ -930,7 +953,7 @@ VkExtent2D HelloQuadApplication::ChooseSwapExtent(
   }
 }
 
-std::vector<const char*> HelloQuadApplication::GetRequiredExtensions() {
+std::vector<const char*> ImageViewerApplication::GetRequiredExtensions() {
   uint32_t glfw_extension_count = 0;
   const char** glfw_extensions;
   glfw_extensions = glfwGetRequiredInstanceExtensions(&glfw_extension_count);
@@ -943,20 +966,4 @@ std::vector<const char*> HelloQuadApplication::GetRequiredExtensions() {
   }
 
   return extensions;
-}
-
-bool HelloQuadApplication::CheckValidationLayerSupport() {
-  uint32_t layer_count;
-  vkEnumerateInstanceLayerProperties(&layer_count, nullptr);
-
-  std::vector<VkLayerProperties> available_layers(layer_count);
-  vkEnumerateInstanceLayerProperties(&layer_count, available_layers.data());
-  std::unordered_set<std::string> layer_set;
-  for (const auto& prop : available_layers) {
-    layer_set.emplace(prop.layerName);
-  }
-  return std::all_of(kValidationLayers.begin(), kValidationLayers.end(),
-                     [&layer_set](const auto& layer_name) {
-                       return layer_set.count(layer_name);
-                     });
 }

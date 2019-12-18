@@ -1,4 +1,4 @@
-#include "vulkan/hello_quad.h"
+#include "vulkan/game_controller.h"
 
 #include <unordered_set>
 
@@ -18,16 +18,61 @@ static const std::vector<const char*> kValidationLayers = {
 static const std::vector<const char*> kDeviceExtensions = {
     VK_KHR_SWAPCHAIN_EXTENSION_NAME};
 
-HelloQuadApplication::HelloQuadApplication() : fps_(FromSeconds(1.0), 60.0) {}
+struct Vertex {
+  Vector2f position;
+  Vector3f color;
 
-void HelloQuadApplication::Run() {
+  static VkVertexInputBindingDescription GetBindingDescription() {
+    VkVertexInputBindingDescription desc = {};
+    desc.binding = 0;
+    desc.stride = sizeof(Vertex);
+    desc.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+    return desc;
+  }
+
+  static std::array<VkVertexInputAttributeDescription, 2>
+  GetAttributeDescriptions() {
+    std::array<VkVertexInputAttributeDescription, 2> desc = {};
+    desc[0].binding = 0;
+    desc[0].location = 0;
+    desc[0].format = VK_FORMAT_R32G32_SFLOAT;
+    desc[0].offset = offsetof(Vertex, position);
+
+    desc[1].binding = 0;
+    desc[1].location = 1;
+    desc[1].format = VK_FORMAT_R32G32B32_SFLOAT;
+    desc[1].offset = offsetof(Vertex, color);
+
+    return desc;
+  }
+};
+
+struct UniformBufferObject {
+  Matrix4f model;
+  Matrix4f view;
+  Matrix4f proj;
+};
+
+const std::vector<Vertex> kVertices = {{{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
+                                       {{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
+                                       {{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}},
+                                       {{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}}};
+
+const std::vector<uint16_t> kIndices = {0, 1, 2, 2, 3, 0};
+
+GameController::GameController()
+    : fps_(FromSeconds(1.0), 60.0),
+      current_frame_(0),
+      framebuffer_resized_(false) {}
+
+void GameController::Run() {
   InitWindow();
   InitVulkan();
   MainLoop();
   Cleanup();
 }
 
-void HelloQuadApplication::InitWindow() {
+void GameController::InitWindow() {
   glfwInit();
 
   glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
@@ -37,14 +82,14 @@ void HelloQuadApplication::InitWindow() {
   glfwSetFramebufferSizeCallback(window_, FramebufferResizeCallback);
 }
 
-void HelloQuadApplication::FramebufferResizeCallback(GLFWwindow* window,
-                                                     int width, int height) {
+void GameController::FramebufferResizeCallback(GLFWwindow* window, int width,
+                                               int height) {
   auto app =
-      reinterpret_cast<HelloQuadApplication*>(glfwGetWindowUserPointer(window));
+      reinterpret_cast<GameController*>(glfwGetWindowUserPointer(window));
   app->framebuffer_resized_ = true;
 }
 
-void HelloQuadApplication::InitVulkan() {
+void GameController::InitVulkan() {
   CreateInstance();
   if (kVulkanDebugMode) {
     LOG(INFO) << "Running in DEBUG mode.";
@@ -70,11 +115,11 @@ void HelloQuadApplication::InitVulkan() {
   CreateSyncObjects();
 }
 
-void HelloQuadApplication::CreateAllocator() {
+void GameController::CreateAllocator() {
   allocator_ = std::make_unique<VMAWrapper>(physical_device_, device_);
 }
 
-void HelloQuadApplication::MainLoop() {
+void GameController::MainLoop() {
   while (!glfwWindowShouldClose(window_)) {
     glfwPollEvents();
     DrawFrame();
@@ -84,7 +129,7 @@ void HelloQuadApplication::MainLoop() {
   vkDeviceWaitIdle(device_);
 }
 
-void HelloQuadApplication::CleanupSwapChain() {
+void GameController::CleanupSwapChain() {
   for (auto framebuffer : swap_chain_frame_buffers_) {
     vkDestroyFramebuffer(device_, framebuffer, nullptr);
   }
@@ -110,7 +155,7 @@ void HelloQuadApplication::CleanupSwapChain() {
   vkDestroyDescriptorPool(device_, descriptor_pool_, nullptr);
 }
 
-void HelloQuadApplication::Cleanup() {
+void GameController::Cleanup() {
   CleanupSwapChain();
 
   vkDestroyDescriptorSetLayout(device_, descriptor_set_layout_, nullptr);
@@ -138,7 +183,7 @@ void HelloQuadApplication::Cleanup() {
   glfwTerminate();
 }
 
-void HelloQuadApplication::RecreateSwapChain() {
+void GameController::RecreateSwapChain() {
   int width = 0;
   int height = 0;
   glfwGetFramebufferSize(window_, &width, &height);
@@ -162,7 +207,7 @@ void HelloQuadApplication::RecreateSwapChain() {
   CreateCommandBuffers();
 }
 
-void HelloQuadApplication::CreateInstance() {
+void GameController::CreateInstance() {
   if (kVulkanDebugMode && !CheckValidationLayerSupport(kValidationLayers)) {
     LOG(FATAL) << "Validation layers requested but not available.";
   }
@@ -196,14 +241,14 @@ void HelloQuadApplication::CreateInstance() {
   }
 }
 
-void HelloQuadApplication::CreateSurface() {
+void GameController::CreateSurface() {
   if (glfwCreateWindowSurface(instance_, window_, nullptr, &surface_) !=
       VK_SUCCESS) {
     LOG(FATAL) << "Failed to create window surface.";
   }
 }
 
-void HelloQuadApplication::PickPhysicalDevice() {
+void GameController::PickPhysicalDevice() {
   auto is_suitable = [this](VkPhysicalDevice device) {
     if (!CheckDeviceExtensionSupport(device, kDeviceExtensions)) {
       return false;
@@ -223,7 +268,7 @@ void HelloQuadApplication::PickPhysicalDevice() {
   physical_device_ = FindPhysicalDevice(instance_, is_suitable);
 }
 
-void HelloQuadApplication::CreateLogicalDevice() {
+void GameController::CreateLogicalDevice() {
   QueueFamilyIndices indices = FindQueueFamilies(surface_, physical_device_);
 
   std::vector<VkDeviceQueueCreateInfo> queue_create_infos;
@@ -273,7 +318,7 @@ void HelloQuadApplication::CreateLogicalDevice() {
   vkGetDeviceQueue(device_, indices.present_family.value(), 0, &present_queue_);
 }
 
-void HelloQuadApplication::CreateSwapChain() {
+void GameController::CreateSwapChain() {
   SwapChainSupportDetails swap_chain_support =
       QuerySwapChainSupport(surface_, physical_device_);
 
@@ -331,7 +376,7 @@ void HelloQuadApplication::CreateSwapChain() {
   swap_chain_extent_ = extent;
 }
 
-void HelloQuadApplication::CreateImageViews() {
+void GameController::CreateImageViews() {
   swap_chain_image_views_.resize(swap_chain_images_.size());
 
   for (size_t i = 0; i < swap_chain_images_.size(); i++) {
@@ -357,7 +402,7 @@ void HelloQuadApplication::CreateImageViews() {
   }
 }
 
-void HelloQuadApplication::CreateRenderPass() {
+void GameController::CreateRenderPass() {
   VkAttachmentDescription color_attachment = {};
   color_attachment.format = swap_chain_image_format_;
   color_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
@@ -401,7 +446,7 @@ void HelloQuadApplication::CreateRenderPass() {
   }
 }
 
-void HelloQuadApplication::CreateDescriptorSetLayout() {
+void GameController::CreateDescriptorSetLayout() {
   VkDescriptorSetLayoutBinding ubo_layout_binding = {};
   ubo_layout_binding.binding = 0;
   ubo_layout_binding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
@@ -420,12 +465,9 @@ void HelloQuadApplication::CreateDescriptorSetLayout() {
   }
 }
 
-void HelloQuadApplication::CreateGraphicsPipeline() {
+void GameController::CreateGraphicsPipeline() {
   VkShaderModule vert_shader_module =
       CreateShaderModule(device_, "vulkan/shaders/shader.vert.spv")
-          .ValueOrDie();
-  VkShaderModule frag_shader_module =
-      CreateShaderModule(device_, "vulkan/shaders/shader.frag.spv")
           .ValueOrDie();
 
   VkPipelineShaderStageCreateInfo vert_shader_stage_info = {};
@@ -435,6 +477,9 @@ void HelloQuadApplication::CreateGraphicsPipeline() {
   vert_shader_stage_info.module = vert_shader_module;
   vert_shader_stage_info.pName = "main";
 
+  VkShaderModule frag_shader_module =
+      CreateShaderModule(device_, "vulkan/shaders/shader.frag.spv")
+          .ValueOrDie();
   VkPipelineShaderStageCreateInfo frag_shader_stage_info = {};
   frag_shader_stage_info.sType =
       VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
@@ -442,8 +487,8 @@ void HelloQuadApplication::CreateGraphicsPipeline() {
   frag_shader_stage_info.module = frag_shader_module;
   frag_shader_stage_info.pName = "main";
 
-  VkPipelineShaderStageCreateInfo shaderStages[] = {vert_shader_stage_info,
-                                                    frag_shader_stage_info};
+  VkPipelineShaderStageCreateInfo shader_stages[] = {vert_shader_stage_info,
+                                                     frag_shader_stage_info};
 
   VkPipelineVertexInputStateCreateInfo vertex_input_info = {};
   vertex_input_info.sType =
@@ -529,7 +574,7 @@ void HelloQuadApplication::CreateGraphicsPipeline() {
   VkGraphicsPipelineCreateInfo pipeline_info = {};
   pipeline_info.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
   pipeline_info.stageCount = 2;
-  pipeline_info.pStages = shaderStages;
+  pipeline_info.pStages = shader_stages;
   pipeline_info.pVertexInputState = &vertex_input_info;
   pipeline_info.pInputAssemblyState = &input_assembly;
   pipeline_info.pViewportState = &viewport_state;
@@ -550,7 +595,7 @@ void HelloQuadApplication::CreateGraphicsPipeline() {
   vkDestroyShaderModule(device_, vert_shader_module, nullptr);
 }
 
-void HelloQuadApplication::CreateFramebuffers() {
+void GameController::CreateFramebuffers() {
   swap_chain_frame_buffers_.resize(swap_chain_image_views_.size());
 
   for (size_t i = 0; i < swap_chain_image_views_.size(); i++) {
@@ -572,7 +617,7 @@ void HelloQuadApplication::CreateFramebuffers() {
   }
 }
 
-void HelloQuadApplication::CreateCommandPool() {
+void GameController::CreateCommandPool() {
   QueueFamilyIndices queue_family_indices =
       FindQueueFamilies(surface_, physical_device_);
 
@@ -586,7 +631,7 @@ void HelloQuadApplication::CreateCommandPool() {
   }
 }
 
-void HelloQuadApplication::CreateDescriptorPool() {
+void GameController::CreateDescriptorPool() {
   VkDescriptorPoolSize pool_size = {};
   pool_size.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
   pool_size.descriptorCount = static_cast<uint32_t>(swap_chain_images_.size());
@@ -602,7 +647,7 @@ void HelloQuadApplication::CreateDescriptorPool() {
   }
 }
 
-void HelloQuadApplication::CreateDescriptorSets() {
+void GameController::CreateDescriptorSets() {
   std::vector<VkDescriptorSetLayout> layouts(swap_chain_images_.size(),
                                              descriptor_set_layout_);
   VkDescriptorSetAllocateInfo alloc_info = {};
@@ -638,7 +683,7 @@ void HelloQuadApplication::CreateDescriptorSets() {
   }
 }
 
-void HelloQuadApplication::CreateVertexBuffer() {
+void GameController::CreateVertexBuffer() {
   VkDeviceSize buffer_size = sizeof(kVertices[0]) * kVertices.size();
   auto staging =
       allocator_->AllocateStagingBuffer(buffer_size, kVertices.data());
@@ -649,7 +694,7 @@ void HelloQuadApplication::CreateVertexBuffer() {
   allocator_->Free(staging);
 }
 
-void HelloQuadApplication::CreateIndexBuffer() {
+void GameController::CreateIndexBuffer() {
   VkDeviceSize buffer_size = sizeof(kIndices[0]) * kIndices.size();
   auto staging =
       allocator_->AllocateStagingBuffer(buffer_size, kIndices.data());
@@ -660,7 +705,7 @@ void HelloQuadApplication::CreateIndexBuffer() {
   allocator_->Free(staging);
 }
 
-void HelloQuadApplication::CreateUniformBuffers() {
+void GameController::CreateUniformBuffers() {
   VkDeviceSize buffer_size = sizeof(UniformBufferObject);
   uniform_buffers_.resize(swap_chain_images_.size());
 
@@ -670,8 +715,8 @@ void HelloQuadApplication::CreateUniformBuffers() {
   }
 }
 
-void HelloQuadApplication::CopyBuffer(VkBuffer src_buff, VkBuffer dest_buff,
-                                      VkDeviceSize size) {
+void GameController::CopyBuffer(VkBuffer src_buff, VkBuffer dest_buff,
+                                VkDeviceSize size) {
   VkCommandBufferAllocateInfo alloc_info = {};
   alloc_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
   alloc_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
@@ -703,7 +748,7 @@ void HelloQuadApplication::CopyBuffer(VkBuffer src_buff, VkBuffer dest_buff,
   vkFreeCommandBuffers(device_, command_pool_, 1, &command_buffer);
 }
 
-void HelloQuadApplication::CreateCommandBuffers() {
+void GameController::CreateCommandBuffers() {
   command_buffers_.resize(swap_chain_frame_buffers_.size());
 
   VkCommandBufferAllocateInfo alloc_info = {};
@@ -761,7 +806,7 @@ void HelloQuadApplication::CreateCommandBuffers() {
   }
 }
 
-void HelloQuadApplication::CreateSyncObjects() {
+void GameController::CreateSyncObjects() {
   image_available_semaphores_.resize(kMaxFramesInFlight);
   render_finished_semaphores_.resize(kMaxFramesInFlight);
   in_flight_fences_.resize(kMaxFramesInFlight);
@@ -785,7 +830,7 @@ void HelloQuadApplication::CreateSyncObjects() {
   }
 }
 
-void HelloQuadApplication::DrawFrame() {
+void GameController::DrawFrame() {
   vkWaitForFences(device_, 1, &in_flight_fences_[current_frame_], VK_TRUE,
                   std::numeric_limits<uint64_t>::max());
 
@@ -854,7 +899,7 @@ void HelloQuadApplication::DrawFrame() {
   current_frame_ = (current_frame_ + 1) % kMaxFramesInFlight;
 }
 
-void HelloQuadApplication::UpdateUniformBuffer(uint32_t current_image) {
+void GameController::UpdateUniformBuffer(uint32_t current_image) {
   static auto start_time = ClockType::now();
   auto current_time = ClockType::now();
   float time = ToSeconds<float>(current_time - start_time);
@@ -875,7 +920,7 @@ void HelloQuadApplication::UpdateUniformBuffer(uint32_t current_image) {
   allocator_->CopyToBuffer(uniform_buffers_[current_image], &ubo, sizeof(ubo));
 }
 
-VkSurfaceFormatKHR HelloQuadApplication::ChooseSwapSurfaceFormat(
+VkSurfaceFormatKHR GameController::ChooseSwapSurfaceFormat(
     const std::vector<VkSurfaceFormatKHR>& available_formats) {
   if (available_formats.size() == 1 &&
       available_formats[0].format == VK_FORMAT_UNDEFINED) {
@@ -892,7 +937,7 @@ VkSurfaceFormatKHR HelloQuadApplication::ChooseSwapSurfaceFormat(
   return available_formats[0];
 }
 
-VkPresentModeKHR HelloQuadApplication::ChooseSwapPresentMode(
+VkPresentModeKHR GameController::ChooseSwapPresentMode(
     const std::vector<VkPresentModeKHR>& available_present_modes) {
   VkPresentModeKHR best_mode = VK_PRESENT_MODE_FIFO_KHR;
 
@@ -907,7 +952,7 @@ VkPresentModeKHR HelloQuadApplication::ChooseSwapPresentMode(
   return best_mode;
 }
 
-VkExtent2D HelloQuadApplication::ChooseSwapExtent(
+VkExtent2D GameController::ChooseSwapExtent(
     const VkSurfaceCapabilitiesKHR& capabilities) {
   if (capabilities.currentExtent.width !=
       std::numeric_limits<uint32_t>::max()) {
@@ -930,7 +975,7 @@ VkExtent2D HelloQuadApplication::ChooseSwapExtent(
   }
 }
 
-std::vector<const char*> HelloQuadApplication::GetRequiredExtensions() {
+std::vector<const char*> GameController::GetRequiredExtensions() {
   uint32_t glfw_extension_count = 0;
   const char** glfw_extensions;
   glfw_extensions = glfwGetRequiredInstanceExtensions(&glfw_extension_count);
@@ -943,20 +988,4 @@ std::vector<const char*> HelloQuadApplication::GetRequiredExtensions() {
   }
 
   return extensions;
-}
-
-bool HelloQuadApplication::CheckValidationLayerSupport() {
-  uint32_t layer_count;
-  vkEnumerateInstanceLayerProperties(&layer_count, nullptr);
-
-  std::vector<VkLayerProperties> available_layers(layer_count);
-  vkEnumerateInstanceLayerProperties(&layer_count, available_layers.data());
-  std::unordered_set<std::string> layer_set;
-  for (const auto& prop : available_layers) {
-    layer_set.emplace(prop.layerName);
-  }
-  return std::all_of(kValidationLayers.begin(), kValidationLayers.end(),
-                     [&layer_set](const auto& layer_name) {
-                       return layer_set.count(layer_name);
-                     });
 }

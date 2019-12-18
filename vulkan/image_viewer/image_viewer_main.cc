@@ -1,9 +1,9 @@
 #include "base/init.h"
-#include "vulkan/hello_quad.h"
+#include "vulkan/image_viewer/image_viewer.h"
 
 int main(int argc, char* argv[]) {
   Init(argc, argv);
-  HelloQuadApplication app;
+  ImageViewerApplication app;
   app.Run();
   return EXIT_SUCCESS;
 }

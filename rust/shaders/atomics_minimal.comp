@@ -1,0 +1,19 @@
+#version 450 core
+layout(local_size_x = 512, local_size_y = 1, local_size_z = 1) in;
+layout (binding = 0, r32ui) uniform uimage2D counter_texture;
+
+void load_store(ivec2 pixel, uint add_val) {
+  uint val = imageLoad(counter_texture, ivec2(0,0)).x;
+  imageStore(counter_texture, ivec2(0,0), uvec4(val + add_val, 0, 0, 0));
+}
+
+void atomic_add(ivec2 pixel, uint add_val) {
+  imageAtomicAdd(counter_texture, pixel, add_val);
+}
+
+void main() {
+  uint gid = gl_GlobalInvocationID.x;
+  ivec2 texture_size = imageSize(counter_texture);
+  load_store(ivec2(0, 0), 7);
+  atomic_add(ivec2(1, 0), 7);
+}

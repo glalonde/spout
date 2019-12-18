@@ -1,9 +1,9 @@
 #include "base/init.h"
-#include "vulkan/hello_quad.h"
+#include "vulkan/game_controller.h"
 
 int main(int argc, char* argv[]) {
   Init(argc, argv);
-  HelloQuadApplication app;
+  GameController app;
   app.Run();
   return EXIT_SUCCESS;
 }

@@ -48,19 +48,52 @@ struct UniformBufferObject {
   Matrix4f proj;
 };
 
-const std::vector<Vertex> kVertices = {{{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
-                                       {{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
-                                       {{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}},
-                                       {{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}}};
 
-const std::vector<uint16_t> kIndices = {0, 1, 2, 2, 3, 0};
-
-class HelloQuadApplication {
+class ImageViewerApplication {
  public:
-  HelloQuadApplication();
+  ImageViewerApplication();
   void Run();
 
  private:
+  static void FramebufferResizeCallback(GLFWwindow* window, int width,
+                                        int height);
+
+  void LoadImage(const std::string& path);
+  void InitWindow();
+  void InitVulkan();
+  void CreateAllocator();
+  void MainLoop();
+  void CleanupSwapChain();
+  void Cleanup();
+  void RecreateSwapChain();
+  void CreateInstance();
+  void CreateSurface();
+  void PickPhysicalDevice();
+  void CreateLogicalDevice();
+  void CreateSwapChain();
+  void CreateImageViews();
+  void CreateRenderPass();
+  void CreateDescriptorSetLayout();
+  void CreateGraphicsPipeline();
+  void CreateFramebuffers();
+  void CreateCommandPool();
+  void CreateDescriptorPool();
+  void CreateDescriptorSets();
+  void CreateVertexBuffer();
+  void CreateIndexBuffer();
+  void CreateUniformBuffers();
+  void CopyBuffer(VkBuffer src_buff, VkBuffer dest_buff, VkDeviceSize size);
+  void CreateCommandBuffers();
+  void CreateSyncObjects();
+  void DrawFrame();
+  void UpdateUniformBuffer(uint32_t current_image);
+  VkSurfaceFormatKHR ChooseSwapSurfaceFormat(
+      const std::vector<VkSurfaceFormatKHR>& available_formats);
+  VkPresentModeKHR ChooseSwapPresentMode(
+      const std::vector<VkPresentModeKHR>& available_present_modes);
+  VkExtent2D ChooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities);
+  std::vector<const char*> GetRequiredExtensions();
+
   GLFWwindow* window_;
   FPSEstimator fps_;
 
@@ -94,6 +127,8 @@ class HelloQuadApplication {
   VMAWrapper::Buffer vertex_buffer_;
   VMAWrapper::Buffer index_buffer_;
   std::vector<VMAWrapper::Buffer> uniform_buffers_;
+  VkImage texture_image_;
+  VMAWrapper::Buffer texture_image_memory_;
 
   std::vector<VkCommandBuffer> command_buffers_;
 
@@ -103,73 +138,4 @@ class HelloQuadApplication {
   size_t current_frame_ = 0;
 
   bool framebuffer_resized_ = false;
-
-  void InitWindow();
-
-  static void FramebufferResizeCallback(GLFWwindow* window, int width,
-                                        int height);
-
-  void InitVulkan();
-
-  void CreateAllocator();
-
-  void MainLoop();
-
-  void CleanupSwapChain();
-
-  void Cleanup();
-
-  void RecreateSwapChain();
-
-  void CreateInstance();
-
-  void CreateSurface();
-
-  void PickPhysicalDevice();
-
-  void CreateLogicalDevice();
-
-  void CreateSwapChain();
-
-  void CreateImageViews();
-
-  void CreateRenderPass();
-
-  void CreateDescriptorSetLayout();
-
-  void CreateGraphicsPipeline();
-
-  void CreateFramebuffers();
-
-  void CreateCommandPool();
-
-  void CreateDescriptorPool();
-
-  void CreateDescriptorSets();
-
-  void CreateVertexBuffer();
-
-  void CreateIndexBuffer();
-
-  void CreateUniformBuffers();
-
-  void CopyBuffer(VkBuffer src_buff, VkBuffer dest_buff, VkDeviceSize size);
-
-  void CreateCommandBuffers();
-
-  void CreateSyncObjects();
-
-  void DrawFrame();
-
-  void UpdateUniformBuffer(uint32_t current_image);
-
-  VkSurfaceFormatKHR ChooseSwapSurfaceFormat(
-      const std::vector<VkSurfaceFormatKHR>& available_formats);
-
-  VkPresentModeKHR ChooseSwapPresentMode(
-      const std::vector<VkPresentModeKHR>& available_present_modes);
-
-  VkExtent2D ChooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities);
-
-  std::vector<const char*> GetRequiredExtensions();
 };

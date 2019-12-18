@@ -1,4 +1,5 @@
 #include "vulkan/vulkan_utils.h"
+#include "base/file.h"
 #include "base/logging.h"
 
 VulkanDebugMessenger::VulkanDebugMessenger(VkInstance instance)
@@ -60,4 +61,94 @@ VKAPI_ATTR VkBool32 VKAPI_CALL VulkanDebugMessenger::DebugCallback(
       break;
   }
   return VK_FALSE;
+}
+
+QueueFamilyIndices FindQueueFamilies(VkSurfaceKHR surface,
+                                     VkPhysicalDevice device) {
+  QueueFamilyIndices indices;
+
+  uint32_t queue_family_count = 0;
+  vkGetPhysicalDeviceQueueFamilyProperties(device, &queue_family_count,
+                                           nullptr);
+
+  std::vector<VkQueueFamilyProperties> queue_families(queue_family_count);
+  vkGetPhysicalDeviceQueueFamilyProperties(device, &queue_family_count,
+                                           queue_families.data());
+
+  int i = 0;
+  for (const auto& queue_family : queue_families) {
+    // Graphics queue
+    if (queue_family.queueCount > 0 &&
+        queue_family.queueFlags & VK_QUEUE_GRAPHICS_BIT) {
+      indices.graphics_family = i;
+    }
+
+    // Compute queue
+    if (queue_family.queueCount > 0 &&
+        queue_family.queueFlags & VK_QUEUE_COMPUTE_BIT) {
+      indices.compute_family = i;
+    }
+
+    // Present queue
+    if (surface != VK_NULL_HANDLE) {
+      VkBool32 present_support = false;
+      vkGetPhysicalDeviceSurfaceSupportKHR(device, i, surface,
+                                           &present_support);
+      if (queue_family.queueCount > 0 && present_support) {
+        indices.present_family = i;
+      }
+    }
+
+    i++;
+  }
+
+  return indices;
+}
+
+SwapChainSupportDetails QuerySwapChainSupport(VkSurfaceKHR surface,
+                                              VkPhysicalDevice device) {
+  SwapChainSupportDetails details;
+
+  vkGetPhysicalDeviceSurfaceCapabilitiesKHR(device, surface,
+                                            &details.capabilities);
+
+  uint32_t format_count;
+  vkGetPhysicalDeviceSurfaceFormatsKHR(device, surface, &format_count, nullptr);
+
+  if (format_count != 0) {
+    details.formats.resize(format_count);
+    vkGetPhysicalDeviceSurfaceFormatsKHR(device, surface, &format_count,
+                                         details.formats.data());
+  }
+
+  uint32_t present_mode_count;
+  vkGetPhysicalDeviceSurfacePresentModesKHR(device, surface,
+                                            &present_mode_count, nullptr);
+
+  if (present_mode_count != 0) {
+    details.present_modes.resize(present_mode_count);
+    vkGetPhysicalDeviceSurfacePresentModesKHR(
+        device, surface, &present_mode_count, details.present_modes.data());
+  }
+
+  return details;
+}
+
+ErrorXor<VkShaderModule> CreateShaderModule(VkDevice device,
+                                            const std::string_view& path) {
+  auto maybe_shader_code = TryReadFile(path);
+  if (!maybe_shader_code) {
+    return std::move(*maybe_shader_code.ErrorOrNull());
+  }
+  const std::string& code = maybe_shader_code.ValueOrDie();
+  VkShaderModuleCreateInfo create_info = {};
+  create_info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+  create_info.codeSize = code.size();
+  create_info.pCode = reinterpret_cast<const uint32_t*>(code.data());
+  VkShaderModule shader_module;
+  if (vkCreateShaderModule(device, &create_info, nullptr, &shader_module) !=
+      VK_SUCCESS) {
+    return TraceError("Failed to create shader module.");
+  }
+  return shader_module;
 }
