@@ -73,6 +73,9 @@ fn run() {
         limits: wgpu::Limits::default(),
     });
 
+    // This needs to match the layout size in the the particle compute shader. Maybe an equivalent to "specialization constants" will come out and allow us to specify the 512 programmatically.
+    let particle_group_size = 512;
+    let num_work_groups = (NUM_PARTICLES.flag as f64 / particle_group_size as f64).ceil() as u32;
     let cs = spout::include_shader!("atomics.comp.spv");
     let cs_module =
         device.create_shader_module(&wgpu::read_spirv(std::io::Cursor::new(&cs[..])).unwrap());
@@ -174,7 +177,7 @@ fn run() {
         let mut cpass = encoder.begin_compute_pass();
         cpass.set_pipeline(&compute_pipeline);
         cpass.set_bind_group(0, &bind_group, &[]);
-        cpass.dispatch(particle_buf.len() as u32, 1, 1);
+        cpass.dispatch(num_work_groups, 1, 1);
     };
     let copy_buffer_to_buffer =
         |from: &wgpu::Buffer, to: &wgpu::Buffer, queue: &mut wgpu::Queue| {
@@ -250,7 +253,7 @@ fn run() {
             if let Ok(mapping) = result {
                 let mut sum: i64 = 0;
                 for v in mapping.data {
-                    info!("val: {}, {:#034b}, {:b}", v, v, 1);
+                    // info!("val: {}, {:#034b}, {:b}", v, v, 1);
                     sum += *v as i64;
                 }
                 info!("Num particles: {}", sum);

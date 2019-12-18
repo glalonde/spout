@@ -22,12 +22,15 @@ Particle update_particle(Particle p) {
 
 void main() {
   uint gid = gl_GlobalInvocationID.x;
+  if (gid >= particles.length()) {
+    // This particle doesn't exist.
+    return;
+  }
   Particle p = particles[gid];
   p = update_particle(p);
   ivec2 texture_size = imageSize(counter_texture);
-  p.position = clamp(p.position, ivec2(0, 0), texture_size);
+  p.position = clamp(p.position, ivec2(0, 0), texture_size - ivec2(1, 1));
   particles[gid] = p;
   // Add value to col, row
-  imageAtomicAdd(counter_texture, ivec2(0, 0), 3);
-  imageAtomicOr(counter_texture, ivec2(0,0), 1);
+  imageAtomicAdd(counter_texture, p.position, 1);
 }
