@@ -1,10 +1,11 @@
 // TODO: uniforms
 // TODO: Use framework https://github.com/gfx-rs/wgpu-rs/blob/v0.4/examples/framework.rs
 
+// Generate a set of pixels to initialize the texture with.
 fn create_texel(width: u32, height: u32) -> Vec<u8> {
     // Construct a new by repeated calls to the supplied closure.
     let img = image::RgbaImage::from_fn(width, height, |x, _y| {
-        if x % 2 == 0 {
+        if (x % 10) > 4 {
             image::Rgba([0, 255, 0, 255])
         } else {
             image::Rgba([255, 0, 0, 255])
