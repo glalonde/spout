@@ -1,18 +1,69 @@
 // TODO: uniforms
 #[path = "../framework.rs"]
 mod framework;
+use log::info;
 
-// Generate a set of pixels to initialize the texture with.
-fn create_texel(width: u32, height: u32) -> Vec<u8> {
-    // Construct a new by repeated calls to the supplied closure.
-    let img = image::RgbaImage::from_fn(width, height, |x, _y| {
-        if (x % 10) > 4 {
-            image::Rgba([0, 255, 0, 255])
-        } else {
-            image::Rgba([255, 0, 0, 255])
-        }
+// Read an image file, create a command to copy it to a texture, and return a view.
+fn load_png_to_texture(
+    device: &wgpu::Device,
+    encoder: &mut wgpu::CommandEncoder,
+) -> wgpu::TextureView {
+    let dyn_image = image::open("assets/coords.png").unwrap();
+    let image = dyn_image.to_rgba();
+    let width = image.width();
+    let height = image.height();
+    info!(
+        "Loading image with (width, height) = ({}, {})",
+        width, height
+    );
+    let data = image.into_raw();
+    create_texture(device, encoder, width, height, &data)
+}
+
+fn create_texture(
+    device: &wgpu::Device,
+    encoder: &mut wgpu::CommandEncoder,
+    width: u32,
+    height: u32,
+    data: &Vec<u8>,
+) -> wgpu::TextureView {
+    let texture_extent = wgpu::Extent3d {
+        width: width,
+        height: height,
+        depth: 1,
+    };
+    let texture = device.create_texture(&wgpu::TextureDescriptor {
+        size: texture_extent,
+        array_layer_count: 1,
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Rgba8UnormSrgb,
+        usage: wgpu::TextureUsage::SAMPLED | wgpu::TextureUsage::COPY_DST,
     });
-    img.into_raw()
+    let temp_buf = device
+        .create_buffer_mapped(data.len(), wgpu::BufferUsage::COPY_SRC)
+        .fill_from_slice(&data);
+    encoder.copy_buffer_to_texture(
+        wgpu::BufferCopyView {
+            buffer: &temp_buf,
+            offset: 0,
+            row_pitch: 4 * width,
+            image_height: height,
+        },
+        wgpu::TextureCopyView {
+            texture: &texture,
+            mip_level: 0,
+            array_layer: 0,
+            origin: wgpu::Origin3d {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+            },
+        },
+        texture_extent,
+    );
+    texture.create_default_view()
 }
 
 struct Example {
@@ -26,61 +77,21 @@ impl framework::Example for Example {
         _sc_desc: &wgpu::SwapChainDescriptor,
         device: &wgpu::Device,
     ) -> (Self, Option<wgpu::CommandBuffer>) {
-        let vs = spout::include_shader!("triangle/shader.vert.spv");
+        let vs = spout::include_shader!("image_viewer/shader.vert.spv");
         let vs_module =
             device.create_shader_module(&wgpu::read_spirv(std::io::Cursor::new(&vs[..])).unwrap());
 
-        let fs = spout::include_shader!("triangle/shader.frag.spv");
+        let fs = spout::include_shader!("image_viewer/shader.frag.spv");
         let fs_module =
             device.create_shader_module(&wgpu::read_spirv(std::io::Cursor::new(&fs[..])).unwrap());
-
-        let width = 640;
-        let height = 480;
-        let texels = create_texel(width, height);
-        let texture_extent = wgpu::Extent3d {
-            width: width,
-            height: height,
-            depth: 1,
-        };
-        let texture = device.create_texture(&wgpu::TextureDescriptor {
-            size: texture_extent,
-            array_layer_count: 1,
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8UnormSrgb,
-            usage: wgpu::TextureUsage::SAMPLED | wgpu::TextureUsage::COPY_DST,
-        });
-        let texture_view = texture.create_default_view();
-        let temp_buf = device
-            .create_buffer_mapped(texels.len(), wgpu::BufferUsage::COPY_SRC)
-            .fill_from_slice(&texels);
         let mut init_encoder =
             device.create_command_encoder(&wgpu::CommandEncoderDescriptor { todo: 0 });
-        init_encoder.copy_buffer_to_texture(
-            wgpu::BufferCopyView {
-                buffer: &temp_buf,
-                offset: 0,
-                row_pitch: 4 * width,
-                image_height: height,
-            },
-            wgpu::TextureCopyView {
-                texture: &texture,
-                mip_level: 0,
-                array_layer: 0,
-                origin: wgpu::Origin3d {
-                    x: 0.0,
-                    y: 0.0,
-                    z: 0.0,
-                },
-            },
-            texture_extent,
-        );
+        let texture_view = load_png_to_texture(device, &mut init_encoder);
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             address_mode_u: wgpu::AddressMode::ClampToEdge,
             address_mode_v: wgpu::AddressMode::ClampToEdge,
             address_mode_w: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Nearest,
+            mag_filter: wgpu::FilterMode::Linear,
             min_filter: wgpu::FilterMode::Linear,
             mipmap_filter: wgpu::FilterMode::Nearest,
             lod_min_clamp: -100.0,
@@ -200,5 +211,5 @@ impl framework::Example for Example {
 }
 
 fn main() {
-    framework::run::<Example>("hello triangle");
+    framework::run::<Example>("Image Viewer");
 }
