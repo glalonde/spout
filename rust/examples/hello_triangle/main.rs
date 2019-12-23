@@ -1,5 +1,4 @@
 // TODO: uniforms
-// TODO: Use framework https://github.com/gfx-rs/wgpu-rs/blob/v0.4/examples/framework.rs
 #[path = "../framework.rs"]
 mod framework;
 
@@ -24,12 +23,9 @@ struct Example {
 
 impl framework::Example for Example {
     fn init(
-        sc_desc: &wgpu::SwapChainDescriptor,
+        _sc_desc: &wgpu::SwapChainDescriptor,
         device: &wgpu::Device,
     ) -> (Self, Option<wgpu::CommandBuffer>) {
-        let mut init_encoder =
-            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { todo: 0 });
-
         let vs = spout::include_shader!("triangle/shader.vert.spv");
         let vs_module =
             device.create_shader_module(&wgpu::read_spirv(std::io::Cursor::new(&vs[..])).unwrap());
@@ -144,7 +140,7 @@ impl framework::Example for Example {
                 depth_bias_slope_scale: 0.0,
                 depth_bias_clamp: 0.0,
             }),
-            primitive_topology: wgpu::PrimitiveTopology::TriangleList,
+            primitive_topology: wgpu::PrimitiveTopology::TriangleStrip,
             color_states: &[wgpu::ColorStateDescriptor {
                 format: wgpu::TextureFormat::Bgra8UnormSrgb,
                 color_blend: wgpu::BlendDescriptor::REPLACE,
@@ -159,7 +155,7 @@ impl framework::Example for Example {
             alpha_to_coverage_enabled: false,
         });
         let this = Example {
-            index_count: 3,
+            index_count: 4,
             bind_group,
             pipeline: render_pipeline,
         };
@@ -170,8 +166,8 @@ impl framework::Example for Example {
     }
     fn resize(
         &mut self,
-        sc_desc: &wgpu::SwapChainDescriptor,
-        device: &wgpu::Device,
+        _sc_desc: &wgpu::SwapChainDescriptor,
+        _device: &wgpu::Device,
     ) -> Option<wgpu::CommandBuffer> {
         None
     }

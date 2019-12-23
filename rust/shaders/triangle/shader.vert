@@ -2,16 +2,22 @@
 
 layout(location = 0) out vec2 v_TexCoord;
 
-const vec2 positions[3] = vec2[3](
-    vec2(0.0, -0.5),
-    vec2(0.5, 0.5),
-    vec2(-0.5, 0.5)
+//  1--3
+//  |\ |
+//  | \|
+//  0--2
+const vec2 positions[4] = vec2[4](
+    vec2(-1.0, 1.0),
+    vec2(-1.0, -1.0),
+    vec2(1.0, 1.0),
+    vec2(1.0, -1.0)
 );
 
-const vec2 tex_coord[3] = vec2[3](
+const vec2 tex_coord[4] = vec2[4](
+    vec2(0.0, 1.0),
     vec2(0.0, 0.0),
-    vec2(1.0, 0.0),
-    vec2(1.0, 1.0)
+    vec2(1.0, 1.0),
+    vec2(1.0, 0.0)
 );
 
 void main() {
