@@ -1,0 +1,12 @@
+#version 450 core
+layout(local_size_x = 512, local_size_y = 1, local_size_z = 1) in;
+layout (binding = 0, r32ui) uniform uimage2D counter_texture;
+
+void main() {
+  uint gid = gl_GlobalInvocationID.x;
+  ivec2 texture_size = imageSize(counter_texture);
+  int row = int(gid) / texture_size.x;
+  row = row % texture_size.y;
+  int col = int(gid) % texture_size.x;
+  imageAtomicAdd(counter_texture, ivec2(row, col), 1);
+}

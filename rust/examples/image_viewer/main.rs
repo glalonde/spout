@@ -3,6 +3,10 @@
 mod framework;
 use log::info;
 
+gflags::define! {
+    --num_particles: usize = 500
+}
+
 // Read an image file, create a command to copy it to a texture, and return a view.
 fn load_png_to_texture(
     device: &wgpu::Device,
@@ -67,9 +71,12 @@ fn create_texture(
 }
 
 struct Example {
+    compute_work_groups: usize,
+    compute_bind_group: wgpu::BindGroup,
+    compute_pipeline: wgpu::ComputePipeline,
     index_count: usize,
-    bind_group: wgpu::BindGroup,
-    pipeline: wgpu::RenderPipeline,
+    render_bind_group: wgpu::BindGroup,
+    render_pipeline: wgpu::RenderPipeline,
 }
 
 impl framework::Example for Example {
@@ -77,16 +84,76 @@ impl framework::Example for Example {
         _sc_desc: &wgpu::SwapChainDescriptor,
         device: &wgpu::Device,
     ) -> (Self, Option<wgpu::CommandBuffer>) {
+        // Computes data for the main texture.
+        let cs = spout::include_shader!("image_viewer/shader.comp.spv");
+        let cs_module =
+            device.create_shader_module(&wgpu::read_spirv(std::io::Cursor::new(&cs[..])).unwrap());
+        // This needs to match the layout size in the the particle compute shader. Maybe an equivalent to "specialization constants" will come out and allow us to specify the 512 programmatically.
+        let particle_group_size = 512;
+        let num_work_groups =
+            (NUM_PARTICLES.flag as f64 / particle_group_size as f64).ceil() as usize;
+        let texture_extent = wgpu::Extent3d {
+            width: 30,
+            height: 40,
+            depth: 1,
+        };
+        let texture1 = device.create_texture(&wgpu::TextureDescriptor {
+            size: texture_extent,
+            array_layer_count: 1,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::R32Uint,
+            usage: wgpu::TextureUsage::COPY_SRC
+                | wgpu::TextureUsage::STORAGE
+                | wgpu::TextureUsage::OUTPUT_ATTACHMENT
+                | wgpu::TextureUsage::SAMPLED,
+        });
+        let texture_view1 = texture1.create_default_view();
+
+        let compute_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                bindings: &[wgpu::BindGroupLayoutBinding {
+                    binding: 0,
+                    visibility: wgpu::ShaderStage::COMPUTE,
+                    ty: wgpu::BindingType::StorageTexture {
+                        dimension: wgpu::TextureViewDimension::D2,
+                    },
+                }],
+            });
+
+        let compute_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &compute_bind_group_layout,
+            bindings: &[wgpu::Binding {
+                binding: 0,
+                resource: wgpu::BindingResource::TextureView(&texture_view1),
+            }],
+        });
+        let compute_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                bind_group_layouts: &[&compute_bind_group_layout],
+            });
+        let compute_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            layout: &compute_pipeline_layout,
+            compute_stage: wgpu::ProgrammableStageDescriptor {
+                module: &cs_module,
+                entry_point: "main",
+            },
+        });
+        // Sets up the quad canvas.
         let vs = spout::include_shader!("image_viewer/shader.vert.spv");
         let vs_module =
             device.create_shader_module(&wgpu::read_spirv(std::io::Cursor::new(&vs[..])).unwrap());
-
+        // Renders the data texture onto the canvas.
         let fs = spout::include_shader!("image_viewer/shader.frag.spv");
         let fs_module =
             device.create_shader_module(&wgpu::read_spirv(std::io::Cursor::new(&fs[..])).unwrap());
+
         let mut init_encoder =
             device.create_command_encoder(&wgpu::CommandEncoderDescriptor { todo: 0 });
-        let texture_view = load_png_to_texture(device, &mut init_encoder);
+        let texture_view2 = load_png_to_texture(device, &mut init_encoder);
+        // The render pipeline renders data into this texture
+
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             address_mode_u: wgpu::AddressMode::ClampToEdge,
             address_mode_v: wgpu::AddressMode::ClampToEdge,
@@ -100,29 +167,42 @@ impl framework::Example for Example {
         });
 
         // Create pipeline layout
-        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            bindings: &[
-                wgpu::BindGroupLayoutBinding {
-                    binding: 1,
-                    visibility: wgpu::ShaderStage::FRAGMENT,
-                    ty: wgpu::BindingType::SampledTexture {
-                        multisampled: false,
-                        dimension: wgpu::TextureViewDimension::D2,
+        let render_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                bindings: &[
+                    wgpu::BindGroupLayoutBinding {
+                        binding: 0,
+                        visibility: wgpu::ShaderStage::FRAGMENT,
+                        ty: wgpu::BindingType::SampledTexture {
+                            multisampled: false,
+                            dimension: wgpu::TextureViewDimension::D2,
+                        },
                     },
-                },
-                wgpu::BindGroupLayoutBinding {
-                    binding: 2,
-                    visibility: wgpu::ShaderStage::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler,
-                },
-            ],
-        });
-        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &bind_group_layout,
+                    wgpu::BindGroupLayoutBinding {
+                        binding: 1,
+                        visibility: wgpu::ShaderStage::FRAGMENT,
+                        ty: wgpu::BindingType::SampledTexture {
+                            multisampled: false,
+                            dimension: wgpu::TextureViewDimension::D2,
+                        },
+                    },
+                    wgpu::BindGroupLayoutBinding {
+                        binding: 2,
+                        visibility: wgpu::ShaderStage::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler,
+                    },
+                ],
+            });
+        let render_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &render_bind_group_layout,
             bindings: &[
                 wgpu::Binding {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&texture_view1),
+                },
+                wgpu::Binding {
                     binding: 1,
-                    resource: wgpu::BindingResource::TextureView(&texture_view),
+                    resource: wgpu::BindingResource::TextureView(&texture_view2),
                 },
                 wgpu::Binding {
                     binding: 2,
@@ -130,12 +210,13 @@ impl framework::Example for Example {
                 },
             ],
         });
-        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            bind_group_layouts: &[&bind_group_layout],
-        });
+        let render_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                bind_group_layouts: &[&render_bind_group_layout],
+            });
 
         let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            layout: &pipeline_layout,
+            layout: &render_pipeline_layout,
             vertex_stage: wgpu::ProgrammableStageDescriptor {
                 module: &vs_module,
                 entry_point: "main",
@@ -166,9 +247,12 @@ impl framework::Example for Example {
             alpha_to_coverage_enabled: false,
         });
         let this = Example {
+            compute_work_groups: num_work_groups,
+            compute_pipeline: compute_pipeline,
+            compute_bind_group: compute_bind_group,
             index_count: 4,
-            bind_group,
-            pipeline: render_pipeline,
+            render_bind_group: render_bind_group,
+            render_pipeline: render_pipeline,
         };
         (this, Some(init_encoder.finish()))
     }
@@ -191,6 +275,14 @@ impl framework::Example for Example {
         let mut encoder =
             device.create_command_encoder(&wgpu::CommandEncoderDescriptor { todo: 0 });
         {
+            let mut cpass = encoder.begin_compute_pass();
+            cpass.set_pipeline(&self.compute_pipeline);
+            cpass.set_bind_group(0, &self.compute_bind_group, &[]);
+            info!("Dispatching {} work groups", self.compute_work_groups);
+            cpass.dispatch(self.compute_work_groups as u32, 1, 1);
+        }
+        info!("Moving on to render.");
+        {
             let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
                     attachment: &frame.view,
@@ -201,8 +293,8 @@ impl framework::Example for Example {
                 }],
                 depth_stencil_attachment: None,
             });
-            rpass.set_pipeline(&self.pipeline);
-            rpass.set_bind_group(0, &self.bind_group, &[]);
+            rpass.set_pipeline(&self.render_pipeline);
+            rpass.set_bind_group(0, &self.render_bind_group, &[]);
             rpass.draw(0..self.index_count as u32, 0..1);
         }
 

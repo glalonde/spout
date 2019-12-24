@@ -24,6 +24,7 @@ pub fn run<E: Example>(title: &str) {
         event_loop::{ControlFlow, EventLoop},
     };
 
+    gflags::parse();
     scrub_log::init().unwrap();
     let event_loop = EventLoop::new();
     log::info!("Initializing the window...");
