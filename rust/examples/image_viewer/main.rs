@@ -70,6 +70,12 @@ fn create_texture(
     texture.create_default_view()
 }
 
+#[repr(C)]
+#[derive(Clone, Copy, zerocopy::AsBytes, zerocopy::FromBytes)]
+struct ComputeUniforms {
+    num_particles: u32,
+}
+
 struct Example {
     compute_work_groups: usize,
     compute_bind_group: wgpu::BindGroup,
@@ -77,6 +83,7 @@ struct Example {
     index_count: usize,
     render_bind_group: wgpu::BindGroup,
     render_pipeline: wgpu::RenderPipeline,
+    uniform_buf: wgpu::Buffer,
 }
 
 impl framework::Example for Example {
@@ -84,10 +91,8 @@ impl framework::Example for Example {
         _sc_desc: &wgpu::SwapChainDescriptor,
         device: &wgpu::Device,
     ) -> (Self, Option<wgpu::CommandBuffer>) {
+        // This sets up the compute stage.
         // Computes data for the main texture.
-        let cs = spout::include_shader!("image_viewer/shader.comp.spv");
-        let cs_module =
-            device.create_shader_module(&wgpu::read_spirv(std::io::Cursor::new(&cs[..])).unwrap());
         // This needs to match the layout size in the the particle compute shader. Maybe an equivalent to "specialization constants" will come out and allow us to specify the 512 programmatically.
         let particle_group_size = 512;
         let num_work_groups =
@@ -111,28 +116,55 @@ impl framework::Example for Example {
         });
         let texture_view1 = texture1.create_default_view();
 
+        let compute_uniform_size = std::mem::size_of::<ComputeUniforms>() as wgpu::BufferAddress;
+        let compute_uniforms = ComputeUniforms {
+            num_particles: NUM_PARTICLES.flag as u32,
+        };
+        let uniform_buf = device
+            .create_buffer_mapped(1, wgpu::BufferUsage::UNIFORM)
+            .fill_from_slice(&[compute_uniforms]);
+
         let compute_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                bindings: &[wgpu::BindGroupLayoutBinding {
-                    binding: 0,
-                    visibility: wgpu::ShaderStage::COMPUTE,
-                    ty: wgpu::BindingType::StorageTexture {
-                        dimension: wgpu::TextureViewDimension::D2,
+                bindings: &[
+                    wgpu::BindGroupLayoutBinding {
+                        binding: 0,
+                        visibility: wgpu::ShaderStage::COMPUTE,
+                        ty: wgpu::BindingType::StorageTexture {
+                            dimension: wgpu::TextureViewDimension::D2,
+                        },
                     },
-                }],
+                    wgpu::BindGroupLayoutBinding {
+                        binding: 1,
+                        visibility: wgpu::ShaderStage::COMPUTE,
+                        ty: wgpu::BindingType::UniformBuffer { dynamic: false },
+                    },
+                ],
             });
 
         let compute_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &compute_bind_group_layout,
-            bindings: &[wgpu::Binding {
-                binding: 0,
-                resource: wgpu::BindingResource::TextureView(&texture_view1),
-            }],
+            bindings: &[
+                wgpu::Binding {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&texture_view1),
+                },
+                wgpu::Binding {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Buffer {
+                        buffer: &uniform_buf,
+                        range: 0..compute_uniform_size,
+                    },
+                },
+            ],
         });
         let compute_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 bind_group_layouts: &[&compute_bind_group_layout],
             });
+        let cs = spout::include_shader!("image_viewer/shader.comp.spv");
+        let cs_module =
+            device.create_shader_module(&wgpu::read_spirv(std::io::Cursor::new(&cs[..])).unwrap());
         let compute_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
             layout: &compute_pipeline_layout,
             compute_stage: wgpu::ProgrammableStageDescriptor {
@@ -253,6 +285,7 @@ impl framework::Example for Example {
             index_count: 4,
             render_bind_group: render_bind_group,
             render_pipeline: render_pipeline,
+            uniform_buf: uniform_buf,
         };
         (this, Some(init_encoder.finish()))
     }
