@@ -14,33 +14,34 @@ struct ComputeUniforms {
     num_particles: u32,
 }
 
-struct Example {
+struct ComputeLocals {
     compute_work_groups: usize,
     compute_bind_group: wgpu::BindGroup,
+    particle_texture_view: wgpu::TextureView,
+    uniform_buf: wgpu::Buffer,
     compute_pipeline: wgpu::ComputePipeline,
+}
+
+struct Example {
+    compute_locals: ComputeLocals,
     index_count: usize,
     render_bind_group: wgpu::BindGroup,
     render_pipeline: wgpu::RenderPipeline,
-    uniform_buf: wgpu::Buffer,
 }
-
-impl framework::Example for Example {
-    fn init(
-        _sc_desc: &wgpu::SwapChainDescriptor,
-        device: &wgpu::Device,
-    ) -> (Self, Option<wgpu::CommandBuffer>) {
+impl ComputeLocals {
+    fn init(device: &wgpu::Device) -> Self {
         // This sets up the compute stage.
         // Computes data for the main texture.
         // This needs to match the layout size in the the particle compute shader. Maybe an equivalent to "specialization constants" will come out and allow us to specify the 512 programmatically.
         let particle_group_size = 512;
-        let num_work_groups =
+        let compute_work_groups =
             (NUM_PARTICLES.flag as f64 / particle_group_size as f64).ceil() as usize;
         let texture_extent = wgpu::Extent3d {
             width: 30,
             height: 40,
             depth: 1,
         };
-        let texture1 = device.create_texture(&wgpu::TextureDescriptor {
+        let particle_texture = device.create_texture(&wgpu::TextureDescriptor {
             size: texture_extent,
             array_layer_count: 1,
             mip_level_count: 1,
@@ -52,7 +53,7 @@ impl framework::Example for Example {
                 | wgpu::TextureUsage::OUTPUT_ATTACHMENT
                 | wgpu::TextureUsage::SAMPLED,
         });
-        let texture_view1 = texture1.create_default_view();
+        let particle_texture_view = particle_texture.create_default_view();
 
         let compute_uniform_size = std::mem::size_of::<ComputeUniforms>() as wgpu::BufferAddress;
         let compute_uniforms = ComputeUniforms {
@@ -85,7 +86,7 @@ impl framework::Example for Example {
             bindings: &[
                 wgpu::Binding {
                     binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&texture_view1),
+                    resource: wgpu::BindingResource::TextureView(&particle_texture_view),
                 },
                 wgpu::Binding {
                     binding: 1,
@@ -110,6 +111,22 @@ impl framework::Example for Example {
                 entry_point: "main",
             },
         });
+        ComputeLocals {
+            compute_work_groups,
+            compute_bind_group,
+            particle_texture_view,
+            uniform_buf,
+            compute_pipeline,
+        }
+    }
+}
+
+impl framework::Example for Example {
+    fn init(
+        _sc_desc: &wgpu::SwapChainDescriptor,
+        device: &wgpu::Device,
+    ) -> (Self, Option<wgpu::CommandBuffer>) {
+        let compute_locals = ComputeLocals::init(device);
         // Sets up the quad canvas.
         let vs = spout::include_shader!("image_viewer/shader.vert.spv");
         let vs_module =
@@ -168,7 +185,9 @@ impl framework::Example for Example {
             bindings: &[
                 wgpu::Binding {
                     binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&texture_view1),
+                    resource: wgpu::BindingResource::TextureView(
+                        &compute_locals.particle_texture_view,
+                    ),
                 },
                 wgpu::Binding {
                     binding: 1,
@@ -217,13 +236,10 @@ impl framework::Example for Example {
             alpha_to_coverage_enabled: false,
         });
         let this = Example {
-            compute_work_groups: num_work_groups,
-            compute_pipeline: compute_pipeline,
-            compute_bind_group: compute_bind_group,
+            compute_locals: compute_locals,
             index_count: 4,
             render_bind_group: render_bind_group,
             render_pipeline: render_pipeline,
-            uniform_buf: uniform_buf,
         };
         (this, Some(init_encoder.finish()))
     }
@@ -247,10 +263,13 @@ impl framework::Example for Example {
             device.create_command_encoder(&wgpu::CommandEncoderDescriptor { todo: 0 });
         {
             let mut cpass = encoder.begin_compute_pass();
-            cpass.set_pipeline(&self.compute_pipeline);
-            cpass.set_bind_group(0, &self.compute_bind_group, &[]);
-            info!("Dispatching {} work groups", self.compute_work_groups);
-            cpass.dispatch(self.compute_work_groups as u32, 1, 1);
+            cpass.set_pipeline(&self.compute_locals.compute_pipeline);
+            cpass.set_bind_group(0, &self.compute_locals.compute_bind_group, &[]);
+            info!(
+                "Dispatching {} work groups",
+                self.compute_locals.compute_work_groups
+            );
+            cpass.dispatch(self.compute_locals.compute_work_groups as u32, 1, 1);
         }
         info!("Moving on to render.");
         {
