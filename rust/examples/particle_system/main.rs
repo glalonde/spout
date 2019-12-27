@@ -107,7 +107,7 @@ impl ComputeLocals {
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 bind_group_layouts: &[&compute_bind_group_layout],
             });
-        let cs = spout::include_shader!("image_viewer/shader.comp.spv");
+        let cs = spout::include_shader!("particle_system/shader.comp.spv");
         let cs_module =
             device.create_shader_module(&wgpu::read_spirv(std::io::Cursor::new(&cs[..])).unwrap());
         let compute_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
@@ -134,11 +134,11 @@ impl framework::Example for Example {
     ) -> (Self, Option<wgpu::CommandBuffer>) {
         let compute_locals = ComputeLocals::init(device);
         // Sets up the quad canvas.
-        let vs = spout::include_shader!("image_viewer/shader.vert.spv");
+        let vs = spout::include_shader!("particle_system/shader.vert.spv");
         let vs_module =
             device.create_shader_module(&wgpu::read_spirv(std::io::Cursor::new(&vs[..])).unwrap());
         // Renders the data texture onto the canvas.
-        let fs = spout::include_shader!("image_viewer/shader.frag.spv");
+        let fs = spout::include_shader!("particle_system/shader.frag.spv");
         let fs_module =
             device.create_shader_module(&wgpu::read_spirv(std::io::Cursor::new(&fs[..])).unwrap());
 
@@ -285,5 +285,5 @@ impl framework::Example for Example {
 }
 
 fn main() {
-    framework::run::<Example>("Image Viewer");
+    framework::run::<Example>("Particle System");
 }
