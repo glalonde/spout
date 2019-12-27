@@ -1,8 +1,6 @@
-// TODO: uniforms
 #[path = "../framework.rs"]
 mod framework;
 use log::info;
-use spout::shader_utils::load_png_to_texture;
 
 gflags::define! {
     --num_particles: usize = 500
@@ -12,6 +10,14 @@ gflags::define! {
 #[derive(Clone, Copy, zerocopy::AsBytes, zerocopy::FromBytes)]
 struct ComputeUniforms {
     num_particles: u32,
+}
+
+// This should match the struct defined in the relevant compute shader.
+#[derive(Copy, Clone, Debug, zerocopy::FromBytes)]
+#[repr(C, packed)]
+struct Particle {
+    position: [i32; 2],
+    velocity: [i32; 2],
 }
 
 struct ComputeLocals {
@@ -138,9 +144,7 @@ impl framework::Example for Example {
 
         let mut init_encoder =
             device.create_command_encoder(&wgpu::CommandEncoderDescriptor { todo: 0 });
-        let texture_view2 = load_png_to_texture(device, "assets/coords.png", &mut init_encoder);
         // The render pipeline renders data into this texture
-
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             address_mode_u: wgpu::AddressMode::ClampToEdge,
             address_mode_v: wgpu::AddressMode::ClampToEdge,
@@ -168,14 +172,6 @@ impl framework::Example for Example {
                     wgpu::BindGroupLayoutBinding {
                         binding: 1,
                         visibility: wgpu::ShaderStage::FRAGMENT,
-                        ty: wgpu::BindingType::SampledTexture {
-                            multisampled: false,
-                            dimension: wgpu::TextureViewDimension::D2,
-                        },
-                    },
-                    wgpu::BindGroupLayoutBinding {
-                        binding: 2,
-                        visibility: wgpu::ShaderStage::FRAGMENT,
                         ty: wgpu::BindingType::Sampler,
                     },
                 ],
@@ -191,10 +187,6 @@ impl framework::Example for Example {
                 },
                 wgpu::Binding {
                     binding: 1,
-                    resource: wgpu::BindingResource::TextureView(&texture_view2),
-                },
-                wgpu::Binding {
-                    binding: 2,
                     resource: wgpu::BindingResource::Sampler(&sampler),
                 },
             ],
