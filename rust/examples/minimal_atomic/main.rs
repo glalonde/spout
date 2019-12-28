@@ -2,7 +2,7 @@ use gflags;
 use log::info;
 
 gflags::define! {
-    --width: u32 = 10 
+    --width: u32 = 10
 }
 gflags::define! {
     --height: u32 = 1
@@ -56,26 +56,22 @@ fn run() {
 
     info!("Creating bind group layout");
     let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-        bindings: &[
-            wgpu::BindGroupLayoutBinding {
-                binding: 0,
-                visibility: wgpu::ShaderStage::COMPUTE,
-                ty: wgpu::BindingType::StorageTexture {
-                    dimension: wgpu::TextureViewDimension::D2,
-                },
+        bindings: &[wgpu::BindGroupLayoutBinding {
+            binding: 0,
+            visibility: wgpu::ShaderStage::COMPUTE,
+            ty: wgpu::BindingType::StorageTexture {
+                dimension: wgpu::TextureViewDimension::D2,
             },
-        ],
+        }],
     });
 
     info!("Creating bind group");
     let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
         layout: &bind_group_layout,
-        bindings: &[
-            wgpu::Binding {
-                binding: 0,
-                resource: wgpu::BindingResource::TextureView(&texture_view),
-            },
-        ],
+        bindings: &[wgpu::Binding {
+            binding: 0,
+            resource: wgpu::BindingResource::TextureView(&texture_view),
+        }],
     });
 
     info!("Creating pipeline layout");

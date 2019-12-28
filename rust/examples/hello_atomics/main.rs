@@ -73,7 +73,9 @@ fn run() {
         limits: wgpu::Limits::default(),
     });
 
-    // This needs to match the layout size in the the particle compute shader. Maybe an equivalent to "specialization constants" will come out and allow us to specify the 512 programmatically.
+    // This needs to match the layout size in the the particle compute shader. Maybe
+    // an equivalent to "specialization constants" will come out and allow us to
+    // specify the 512 programmatically.
     let particle_group_size = 512;
     let num_work_groups = (NUM_PARTICLES.flag as f64 / particle_group_size as f64).ceil() as u32;
     let cs = spout::include_shader!("atomics.comp.spv");

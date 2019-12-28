@@ -1,8 +1,8 @@
 pub mod shader_utils {
     use lazy_static::lazy_static;
     use log::info;
-    // Input path in the source tree, and also the output path in the output directory.
-    // This needs to match the path in build.rs
+    // Input path in the source tree, and also the output path in the output
+    // directory. This needs to match the path in build.rs
     // TODO(glalonde) Factor this into a library.
     static SHADER_PATH: &str = "shaders";
     lazy_static! {
@@ -21,7 +21,8 @@ pub mod shader_utils {
         }
     }
 
-    // Include precompiled shader bytes by specifying a path relative to the shader source directory.
+    // Include precompiled shader bytes by specifying a path relative to the shader
+    // source directory.
     #[macro_export]
     macro_rules! include_shader {
         ( $shader_name:expr ) => {
@@ -75,7 +76,8 @@ pub mod shader_utils {
         texture.create_default_view()
     }
 
-    // Read an image file, create a command to copy it to a texture, and return a view.
+    // Read an image file, create a command to copy it to a texture, and return a
+    // view.
     pub fn load_png_to_texture(
         device: &wgpu::Device,
         path: &str,

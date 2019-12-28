@@ -9,10 +9,12 @@ static SHADER_EXTENSION_MAP: phf::Map<&'static str, shaderc::ShaderKind> = phf_m
     "vert" => shaderc::ShaderKind::Vertex,
 };
 
-// Input path in the source tree, and also the output path in the output directory.
+// Input path in the source tree, and also the output path in the output
+// directory.
 static SHADER_PATH: &str = "shaders";
 
-// Tries to read the source of an include directive that was found in a shader source file, e.g. #include "asdf.h"
+// Tries to read the source of an include directive that was found in a shader
+// source file, e.g. #include "asdf.h"
 fn get_include_source(
     include_path: &str,
     inc_type: shaderc::IncludeType,
@@ -20,7 +22,8 @@ fn get_include_source(
     _depth: usize,
 ) -> Result<shaderc::ResolvedInclude, String> {
     || -> Result<shaderc::ResolvedInclude, Box<dyn error::Error>> {
-        // If this is a relative include, we set dir_name to the path containing the requestor file.
+        // If this is a relative include, we set dir_name to the path containing the
+        // requestor file.
         let parent_dir = if inc_type == shaderc::IncludeType::Relative {
             std::path::Path::new(requestor_path)
                 .parent()

@@ -1,9 +1,16 @@
 #[path = "../framework.rs"]
 mod framework;
 use log::info;
+use rand::{Rng, SeedableRng};
 
 gflags::define! {
     --num_particles: usize = 500
+}
+gflags::define! {
+    --width: u32 = 500
+}
+gflags::define! {
+    --height: u32 = 500
 }
 
 #[repr(C)]
@@ -18,6 +25,27 @@ struct ComputeUniforms {
 struct Particle {
     position: [i32; 2],
     velocity: [i32; 2],
+}
+
+fn fill_with_random_particles(
+    x_range: &[i32; 2],
+    y_range: &[i32; 2],
+    velocity_range: &[i32; 2],
+    rng: &mut rand::rngs::SmallRng,
+    particles: &mut Vec<Particle>,
+) {
+    for _ in particles.len()..particles.capacity() {
+        particles.push(Particle {
+            position: [
+                rng.gen_range(x_range[0], x_range[1]),
+                rng.gen_range(y_range[0], y_range[1]),
+            ],
+            velocity: [
+                rng.gen_range(velocity_range[0], velocity_range[1]),
+                rng.gen_range(velocity_range[0], velocity_range[1]),
+            ],
+        });
+    }
 }
 
 struct ComputeLocals {
@@ -36,9 +64,26 @@ struct Example {
 }
 impl ComputeLocals {
     fn init(device: &wgpu::Device) -> Self {
-        // This sets up the compute stage.
-        // Computes data for the main texture.
-        // This needs to match the layout size in the the particle compute shader. Maybe an equivalent to "specialization constants" will come out and allow us to specify the 512 programmatically.
+        // This sets up the compute stage, which is responsible for updating the
+        // particle system and most of the game logic. The output is updated game state
+        // and a particle density texture.
+        let width = WIDTH.flag;
+        let height = HEIGHT.flag;
+
+        // Create the particles
+        let mut particle_buf: Vec<Particle> = Vec::with_capacity(NUM_PARTICLES.flag);
+        let mut rng = rand::rngs::SmallRng::seed_from_u64(10);
+        fill_with_random_particles(
+            &[0, width as i32],
+            &[0, height as i32],
+            &[-5, 5],
+            &mut rng,
+            &mut particle_buf,
+        );
+
+        // This needs to match the layout size in the the particle compute shader. Maybe
+        // an equivalent to "specialization constants" will come out and allow us to
+        // specify the 512 programmatically.
         let particle_group_size = 512;
         let compute_work_groups =
             (NUM_PARTICLES.flag as f64 / particle_group_size as f64).ceil() as usize;

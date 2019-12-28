@@ -3,7 +3,8 @@ use std::str::FromStr;
 fn main() {
     scrub_log::init().unwrap();
 
-    // For now this just panics if you didn't pass numbers. Could add proper error handling.
+    // For now this just panics if you didn't pass numbers. Could add proper error
+    // handling.
     if std::env::args().len() == 1 {
         panic!("You must pass a list of positive integers!")
     }
