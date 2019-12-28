@@ -1,18 +1,30 @@
 #version 450 core
 layout(local_size_x = 512, local_size_y = 1, local_size_z = 1) in;
-layout (binding = 0, r32ui) uniform uimage2D counter_texture;
-layout(set = 0, binding = 1) uniform Params {
+
+struct Particle {
+  ivec2 position;
+  ivec2 velocity;
+};
+
+layout(std430, binding = 0) buffer Particles {
+  Particle particles[];
+};
+
+layout (binding = 1, r32ui) uniform uimage2D counter_texture;
+layout(set = 0, binding = 2) uniform Params {
     uint num_particles;
 };
 
 void main() {
   uint gid = gl_GlobalInvocationID.x;
-  if (gid >= num_particles) {
+  if (gid >= particles.length()) {
+    // This particle doesn't exist.
     return;
   }
+  Particle p = particles[gid];
   ivec2 texture_size = imageSize(counter_texture);
-  int row = int(gid) / texture_size.x;
-  row = row % texture_size.y;
-  int col = int(gid) % texture_size.x;
-  imageAtomicAdd(counter_texture, ivec2(row, col), 1);
+  p.position = clamp(p.position, ivec2(0, 0), texture_size - ivec2(1, 1));
+  particles[gid] = p;
+  // Add value to col, row
+  imageAtomicAdd(counter_texture, p.position, 1);
 }

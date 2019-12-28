@@ -63,7 +63,7 @@ struct Example {
     render_pipeline: wgpu::RenderPipeline,
 }
 impl ComputeLocals {
-    fn init(device: &wgpu::Device) -> Self {
+    fn init(device: &wgpu::Device, init_encoder: &mut wgpu::CommandEncoder) -> Self {
         // This sets up the compute stage, which is responsible for updating the
         // particle system and most of the game logic. The output is updated game state
         // and a particle density texture.
@@ -80,6 +80,26 @@ impl ComputeLocals {
             &mut rng,
             &mut particle_buf,
         );
+        let buf_size =
+            (particle_buf.len() * std::mem::size_of::<Particle>()) as wgpu::BufferAddress;
+
+        // This buffer is used to transfer to the GPU-only buffer.
+        let staging_buffer = device
+            .create_buffer_mapped(
+                particle_buf.len(),
+                wgpu::BufferUsage::MAP_READ
+                    | wgpu::BufferUsage::COPY_DST
+                    | wgpu::BufferUsage::COPY_SRC,
+            )
+            .fill_from_slice(&particle_buf);
+
+        // The GPU-only buffer
+        let particle_storage_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            size: buf_size,
+            usage: wgpu::BufferUsage::STORAGE
+                | wgpu::BufferUsage::COPY_DST
+                | wgpu::BufferUsage::COPY_SRC,
+        });
 
         // This needs to match the layout size in the the particle compute shader. Maybe
         // an equivalent to "specialization constants" will come out and allow us to
@@ -88,8 +108,8 @@ impl ComputeLocals {
         let compute_work_groups =
             (NUM_PARTICLES.flag as f64 / particle_group_size as f64).ceil() as usize;
         let texture_extent = wgpu::Extent3d {
-            width: 30,
-            height: 40,
+            width: width,
+            height: height,
             depth: 1,
         };
         let particle_texture = device.create_texture(&wgpu::TextureDescriptor {
@@ -117,15 +137,26 @@ impl ComputeLocals {
         let compute_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 bindings: &[
+                    // Particle storage buffer
                     wgpu::BindGroupLayoutBinding {
                         binding: 0,
+                        visibility: wgpu::ShaderStage::COMPUTE,
+                        ty: wgpu::BindingType::StorageBuffer {
+                            dynamic: false,
+                            readonly: false,
+                        },
+                    },
+                    // Particle density buffer
+                    wgpu::BindGroupLayoutBinding {
+                        binding: 1,
                         visibility: wgpu::ShaderStage::COMPUTE,
                         ty: wgpu::BindingType::StorageTexture {
                             dimension: wgpu::TextureViewDimension::D2,
                         },
                     },
+                    // Uniform inputs
                     wgpu::BindGroupLayoutBinding {
-                        binding: 1,
+                        binding: 2,
                         visibility: wgpu::ShaderStage::COMPUTE,
                         ty: wgpu::BindingType::UniformBuffer { dynamic: false },
                     },
@@ -135,12 +166,22 @@ impl ComputeLocals {
         let compute_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &compute_bind_group_layout,
             bindings: &[
+                // Particle storage buffer
                 wgpu::Binding {
                     binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&particle_texture_view),
+                    resource: wgpu::BindingResource::Buffer {
+                        buffer: &particle_storage_buffer,
+                        range: 0..buf_size,
+                    },
                 },
+                // Particle density buffer
                 wgpu::Binding {
                     binding: 1,
+                    resource: wgpu::BindingResource::TextureView(&particle_texture_view),
+                },
+                // Uniforms
+                wgpu::Binding {
+                    binding: 2,
                     resource: wgpu::BindingResource::Buffer {
                         buffer: &uniform_buf,
                         range: 0..compute_uniform_size,
@@ -162,6 +203,16 @@ impl ComputeLocals {
                 entry_point: "main",
             },
         });
+
+        init_encoder.copy_buffer_to_buffer(
+            &staging_buffer,
+            0,
+            &particle_storage_buffer,
+            0,
+            buf_size,
+        );
+
+        // Copy initial data to GPU
         ComputeLocals {
             compute_work_groups,
             compute_bind_group,
@@ -177,7 +228,10 @@ impl framework::Example for Example {
         _sc_desc: &wgpu::SwapChainDescriptor,
         device: &wgpu::Device,
     ) -> (Self, Option<wgpu::CommandBuffer>) {
-        let compute_locals = ComputeLocals::init(device);
+        let mut init_encoder =
+            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { todo: 0 });
+
+        let compute_locals = ComputeLocals::init(device, &mut init_encoder);
         // Sets up the quad canvas.
         let vs = spout::include_shader!("particle_system/shader.vert.spv");
         let vs_module =
@@ -187,8 +241,6 @@ impl framework::Example for Example {
         let fs_module =
             device.create_shader_module(&wgpu::read_spirv(std::io::Cursor::new(&fs[..])).unwrap());
 
-        let mut init_encoder =
-            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { todo: 0 });
         // The render pipeline renders data into this texture
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             address_mode_u: wgpu::AddressMode::ClampToEdge,
