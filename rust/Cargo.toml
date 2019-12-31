@@ -23,6 +23,7 @@ futures = "0.3"
 cgmath = "*"
 rand = "*"
 png = "0.15"
+scarlet = "*"
 
 [build-dependencies]
 log = "*"
@@ -30,6 +31,3 @@ shaderc = "*"
 walkdir = "2.2.9"
 phf = {version = "0.8.0", features = ["macros"]}
 scrub_log = "0.1.1"
-
-[replace]
-'ash:0.29.0' = { path = '../../ash-0.29.0' }
