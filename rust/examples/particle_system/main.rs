@@ -73,52 +73,6 @@ fn create_color_map(
     texture
 }
 
-fn create_clear_texture(
-    device: &wgpu::Device,
-    encoder: &mut wgpu::CommandEncoder,
-    width: u32,
-    height: u32,
-) -> wgpu::Texture {
-    let texture_extent = wgpu::Extent3d {
-        width: width,
-        height: height,
-        depth: 1,
-    };
-    let texture = device.create_texture(&wgpu::TextureDescriptor {
-        size: texture_extent,
-        array_layer_count: 1,
-        mip_level_count: 1,
-        sample_count: 1,
-        dimension: wgpu::TextureDimension::D2,
-        format: wgpu::TextureFormat::R32Uint,
-        usage: wgpu::TextureUsage::COPY_SRC | wgpu::TextureUsage::COPY_DST,
-    });
-    let data = vec![0; (width * height) as usize];
-    let temp_buf = device
-        .create_buffer_mapped(data.len(), wgpu::BufferUsage::COPY_SRC)
-        .fill_from_slice(&data);
-    encoder.copy_buffer_to_texture(
-        wgpu::BufferCopyView {
-            buffer: &temp_buf,
-            offset: 0,
-            row_pitch: 4 * width,
-            image_height: height,
-        },
-        wgpu::TextureCopyView {
-            texture: &texture,
-            mip_level: 0,
-            array_layer: 0,
-            origin: wgpu::Origin3d {
-                x: 0.0,
-                y: 0.0,
-                z: 0.0,
-            },
-        },
-        texture_extent,
-    );
-    texture
-}
-
 #[repr(C)]
 #[derive(Clone, Copy, zerocopy::AsBytes, zerocopy::FromBytes)]
 struct ComputeUniforms {
@@ -155,8 +109,6 @@ fn fill_with_random_particles(
 }
 
 struct ComputeLocals {
-    texture_extent: wgpu::Extent3d,
-    clear_density_texture: wgpu::Texture,
     compute_work_groups: usize,
     compute_bind_group: wgpu::BindGroup,
     density_texture: wgpu::Texture,
@@ -234,7 +186,6 @@ impl ComputeLocals {
                 | wgpu::TextureUsage::SAMPLED,
         });
         let density_texture_view = density_texture.create_default_view();
-        let clear_density_texture = create_clear_texture(device, init_encoder, width, height);
 
         let compute_uniform_size = std::mem::size_of::<ComputeUniforms>() as wgpu::BufferAddress;
         let compute_uniforms = ComputeUniforms {
@@ -324,8 +275,6 @@ impl ComputeLocals {
 
         // Copy initial data to GPU
         ComputeLocals {
-            texture_extent,
-            clear_density_texture,
             compute_work_groups,
             compute_bind_group,
             density_texture,
@@ -499,31 +448,19 @@ impl framework::Example for Example {
         let mut encoder =
             device.create_command_encoder(&wgpu::CommandEncoderDescriptor { todo: 0 });
         {
-            // Clear the density texture by copying a blank texture over.
-            // TODO: Find a better way to do this.
-            encoder.copy_texture_to_texture(
-                wgpu::TextureCopyView {
-                    texture: &self.compute_locals.clear_density_texture,
-                    mip_level: 0,
-                    array_layer: 0,
-                    origin: wgpu::Origin3d {
-                        x: 0.0,
-                        y: 0.0,
-                        z: 0.0,
-                    },
-                },
-                wgpu::TextureCopyView {
-                    texture: &self.compute_locals.density_texture,
-                    mip_level: 0,
-                    array_layer: 0,
-                    origin: wgpu::Origin3d {
-                        x: 0.0,
-                        y: 0.0,
-                        z: 0.0,
-                    },
-                },
-                self.compute_locals.texture_extent,
-            );
+            // Clear the density texture
+            encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
+                    attachment: &self.compute_locals.density_texture.create_default_view(),
+                    resolve_target: None,
+                    load_op: wgpu::LoadOp::Clear,
+                    store_op: wgpu::StoreOp::Store,
+                    clear_color: wgpu::Color::BLACK,
+                }],
+                depth_stencil_attachment: None,
+            });
+        }
+        {
             let mut cpass = encoder.begin_compute_pass();
             cpass.set_pipeline(&self.compute_locals.compute_pipeline);
             cpass.set_bind_group(0, &self.compute_locals.compute_bind_group, &[]);
