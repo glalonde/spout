@@ -46,10 +46,15 @@ fn create_color_map(
         sample_count: 1,
         dimension: wgpu::TextureDimension::D1,
         format: wgpu::TextureFormat::Rgba8UnormSrgb,
-        usage: wgpu::TextureUsage::SAMPLED | wgpu::TextureUsage::COPY_DST,
+        usage: wgpu::TextureUsage::SAMPLED
+            | wgpu::TextureUsage::COPY_DST
+            | wgpu::TextureUsage::COPY_SRC,
     });
     let temp_buf = device
-        .create_buffer_mapped(data.len(), wgpu::BufferUsage::COPY_SRC)
+        .create_buffer_mapped(
+            data.len(),
+            wgpu::BufferUsage::COPY_SRC | wgpu::BufferUsage::COPY_DST | wgpu::BufferUsage::MAP_READ,
+        )
         .fill_from_slice(&data);
     encoder.copy_buffer_to_texture(
         wgpu::BufferCopyView {
@@ -70,6 +75,7 @@ fn create_color_map(
         },
         texture_extent,
     );
+
     texture
 }
 
@@ -447,6 +453,7 @@ impl framework::Example for Example {
     ) -> wgpu::CommandBuffer {
         let mut encoder =
             device.create_command_encoder(&wgpu::CommandEncoderDescriptor { todo: 0 });
+
         {
             // Clear the density texture
             encoder.begin_render_pass(&wgpu::RenderPassDescriptor {

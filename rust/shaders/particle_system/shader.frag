@@ -6,8 +6,11 @@ layout(location = 0) out vec4 out_color;
 layout(set = 0, binding = 0) uniform utexture2D in_density_texture;
 // Loads the texture that has been brought in from the CPU
 layout(set = 0, binding = 1) uniform sampler in_density_sampler;
-layout(set = 0, binding = 2) uniform utexture1D in_color_map;
+layout(set = 0, binding = 2) uniform texture1D in_color_map;
 layout(set = 0, binding = 3) uniform sampler in_color_map_sampler;
+
+// TODO this should be a uniform input
+int max_density_value = 10;
 
 // Returns the color map texture coordinate 
 float ReadUnsigned() {
@@ -15,9 +18,9 @@ float ReadUnsigned() {
   if (count <= 0) {
     discard;
   }
-  return float(count - uint(0)) / float(255);
+  return float(count - uint(0)) / float(max_density_value);
 }
 
 void main() {
-    out_color =  vec4(ReadUnsigned(), 0.0, 0.0, 1.0);// texture(usampler1D(in_color_map, in_color_map_sampler), .5).rgba;
+    out_color = texture(sampler1D(in_color_map, in_color_map_sampler), ReadUnsigned()).rgba;
 }
