@@ -2013,8 +2013,9 @@ checksum = "b42e15e59b18a828bbf5c58ea01debb36b9b096346de35d941dcb89009f24a0d"
 
 [[package]]
 name = "scrub_log"
-version = "0.1.1"
-source = "git+https://github.com/glalonde/scrub_log#87f25be71bd0306d4236c96cf59d645f944539fc"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5933ebeed0470542e2b0cb9df616f91ba17a6300eeac5b81f48257ba3af1bf58"
 dependencies = [
  "ansi_term",
  "env_logger",

@@ -12,7 +12,7 @@ image = "0.21"
 gflags = "0.3.2"
 winit = { version = "0.20.0-alpha4", features = ["web-sys"] }
 glsl-to-spirv = "0.1.4"
-scrub_log = "0.1.1"
+scrub_log = "0.2"
 log = "*"
 wgpu = "*"
 shaderc = "*"
@@ -30,7 +30,4 @@ log = "*"
 shaderc = "*"
 walkdir = "2.2.9"
 phf = {version = "0.8.0", features = ["macros"]}
-scrub_log = "0.1.1"
-
-[patch.crates-io]
-scrub_log = { git = 'https://github.com/glalonde/scrub_log' }
+scrub_log = "0.2"
