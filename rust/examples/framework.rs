@@ -1,5 +1,9 @@
 use winit::event::WindowEvent;
 
+gflags::define! {
+    --log_filter: &str = "warn,particle_system=trace"
+}
+
 pub trait Example: 'static + Sized {
     fn init(
         sc_desc: &wgpu::SwapChainDescriptor,
@@ -25,7 +29,7 @@ pub fn run<E: Example>(title: &str) {
     };
 
     gflags::parse();
-    scrub_log::init().unwrap();
+    scrub_log::init_with_filter_string(LOG_FILTER.flag).unwrap();
     let event_loop = EventLoop::new();
     log::info!("Initializing the window...");
 

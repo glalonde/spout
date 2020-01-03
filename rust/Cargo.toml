@@ -31,3 +31,6 @@ shaderc = "*"
 walkdir = "2.2.9"
 phf = {version = "0.8.0", features = ["macros"]}
 scrub_log = "0.1.1"
+
+[patch.crates-io]
+scrub_log = { git = 'https://github.com/glalonde/scrub_log' }
