@@ -1,7 +1,6 @@
 #[path = "../examples/framework.rs"]
 mod framework;
-use log::{info, warn, debug, trace};
-use rand::{Rng, SeedableRng};
+use log::{trace, info};
 
 gflags::define! {
     --num_particles: usize = 500
@@ -85,53 +84,8 @@ struct ComputeUniforms {
     num_particles: u32,
 }
 
-// This should match the struct defined in the relevant compute shader.
-#[derive(Copy, Clone, Debug, zerocopy::FromBytes)]
-#[repr(C, packed)]
-struct Particle {
-    position: [i32; 2],
-    velocity: [i32; 2],
-}
-
-fn fill_with_random_particles(
-    x_range: &[i32; 2],
-    y_range: &[i32; 2],
-    velocity_range: &[i32; 2],
-    rng: &mut rand::rngs::SmallRng,
-    particles: &mut Vec<Particle>,
-) {
-    for _ in particles.len()..particles.capacity() {
-        particles.push(Particle {
-            position: [
-                rng.gen_range(x_range[0], x_range[1]),
-                rng.gen_range(y_range[0], y_range[1]),
-            ],
-            velocity: [
-                rng.gen_range(velocity_range[0], velocity_range[1]),
-                rng.gen_range(velocity_range[0], velocity_range[1]),
-            ],
-        });
-    }
-}
-
-// This should match the struct defined in the emitter shader.
-#[derive(Copy, Clone, Debug, zerocopy::FromBytes)]
-#[repr(C, packed)]
-struct EmitterUniforms {
-    start_index: u32,
-    num_emitted: u32,
-    init_position: [i32; 2],
-    init_velocity: [i32; 2],
-    ttl: f32,
-    padding: i32,
-}
-
-struct EmitterLocals {
-
-
-}
-
 struct ComputeLocals {
+    emitter: spout::emitter::Emitter,
     compute_work_groups: usize,
     compute_bind_group: wgpu::BindGroup,
     density_texture: wgpu::Texture,
@@ -148,7 +102,6 @@ struct InputState {
 
 struct Example {
     input: InputState,
-    emitter: spout::emitter::Emitter,
     compute_locals: ComputeLocals,
     index_count: usize,
     render_bind_group: wgpu::BindGroup,
@@ -161,37 +114,9 @@ impl ComputeLocals {
         // and a particle density texture.
         let width = WIDTH.flag;
         let height = HEIGHT.flag;
+        let num_particles = NUM_PARTICLES.flag as u32;
+        let emitter = spout::emitter::Emitter::new(device, num_particles, 100.0);
 
-        // Create the particles
-        let mut particle_buf: Vec<Particle> = Vec::with_capacity(NUM_PARTICLES.flag);
-        let mut rng = rand::rngs::SmallRng::seed_from_u64(10);
-        fill_with_random_particles(
-            &[0, width as i32],
-            &[0, height as i32],
-            &[-5, 5],
-            &mut rng,
-            &mut particle_buf,
-        );
-        let buf_size =
-            (particle_buf.len() * std::mem::size_of::<Particle>()) as wgpu::BufferAddress;
-
-        // This buffer is used to transfer to the GPU-only buffer.
-        let staging_buffer = device
-            .create_buffer_mapped(
-                particle_buf.len(),
-                wgpu::BufferUsage::MAP_READ
-                    | wgpu::BufferUsage::COPY_DST
-                    | wgpu::BufferUsage::COPY_SRC,
-            )
-            .fill_from_slice(&particle_buf);
-
-        // The GPU-only buffer
-        let particle_storage_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            size: buf_size,
-            usage: wgpu::BufferUsage::STORAGE
-                | wgpu::BufferUsage::COPY_DST
-                | wgpu::BufferUsage::COPY_SRC,
-        });
 
         // This needs to match the layout size in the the particle compute shader. Maybe
         // an equivalent to "specialization constants" will come out and allow us to
@@ -256,6 +181,9 @@ impl ComputeLocals {
                 ],
             });
 
+        let particle_buffer_size =
+            (num_particles * std::mem::size_of::<spout::emitter::Particle>() as u32) as wgpu::BufferAddress;
+
         let compute_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &compute_bind_group_layout,
             bindings: &[
@@ -263,8 +191,8 @@ impl ComputeLocals {
                 wgpu::Binding {
                     binding: 0,
                     resource: wgpu::BindingResource::Buffer {
-                        buffer: &particle_storage_buffer,
-                        range: 0..buf_size,
+                        buffer: &emitter.particle_buffer,
+                        range: 0..particle_buffer_size,
                     },
                 },
                 // Particle density buffer
@@ -297,16 +225,9 @@ impl ComputeLocals {
             },
         });
 
-        init_encoder.copy_buffer_to_buffer(
-            &staging_buffer,
-            0,
-            &particle_storage_buffer,
-            0,
-            buf_size,
-        );
-
         // Copy initial data to GPU
         ComputeLocals {
+            emitter,
             compute_work_groups,
             compute_bind_group,
             density_texture,
@@ -317,13 +238,10 @@ impl ComputeLocals {
 }
 impl Example {
     // Update pre-render cpu logic
-    fn update_state(&mut self) {
+    fn update_state(&mut self, device: &wgpu::Device, encoder: &mut wgpu::CommandEncoder) {
         // Emit particles
         if self.input.forward {
-            let n_particles = 50;
-            self.emitter.emit_over_time(1.0 / 60.0);
-            // let ship_position: [i32; 2] = ;
-
+            self.compute_locals.emitter.emit_over_time(device, encoder, 1.0 / 60.0 /* dt */);
         }
         // Update simulation
     }
@@ -467,7 +385,6 @@ impl framework::Example for Example {
             alpha_to_coverage_enabled: false,
         });
         let this = Example {
-            emitter: spout::emitter::Emitter::new(NUM_PARTICLES.flag as u32, 2.5 /* particles per second */),
             input: InputState {
                 forward: false,
                 left: false,
@@ -519,10 +436,9 @@ impl framework::Example for Example {
         frame: &wgpu::SwapChainOutput,
         device: &wgpu::Device,
     ) -> wgpu::CommandBuffer {
-        self.update_state();
-
         let mut encoder =
             device.create_command_encoder(&wgpu::CommandEncoderDescriptor { todo: 0 });
+        self.update_state(device, &mut encoder);
 
         {
             // Clear the density texture
