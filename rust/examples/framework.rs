@@ -14,7 +14,7 @@ pub trait Example: 'static + Sized {
         sc_desc: &wgpu::SwapChainDescriptor,
         device: &wgpu::Device,
     ) -> Option<wgpu::CommandBuffer>;
-    fn update(&mut self, event: WindowEvent);
+    fn handle_event(&mut self, event: WindowEvent);
     fn render(
         &mut self,
         frame: &wgpu::SwapChainOutput,
@@ -129,7 +129,7 @@ pub fn run<E: Example>(title: &str) {
                     *control_flow = ControlFlow::Exit;
                 }
                 _ => {
-                    example.update(event);
+                    example.handle_event(event);
                 }
             },
             event::Event::EventsCleared => {

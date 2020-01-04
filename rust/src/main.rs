@@ -1,6 +1,6 @@
 #[path = "../examples/framework.rs"]
 mod framework;
-use log::info;
+use log::{info, warn, debug, trace};
 use rand::{Rng, SeedableRng};
 
 gflags::define! {
@@ -114,6 +114,23 @@ fn fill_with_random_particles(
     }
 }
 
+// This should match the struct defined in the emitter shader.
+#[derive(Copy, Clone, Debug, zerocopy::FromBytes)]
+#[repr(C, packed)]
+struct EmitterUniforms {
+    start_index: u32,
+    num_emitted: u32,
+    init_position: [i32; 2],
+    init_velocity: [i32; 2],
+    ttl: f32,
+    padding: i32,
+}
+
+struct EmitterLocals {
+
+
+}
+
 struct ComputeLocals {
     compute_work_groups: usize,
     compute_bind_group: wgpu::BindGroup,
@@ -122,7 +139,16 @@ struct ComputeLocals {
     compute_pipeline: wgpu::ComputePipeline,
 }
 
+#[derive(Debug)]
+struct InputState {
+    forward: bool,
+    left: bool,
+    right: bool,
+}
+
 struct Example {
+    input: InputState,
+    emitter: spout::emitter::Emitter,
     compute_locals: ComputeLocals,
     index_count: usize,
     render_bind_group: wgpu::BindGroup,
@@ -289,6 +315,19 @@ impl ComputeLocals {
         }
     }
 }
+impl Example {
+    // Update pre-render cpu logic
+    fn update_state(&mut self) {
+        // Emit particles
+        if self.input.forward {
+            let n_particles = 50;
+            self.emitter.emit_over_time(1.0 / 60.0);
+            // let ship_position: [i32; 2] = ;
+
+        }
+        // Update simulation
+    }
+}
 
 impl framework::Example for Example {
     fn init(
@@ -428,6 +467,12 @@ impl framework::Example for Example {
             alpha_to_coverage_enabled: false,
         });
         let this = Example {
+            emitter: spout::emitter::Emitter::new(NUM_PARTICLES.flag as u32, 2.5 /* particles per second */),
+            input: InputState {
+                forward: false,
+                left: false,
+                right: false,
+            },
             compute_locals: compute_locals,
             index_count: 4,
             render_bind_group: render_bind_group,
@@ -435,8 +480,31 @@ impl framework::Example for Example {
         };
         (this, Some(init_encoder.finish()))
     }
-    fn update(&mut self, _event: winit::event::WindowEvent) {
-        //empty
+    fn handle_event(&mut self, event: winit::event::WindowEvent) {
+        macro_rules! bind_keys {
+            ($input:expr, $($pat:pat => $result:expr),*) => (
+                            match $input {
+                                    $(
+                            winit::event::KeyboardInput {
+                                virtual_keycode: Some($pat),
+                                state,
+                                ..
+                            } => match state {
+                                winit::event::ElementState::Pressed => $result = true,
+                                winit::event::ElementState::Released => $result = false,
+                            }
+                        ),*
+                    _ => (),
+                }
+            );
+        }
+        match event {
+            winit::event::WindowEvent::KeyboardInput { input, .. } => bind_keys!(input,
+                winit::event::VirtualKeyCode::W => self.input.forward, 
+                winit::event::VirtualKeyCode::A => self.input.left, 
+                winit::event::VirtualKeyCode::D => self.input.right),
+            _ => (),
+        }
     }
     fn resize(
         &mut self,
@@ -451,6 +519,8 @@ impl framework::Example for Example {
         frame: &wgpu::SwapChainOutput,
         device: &wgpu::Device,
     ) -> wgpu::CommandBuffer {
+        self.update_state();
+
         let mut encoder =
             device.create_command_encoder(&wgpu::CommandEncoderDescriptor { todo: 0 });
 
@@ -471,13 +541,12 @@ impl framework::Example for Example {
             let mut cpass = encoder.begin_compute_pass();
             cpass.set_pipeline(&self.compute_locals.compute_pipeline);
             cpass.set_bind_group(0, &self.compute_locals.compute_bind_group, &[]);
-            info!(
+            trace!(
                 "Dispatching {} work groups",
                 self.compute_locals.compute_work_groups
             );
             cpass.dispatch(self.compute_locals.compute_work_groups as u32, 1, 1);
         }
-        info!("Moving on to render.");
         {
             let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {

@@ -1,3 +1,5 @@
+pub mod emitter;
+
 pub mod shader_utils {
     use lazy_static::lazy_static;
     use log::info;
