@@ -26,7 +26,7 @@ void main() {
   if (distance >= num_emitted) {
     return;
   }
-  // particles[gid].ttl = ttl;
+  particles[gid].ttl = ttl;
   particles[gid].position = init_position;
   particles[gid].velocity = init_velocity; 
 }

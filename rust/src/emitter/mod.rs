@@ -1,5 +1,5 @@
 use super::include_shader;
-use log::{info, trace};
+use log::trace;
 use zerocopy::AsBytes;
 
 // This should match the struct defined in the relevant compute shader.
@@ -8,6 +8,8 @@ use zerocopy::AsBytes;
 pub struct Particle {
     position: [i32; 2],
     velocity: [i32; 2],
+    ttl: f32,
+    padding: i32,
 }
 
 struct EmitterParams {

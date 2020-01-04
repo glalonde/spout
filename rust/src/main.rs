@@ -1,6 +1,7 @@
 #[path = "../examples/framework.rs"]
 mod framework;
-use log::{trace, info};
+use log::trace;
+use zerocopy::AsBytes;
 
 gflags::define! {
     --num_particles: usize = 500
@@ -79,9 +80,10 @@ fn create_color_map(
 }
 
 #[repr(C)]
-#[derive(Clone, Copy, zerocopy::AsBytes, zerocopy::FromBytes)]
+#[derive(Clone, Copy, zerocopy::FromBytes, zerocopy::AsBytes)]
 struct ComputeUniforms {
     num_particles: u32,
+    dt: f32,
 }
 
 struct ComputeLocals {
@@ -108,7 +110,7 @@ struct Example {
     render_pipeline: wgpu::RenderPipeline,
 }
 impl ComputeLocals {
-    fn init(device: &wgpu::Device, init_encoder: &mut wgpu::CommandEncoder) -> Self {
+    fn init(device: &wgpu::Device, _init_encoder: &mut wgpu::CommandEncoder) -> Self {
         // This sets up the compute stage, which is responsible for updating the
         // particle system and most of the game logic. The output is updated game state
         // and a particle density texture.
@@ -147,9 +149,10 @@ impl ComputeLocals {
         let compute_uniform_size = std::mem::size_of::<ComputeUniforms>() as wgpu::BufferAddress;
         let compute_uniforms = ComputeUniforms {
             num_particles: NUM_PARTICLES.flag as u32,
+            dt: 0.0,
         };
         let uniform_buf = device
-            .create_buffer_mapped(1, wgpu::BufferUsage::UNIFORM)
+            .create_buffer_mapped(1, wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST)
             .fill_from_slice(&[compute_uniforms]);
 
         let compute_bind_group_layout =
@@ -235,15 +238,42 @@ impl ComputeLocals {
             compute_pipeline,
         }
     }
+
+    pub fn set_uniforms(
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        uniform_buffer: &wgpu::Buffer,
+        values: &ComputeUniforms,
+    ) {
+        let bytes: &[u8] = values.as_bytes();
+        let uniform_buf_size = std::mem::size_of::<ComputeUniforms>();
+        let temp_buf = device
+            .create_buffer_mapped(uniform_buf_size, wgpu::BufferUsage::COPY_SRC)
+            .fill_from_slice(bytes);
+        encoder.copy_buffer_to_buffer(
+            &temp_buf,
+            0,
+            uniform_buffer,
+            0,
+            uniform_buf_size as wgpu::BufferAddress,
+        );
+    }
 }
 impl Example {
     // Update pre-render cpu logic
     fn update_state(&mut self, device: &wgpu::Device, encoder: &mut wgpu::CommandEncoder) {
+        // TODO compute actual dt.
+        let dt = 1.0 / 60.0;
         // Emit particles
         if self.input.forward {
-            self.compute_locals.emitter.emit_over_time(device, encoder, 1.0 / 60.0 /* dt */);
+            self.compute_locals.emitter.emit_over_time(device, encoder, dt);
         }
         // Update simulation
+        let sim_uniforms = ComputeUniforms{
+            num_particles: NUM_PARTICLES.flag as u32,
+            dt,
+        };
+        ComputeLocals::set_uniforms(device, encoder, &mut self.compute_locals.uniform_buf, &sim_uniforms);
     }
 }
 

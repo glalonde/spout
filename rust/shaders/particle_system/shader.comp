@@ -9,12 +9,16 @@ layout(std430, binding = 0) buffer Particles {
 layout (binding = 1, r32ui) uniform uimage2D counter_texture;
 layout(set = 0, binding = 2) uniform Params {
     uint num_particles;
+    float dt;
 };
 
 void main() {
   uint gid = gl_GlobalInvocationID.x;
-
   Particle p = particles[gid];
+  if (p.ttl < 0) {
+    return;
+  }
+
   ivec2 texture_size = imageSize(counter_texture);
   // Update
   p.position += p.velocity;
@@ -26,6 +30,7 @@ void main() {
     p.velocity.y *= -1;
   }
   p.position = clamp(p.position, ivec2(0, 0), texture_size - ivec2(1, 1));
+  p.ttl -= dt;
   particles[gid] = p;
   // Add value to col, row
   imageAtomicAdd(counter_texture, p.position, 1);
