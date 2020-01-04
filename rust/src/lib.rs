@@ -1,3 +1,4 @@
+pub mod color_maps;
 pub mod emitter;
 pub mod shader_utils;
 
