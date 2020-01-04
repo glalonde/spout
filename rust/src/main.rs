@@ -1,32 +1,15 @@
 #[path = "../examples/framework.rs"]
 mod framework;
 use log::trace;
-use zerocopy::AsBytes;
 
 gflags::define! {
-    --num_particles: usize = 500
+    --num_particles: u32 = 500
 }
 gflags::define! {
     --width: u32 = 500
 }
 gflags::define! {
     --height: u32 = 500
-}
-
-#[repr(C)]
-#[derive(Clone, Copy, zerocopy::FromBytes, zerocopy::AsBytes)]
-struct ComputeUniforms {
-    num_particles: u32,
-    dt: f32,
-}
-
-struct ComputeLocals {
-    emitter: spout::emitter::Emitter,
-    compute_work_groups: usize,
-    compute_bind_group: wgpu::BindGroup,
-    density_texture: wgpu::Texture,
-    uniform_buf: wgpu::Buffer,
-    compute_pipeline: wgpu::ComputePipeline,
 }
 
 #[derive(Debug)]
@@ -38,160 +21,10 @@ struct InputState {
 
 struct Example {
     input: InputState,
-    compute_locals: ComputeLocals,
+    compute_locals: spout::particle_system::ComputeLocals,
     index_count: usize,
     render_bind_group: wgpu::BindGroup,
     render_pipeline: wgpu::RenderPipeline,
-}
-impl ComputeLocals {
-    fn init(device: &wgpu::Device, _init_encoder: &mut wgpu::CommandEncoder) -> Self {
-        // This sets up the compute stage, which is responsible for updating the
-        // particle system and most of the game logic. The output is updated game state
-        // and a particle density texture.
-        let width = WIDTH.flag;
-        let height = HEIGHT.flag;
-        let num_particles = NUM_PARTICLES.flag as u32;
-        let emitter = spout::emitter::Emitter::new(device, num_particles, 100.0);
-
-
-        // This needs to match the layout size in the the particle compute shader. Maybe
-        // an equivalent to "specialization constants" will come out and allow us to
-        // specify the 512 programmatically.
-        let particle_group_size = 512;
-        let compute_work_groups =
-            (NUM_PARTICLES.flag as f64 / particle_group_size as f64).ceil() as usize;
-        let texture_extent = wgpu::Extent3d {
-            width: width,
-            height: height,
-            depth: 1,
-        };
-        let density_texture = device.create_texture(&wgpu::TextureDescriptor {
-            size: texture_extent,
-            array_layer_count: 1,
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::R32Uint,
-            usage: wgpu::TextureUsage::COPY_SRC
-                | wgpu::TextureUsage::STORAGE
-                | wgpu::TextureUsage::OUTPUT_ATTACHMENT
-                | wgpu::TextureUsage::COPY_DST
-                | wgpu::TextureUsage::SAMPLED,
-        });
-        let density_texture_view = density_texture.create_default_view();
-
-        let compute_uniform_size = std::mem::size_of::<ComputeUniforms>() as wgpu::BufferAddress;
-        let compute_uniforms = ComputeUniforms {
-            num_particles: NUM_PARTICLES.flag as u32,
-            dt: 0.0,
-        };
-        let uniform_buf = device
-            .create_buffer_mapped(1, wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST)
-            .fill_from_slice(&[compute_uniforms]);
-
-        let compute_bind_group_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                bindings: &[
-                    // Particle storage buffer
-                    wgpu::BindGroupLayoutBinding {
-                        binding: 0,
-                        visibility: wgpu::ShaderStage::COMPUTE,
-                        ty: wgpu::BindingType::StorageBuffer {
-                            dynamic: false,
-                            readonly: false,
-                        },
-                    },
-                    // Particle density buffer
-                    wgpu::BindGroupLayoutBinding {
-                        binding: 1,
-                        visibility: wgpu::ShaderStage::COMPUTE,
-                        ty: wgpu::BindingType::StorageTexture {
-                            dimension: wgpu::TextureViewDimension::D2,
-                        },
-                    },
-                    // Uniform inputs
-                    wgpu::BindGroupLayoutBinding {
-                        binding: 2,
-                        visibility: wgpu::ShaderStage::COMPUTE,
-                        ty: wgpu::BindingType::UniformBuffer { dynamic: false },
-                    },
-                ],
-            });
-
-        let particle_buffer_size =
-            (num_particles * std::mem::size_of::<spout::emitter::Particle>() as u32) as wgpu::BufferAddress;
-
-        let compute_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &compute_bind_group_layout,
-            bindings: &[
-                // Particle storage buffer
-                wgpu::Binding {
-                    binding: 0,
-                    resource: wgpu::BindingResource::Buffer {
-                        buffer: &emitter.particle_buffer,
-                        range: 0..particle_buffer_size,
-                    },
-                },
-                // Particle density buffer
-                wgpu::Binding {
-                    binding: 1,
-                    resource: wgpu::BindingResource::TextureView(&density_texture_view),
-                },
-                // Uniforms
-                wgpu::Binding {
-                    binding: 2,
-                    resource: wgpu::BindingResource::Buffer {
-                        buffer: &uniform_buf,
-                        range: 0..compute_uniform_size,
-                    },
-                },
-            ],
-        });
-        let compute_pipeline_layout =
-            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                bind_group_layouts: &[&compute_bind_group_layout],
-            });
-        let cs = spout::include_shader!("particle_system/shader.comp.spv");
-        let cs_module =
-            device.create_shader_module(&wgpu::read_spirv(std::io::Cursor::new(&cs[..])).unwrap());
-        let compute_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            layout: &compute_pipeline_layout,
-            compute_stage: wgpu::ProgrammableStageDescriptor {
-                module: &cs_module,
-                entry_point: "main",
-            },
-        });
-
-        // Copy initial data to GPU
-        ComputeLocals {
-            emitter,
-            compute_work_groups,
-            compute_bind_group,
-            density_texture,
-            uniform_buf,
-            compute_pipeline,
-        }
-    }
-
-    pub fn set_uniforms(
-        device: &wgpu::Device,
-        encoder: &mut wgpu::CommandEncoder,
-        uniform_buffer: &wgpu::Buffer,
-        values: &ComputeUniforms,
-    ) {
-        let bytes: &[u8] = values.as_bytes();
-        let uniform_buf_size = std::mem::size_of::<ComputeUniforms>();
-        let temp_buf = device
-            .create_buffer_mapped(uniform_buf_size, wgpu::BufferUsage::COPY_SRC)
-            .fill_from_slice(bytes);
-        encoder.copy_buffer_to_buffer(
-            &temp_buf,
-            0,
-            uniform_buffer,
-            0,
-            uniform_buf_size as wgpu::BufferAddress,
-        );
-    }
 }
 impl Example {
     // Update pre-render cpu logic
@@ -200,14 +33,21 @@ impl Example {
         let dt = 1.0 / 60.0;
         // Emit particles
         if self.input.forward {
-            self.compute_locals.emitter.emit_over_time(device, encoder, dt);
+            self.compute_locals
+                .emitter
+                .emit_over_time(device, encoder, dt);
         }
         // Update simulation
-        let sim_uniforms = ComputeUniforms{
+        let sim_uniforms = spout::particle_system::ComputeUniforms {
             num_particles: NUM_PARTICLES.flag as u32,
             dt,
         };
-        ComputeLocals::set_uniforms(device, encoder, &mut self.compute_locals.uniform_buf, &sim_uniforms);
+        spout::particle_system::ComputeLocals::set_uniforms(
+            device,
+            encoder,
+            &mut self.compute_locals.uniform_buf,
+            &sim_uniforms,
+        );
     }
 }
 
@@ -218,8 +58,14 @@ impl framework::Example for Example {
     ) -> (Self, Option<wgpu::CommandBuffer>) {
         let mut init_encoder =
             device.create_command_encoder(&wgpu::CommandEncoderDescriptor { todo: 0 });
+        let system_params = spout::particle_system::SystemParams {
+            width: WIDTH.flag,
+            height: HEIGHT.flag,
+            num_particles: NUM_PARTICLES.flag,
+        };
 
-        let compute_locals = ComputeLocals::init(device, &mut init_encoder);
+        let compute_locals =
+            spout::particle_system::ComputeLocals::init(device, &mut init_encoder, &system_params);
         // Sets up the quad canvas.
         let vs = spout::include_shader!("particle_system/shader.vert.spv");
         let vs_module =
@@ -381,8 +227,8 @@ impl framework::Example for Example {
         }
         match event {
             winit::event::WindowEvent::KeyboardInput { input, .. } => bind_keys!(input,
-                winit::event::VirtualKeyCode::W => self.input.forward, 
-                winit::event::VirtualKeyCode::A => self.input.left, 
+                winit::event::VirtualKeyCode::W => self.input.forward,
+                winit::event::VirtualKeyCode::A => self.input.left,
                 winit::event::VirtualKeyCode::D => self.input.right),
             _ => (),
         }

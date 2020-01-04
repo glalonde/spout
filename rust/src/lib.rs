@@ -1,5 +1,6 @@
 pub mod color_maps;
 pub mod emitter;
+pub mod particle_system;
 pub mod shader_utils;
 
 #[cfg(test)]
