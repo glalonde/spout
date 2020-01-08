@@ -1,16 +1,25 @@
 #version 450 core
 #include "particle.h"
+#include "hash.h"
 layout(local_size_x = 512, local_size_y = 1, local_size_z = 1) in;
 layout(std430, binding = 0) buffer Particles {
   Particle particles[];
 };
-layout(set = 0, binding = 1) uniform Params {
+
+
+
+layout(std140, set = 0, binding = 1) uniform Params {
     uint start_index;
     uint num_emitted;
-    ivec2 init_position;
-    ivec2 init_velocity;
-    float ttl;
-    uint padding;
+    ivec2 position_start;
+    ivec2 position_end;
+    float speed_min;
+    float speed_max;
+    float angle;
+    float angle_spread;
+    float ttl_min;
+    float ttl_max;
+    float time;
 };
 
 void main() {
@@ -26,7 +35,21 @@ void main() {
   if (distance >= num_emitted) {
     return;
   }
-  particles[gid].ttl = ttl;
-  particles[gid].position = init_position;
-  particles[gid].velocity = init_velocity; 
+
+  // Interpolation parameter for time of iteration.
+  float interp = float(distance) / num_emitted;
+
+  // Linear interpolate position 
+  ivec2 pos_delta =
+      ivec2(interp * vec2(position_end - position_start));
+
+
+  particles[gid].position = position_start + pos_delta;
+
+  float rand1 = hash11(time);
+  float rand2 = hash11(rand1);
+  float rand_speed =  2.0; //mix(speed_min, speed_max, rand1);
+  vec2 float_velocity = vec2(cos(angle), sin(angle)) * rand_speed; 
+  particles[gid].velocity = ivec2(float_velocity);
+  particles[gid].ttl = mix(ttl_min, ttl_max, rand2);
 }

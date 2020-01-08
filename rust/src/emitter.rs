@@ -1,5 +1,5 @@
 use super::include_shader;
-use log::trace;
+use log::{info, trace};
 use zerocopy::AsBytes;
 
 // This should match the struct defined in the relevant compute shader.
@@ -15,6 +15,7 @@ pub struct Particle {
 struct EmitterParams {
     num_particles: u32,
     emit_period: f32,
+    max_particle_life: f32,
 }
 
 pub struct Emitter {
@@ -29,19 +30,62 @@ pub struct Emitter {
     compute_pipeline: wgpu::ComputePipeline,
 }
 
+// Params for emitting particles in one iteration
+#[derive(Copy, Clone, Debug, zerocopy::FromBytes, zerocopy::AsBytes)]
+#[repr(C, packed)]
+pub struct EmitParams {
+    position_start: [i32; 2],
+    position_end: [i32; 2],
+    speed_min: f32,
+    speed_max: f32,
+    angle: f32,
+    angle_spread: f32,
+    ttl_min: f32,
+    ttl_max: f32,
+}
+
+impl EmitParams {
+    pub fn default() -> Self {
+        EmitParams::stationary(&[0, 0], 0.0, 0.0, 0.0, 0.0, 0.0)
+    }
+
+    pub fn stationary(
+        pos: &[i32; 2],
+        speed_mean: f32,
+        speed_spread: f32,
+        angle: f32,
+        angle_spread: f32,
+        ttl: f32,
+    ) -> Self {
+        EmitParams {
+            position_start: *pos,
+            position_end: *pos,
+            speed_min: speed_mean - speed_spread,
+            speed_max: speed_mean + speed_spread,
+            angle,
+            angle_spread,
+            ttl_min: ttl,
+            ttl_max: ttl,
+        }
+    }
+}
+
 // This should match the struct defined in the emitter shader.
 #[derive(Copy, Clone, Debug, zerocopy::FromBytes, zerocopy::AsBytes)]
 #[repr(C, packed)]
 struct EmitterUniforms {
     start_index: u32,
     num_emitted: u32,
-    init_position: [i32; 2],
-    init_velocity: [i32; 2],
-    ttl: f32,
-    padding: i32,
+    params: EmitParams,
+    time: f32,
 }
 
 impl Emitter {
+    // Returns the total number of particles, including inactive ones.
+    pub fn num_particles(&self) -> u32 {
+        self.params.num_particles
+    }
+
     fn create_particle_buffer(
         device: &wgpu::Device,
         num_particles: u32,
@@ -61,10 +105,8 @@ impl Emitter {
         let emitter_uniforms = EmitterUniforms {
             start_index: 0,
             num_emitted: 0,
-            init_position: [0, 0],
-            init_velocity: [0, 0],
-            ttl: 1.0,
-            padding: 0,
+            params: EmitParams::default(),
+            time: 0.0,
         };
         (
             std::mem::size_of::<EmitterUniforms>() as wgpu::BufferAddress,
@@ -74,9 +116,10 @@ impl Emitter {
         )
     }
 
-    pub fn new(device: &wgpu::Device, num_particles: u32, emission_frequency: f32) -> Self {
+    pub fn new(device: &wgpu::Device, emission_frequency: f32, max_particle_life: f32) -> Self {
+        let max_num_particles = (emission_frequency * max_particle_life).ceil() as u32;
         let (particle_buffer_size, particle_buffer) =
-            Emitter::create_particle_buffer(device, num_particles);
+            Emitter::create_particle_buffer(device, max_num_particles);
         // Initialize the uniform buffer.
         let (uniform_buffer_size, uniform_buffer) = Emitter::create_uniform_buffer(device);
 
@@ -84,7 +127,8 @@ impl Emitter {
         // an equivalent to "specialization constants" will come out and allow us to
         // specify the 512 programmatically.
         let particle_group_size = 512;
-        let compute_work_groups = (num_particles as f64 / particle_group_size as f64).ceil() as u32;
+        let compute_work_groups =
+            (max_num_particles as f64 / particle_group_size as f64).ceil() as u32;
 
         // Setup the shader pipeline stage.
         let compute_bind_group_layout =
@@ -147,8 +191,9 @@ impl Emitter {
 
         Emitter {
             params: EmitterParams {
-                num_particles: num_particles,
+                num_particles: max_num_particles,
                 emit_period: 1.0 / emission_frequency,
+                max_particle_life,
             },
             time: 0.0,
             emit_progress: 0.0,
@@ -165,14 +210,16 @@ impl Emitter {
         device: &wgpu::Device,
         encoder: &mut wgpu::CommandEncoder,
         dt: f32,
+        params: &EmitParams,
     ) {
         self.time += dt;
         self.emit_progress += dt;
         if self.emit_progress > self.params.emit_period {
             let num_emitted: u32 = (self.emit_progress / self.params.emit_period) as u32;
             self.emit_progress -= (num_emitted as f32) * self.params.emit_period;
-            self.emit(device, encoder, num_emitted)
+            self.emit(device, encoder, num_emitted, params)
         }
+        info!("Time: {}", self.time);
     }
     fn set_uniforms(
         device: &wgpu::Device,
@@ -198,14 +245,13 @@ impl Emitter {
         device: &wgpu::Device,
         encoder: &mut wgpu::CommandEncoder,
         num_emitted: u32,
+        params: &EmitParams,
     ) {
         let emitter_uniforms = EmitterUniforms {
             start_index: self.write_index,
             num_emitted: num_emitted,
-            init_position: [1, 1],
-            init_velocity: [1, 1],
-            ttl: 2.0,
-            padding: 0,
+            params: *params,
+            time: self.time,
         };
         Emitter::set_uniforms(device, encoder, &self.uniform_buffer, &emitter_uniforms);
         {

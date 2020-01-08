@@ -15,7 +15,7 @@ layout(set = 0, binding = 2) uniform Params {
 void main() {
   uint gid = gl_GlobalInvocationID.x;
   Particle p = particles[gid];
-  if (p.ttl < 0) {
+  if (p.ttl <= 0) {
     return;
   }
 

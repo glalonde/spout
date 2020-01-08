@@ -29,14 +29,32 @@ struct Example {
 impl Example {
     // Update pre-render cpu logic
     fn update_state(&mut self, device: &wgpu::Device, encoder: &mut wgpu::CommandEncoder) {
+        let width = self.compute_locals.system_params.width;
+        let height = self.compute_locals.system_params.height;
         // TODO compute actual dt.
         let dt = 1.0 / 60.0;
+        // TODO get position from ship state.
+        let pos: [i32; 2] = [(width / 2) as i32, (height / 2) as i32];
+        let speed = 1.0;
+        let speed_spread = 0.0;
+        let angle = 0.0;
+        let angle_spread = 0.0;
+        let ttl = 5.0;
+        let emit_params = spout::emitter::EmitParams::stationary(
+            &pos,
+            speed,
+            speed_spread,
+            angle,
+            angle_spread,
+            ttl,
+        );
         // Emit particles
         if self.input.forward {
             self.compute_locals
                 .emitter
-                .emit_over_time(device, encoder, dt);
+                .emit_over_time(device, encoder, dt, &emit_params);
         }
+
         // Update simulation
         let sim_uniforms = spout::particle_system::ComputeUniforms {
             num_particles: NUM_PARTICLES.flag as u32,
@@ -61,7 +79,7 @@ impl framework::Example for Example {
         let system_params = spout::particle_system::SystemParams {
             width: WIDTH.flag,
             height: HEIGHT.flag,
-            num_particles: NUM_PARTICLES.flag,
+            max_particle_life: 5.0,
         };
 
         let compute_locals =

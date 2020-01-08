@@ -1,9 +1,10 @@
 use zerocopy::AsBytes;
 
+#[derive(Clone, Copy)]
 pub struct SystemParams {
     pub width: u32,
     pub height: u32,
-    pub num_particles: u32,
+    pub max_particle_life: f32,
 }
 
 #[repr(C)]
@@ -14,6 +15,7 @@ pub struct ComputeUniforms {
 }
 
 pub struct ComputeLocals {
+    pub system_params: SystemParams,
     pub emitter: super::emitter::Emitter,
     pub compute_work_groups: usize,
     pub compute_bind_group: wgpu::BindGroup,
@@ -31,14 +33,15 @@ impl ComputeLocals {
         // This sets up the compute stage, which is responsible for updating the
         // particle system and most of the game logic. The output is updated game state
         // and a particle density texture.
-        let emitter = super::emitter::Emitter::new(device, params.num_particles, 100.0);
+        let emitter = super::emitter::Emitter::new(device, params.max_particle_life, 100.0);
+        let num_particles = emitter.num_particles();
 
         // This needs to match the layout size in the the particle compute shader. Maybe
         // an equivalent to "specialization constants" will come out and allow us to
         // specify the 512 programmatically.
         let particle_group_size = 512;
         let compute_work_groups =
-            (params.num_particles as f64 / particle_group_size as f64).ceil() as usize;
+            (num_particles as f64 / particle_group_size as f64).ceil() as usize;
         let texture_extent = wgpu::Extent3d {
             width: params.width,
             height: params.height,
@@ -61,7 +64,7 @@ impl ComputeLocals {
 
         let compute_uniform_size = std::mem::size_of::<ComputeUniforms>() as wgpu::BufferAddress;
         let compute_uniforms = ComputeUniforms {
-            num_particles: params.num_particles,
+            num_particles: num_particles,
             dt: 0.0,
         };
         let uniform_buf = device
@@ -97,7 +100,7 @@ impl ComputeLocals {
                 ],
             });
 
-        let particle_buffer_size = (params.num_particles
+        let particle_buffer_size = (num_particles
             * std::mem::size_of::<super::emitter::Particle>() as u32)
             as wgpu::BufferAddress;
 
@@ -144,6 +147,7 @@ impl ComputeLocals {
 
         // Copy initial data to GPU
         ComputeLocals {
+            system_params: *params,
             emitter,
             compute_work_groups,
             compute_bind_group,
