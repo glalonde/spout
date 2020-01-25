@@ -7,7 +7,17 @@ Live streaming some of the programming ony my youtube channel: https://www.youtu
 
 ---
 
+C++ Version
+===
+
 Required deps depends on which targets you're building. At a minimum you'll need `bazel` and `clang` set up for C++17. After that, `SDL2` or `GLFW` for some parts. OpenGL, and Vulkan for other parts. gperftools, pprof.
+
+---
+
+Rust Version
+===
+
+In the spirit of never finishing anything, I also started implementing a Rust version. Nominally because I'm tired of trying to figure out portable C++ build systems. Rust's Cargo seems to be a bit easier to wrangle from multiple targets, with easier packaging. Also a dedicated set of developers working on making Vulkan-like interfaces more accessible, without quite as much verbosity. We'll see how it goes. Currently, I have a basic compute stage tied to a basic graphics stage, so it's working end-to-end, which is further than I got with raw Vulkan APIs. Now I just need to add a few features to bring it parity with the OpenGL version.
 
 ---
 * `archaeology` has some old versions that probably don't really compile or do anything anymore.
