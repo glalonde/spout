@@ -1,9 +1,10 @@
 use winit::event::WindowEvent;
 
 gflags::define! {
-    --log_filter: &str = "warn,particle_system=trace"
+    --log_filter: &str = "warn,spout=trace"
 }
 
+// "Framework" for a windowed executable.
 pub trait Example: 'static + Sized {
     fn init(
         sc_desc: &wgpu::SwapChainDescriptor,

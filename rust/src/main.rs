@@ -1,6 +1,6 @@
 #[path = "../examples/framework.rs"]
 mod framework;
-use log::trace;
+use log::{info, trace};
 
 gflags::define! {
     --num_particles: u32 = 500
@@ -19,8 +19,30 @@ struct InputState {
     right: bool,
 }
 
+#[derive(Debug)]
+struct ShipState {
+    // Params for the emit functionality
+    // TODO maybe factor out
+    position: [i32; 2],
+    angle: f32,
+    angle_spread: f32,
+    emit_speed: f32,
+    emit_speed_spread: f32,
+    ttl: f32,
+
+    // Params for the ship's motion
+    rotation_rate: f32,
+    acceleration: f32,
+}
+
+#[derive(Debug)]
+struct GameState {
+    input_state: InputState,
+    ship_state: ShipState,
+}
+
 struct Example {
-    input: InputState,
+    state: GameState,
     compute_locals: spout::particle_system::ComputeLocals,
     index_count: usize,
     render_bind_group: wgpu::BindGroup,
@@ -33,23 +55,32 @@ impl Example {
         let height = self.compute_locals.system_params.height;
         // TODO compute actual dt.
         let dt = 1.0 / 60.0;
-        // TODO get position from ship state.
-        let pos: [i32; 2] = [(width / 2) as i32, (height / 2) as i32];
-        let speed = 1.0;
-        let speed_spread = 0.0;
-        let angle = 0.0;
-        let angle_spread = 0.0;
-        let ttl = 5.0;
+
+        let input_state = &self.state.input_state;
+        let ship_state = &mut self.state.ship_state;
+
+        // Update "ship"
+        if input_state.left && !input_state.right {
+            // Rotate ccw
+            ship_state.angle -= dt * ship_state.rotation_rate;
+            info!("Rotating ccw");
+        } else if !input_state.left && input_state.right {
+            // Rotate cw
+            ship_state.angle += dt * ship_state.rotation_rate;
+            info!("Rotating cw");
+        }
+
         let emit_params = spout::emitter::EmitParams::stationary(
-            &pos,
-            speed,
-            speed_spread,
-            angle,
-            angle_spread,
-            ttl,
+            &ship_state.position,
+            ship_state.emit_speed,
+            ship_state.emit_speed_spread,
+            ship_state.angle,
+            ship_state.angle_spread,
+            ship_state.ttl,
         );
+
         // Emit particles
-        if self.input.forward {
+        if input_state.forward {
             self.compute_locals
                 .emitter
                 .emit_over_time(device, encoder, dt, &emit_params);
@@ -212,11 +243,27 @@ impl framework::Example for Example {
             sample_mask: !0,
             alpha_to_coverage_enabled: false,
         });
+
         let this = Example {
-            input: InputState {
-                forward: false,
-                left: false,
-                right: false,
+            state: GameState {
+                input_state: InputState {
+                    left: false,
+                    forward: false,
+                    right: false,
+                },
+                ship_state: ShipState {
+                    position: [
+                        (system_params.width / 2) as i32,
+                        (system_params.height / 2) as i32,
+                    ],
+                    angle: 0.0,
+                    angle_spread: 0.0,
+                    emit_speed: 10.0,
+                    emit_speed_spread: 0.0,
+                    ttl: 5.0,
+                    rotation_rate: 1.0,
+                    acceleration: 1.0,
+                },
             },
             compute_locals: compute_locals,
             index_count: 4,
@@ -245,9 +292,9 @@ impl framework::Example for Example {
         }
         match event {
             winit::event::WindowEvent::KeyboardInput { input, .. } => bind_keys!(input,
-                winit::event::VirtualKeyCode::W => self.input.forward,
-                winit::event::VirtualKeyCode::A => self.input.left,
-                winit::event::VirtualKeyCode::D => self.input.right),
+                winit::event::VirtualKeyCode::W => self.state.input_state.forward,
+                winit::event::VirtualKeyCode::A => self.state.input_state.left,
+                winit::event::VirtualKeyCode::D => self.state.input_state.right),
             _ => (),
         }
     }
