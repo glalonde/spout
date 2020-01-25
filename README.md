@@ -26,6 +26,7 @@ In the spirit of never finishing anything, I also started implementing a Rust ve
 * `graphics` has some attempt at modular OpenGL graphics.
 * `gpu_particles` has an implementation of physics with OpenGL, but isn't really a playable game.
 * `vulkan` has some vulkan tutorials implemented. A graphics pipeline, and a compute pipeline.
+* `rust` has the rust implementation. `cargo run` should be all you need, after some local installation of vulkan etc.
 ---
 Here's the final version of the previous incarnation(click for video). I'm still getting back to this point with the code in this repo, but it is on a far better foundation.
 
