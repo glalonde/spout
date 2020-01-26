@@ -3,7 +3,7 @@ const INNER_GRID_BITS: u32 = 12;
 // Returns a T with a binary representation of n_ones in the least significant
 // digits
 pub const fn bitmask(n_ones: u32) -> u32 {
-    let (r, v) = u32::max_value().overflowing_shr((std::mem::size_of::<u32>() as u32) * 8 - n_ones);
+    let (r, v) = u32::max_value().overflowing_shr(32 - n_ones);
     r & (!v as u32).wrapping_neg()
 }
 
@@ -31,6 +31,28 @@ pub const fn set_inner_grid(v: u32) -> u32 {
 
 pub const fn set_values(inner: u32, outer: u32) -> u32 {
     set_outer_grid(outer) | set_inner_grid(inner)
+}
+
+// Inner grid cell dimensions
+pub const fn cell_size() -> u32 {
+    inner_grid_bitmask() + 1
+}
+
+// Half an inner grid cell dimension.
+pub const fn half_cell_size() -> u32 {
+    cell_size().wrapping_shr(1)
+}
+
+// Outer grid dimension.
+pub const fn outer_grid_size() -> u32 {
+    bitmask(32 - INNER_GRID_BITS) + 1
+}
+
+// Half outer grid size.
+// This is the "anchor", or origin within the unsigned coordinate system because
+// it gives us the most space before hitting overflow.
+pub const fn half_outer_grid_size() -> u32 {
+    outer_grid_size().wrapping_shr(1)
 }
 
 #[cfg(test)]
@@ -65,5 +87,22 @@ mod tests {
         let packed = set_values(5, 6);
         assert_eq!(get_inner_grid(packed), 5);
         assert_eq!(get_outer_grid(packed), 6);
+    }
+
+    #[test]
+    fn cell_size_test() {
+        assert_eq!(half_cell_size() * 2, cell_size());
+        // Wraps out
+        assert_eq!(set_inner_grid(cell_size()), 0);
+        assert_eq!(set_inner_grid(half_cell_size()), half_cell_size());
+    }
+
+    #[test]
+    fn outer_grid_size_test() {
+        assert_eq!(half_outer_grid_size() * 2, outer_grid_size());
+        assert_eq!(
+            set_values(cell_size() - 1, outer_grid_size() - 1),
+            u32::max_value()
+        );
     }
 }
