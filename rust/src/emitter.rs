@@ -261,7 +261,6 @@ impl Emitter {
             trace!("Dispatching {} work groups", self.compute_work_groups);
             cpass.dispatch(self.compute_work_groups, 1, 1);
         }
-        trace!("Emitting with angle: {}", params.angle);
 
         self.write_index = (self.write_index + num_emitted) % self.params.num_particles;
     }

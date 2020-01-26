@@ -51,8 +51,8 @@ struct Example {
 impl Example {
     // Update pre-render cpu logic
     fn update_state(&mut self, device: &wgpu::Device, encoder: &mut wgpu::CommandEncoder) {
-        let width = self.compute_locals.system_params.width;
-        let height = self.compute_locals.system_params.height;
+        // let width = self.compute_locals.system_params.width;
+        // let height = self.compute_locals.system_params.height;
         // TODO compute actual dt.
         let dt = 1.0 / 60.0;
 
@@ -257,9 +257,9 @@ impl framework::Example for Example {
                         (system_params.height / 2) as i32,
                     ],
                     angle: 0.0,
-                    angle_spread: 0.0,
+                    angle_spread: 0.5,
                     emit_speed: 10.0,
-                    emit_speed_spread: 0.0,
+                    emit_speed_spread: 5.0,
                     ttl: 5.0,
                     rotation_rate: 1.0,
                     acceleration: 1.0,

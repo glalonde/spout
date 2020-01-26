@@ -41,12 +41,11 @@ void main() {
   ivec2 pos_delta =
       ivec2(interp * vec2(position_end - position_start));
 
-
   particles[gid].position = position_start + pos_delta;
 
-  float rand1 = hash11(time);
-  float rand2 = hash11(rand1);
-  float rand_speed =  2.0; //mix(speed_min, speed_max, rand1);
+  float rand1 = hash12(vec2(interp, time));
+  float rand2 = hash12(vec2(interp, rand1));
+  float rand_speed = mix(speed_min, speed_max, rand1);
   vec2 float_velocity = vec2(cos(angle), sin(angle)) * rand_speed; 
   particles[gid].velocity = ivec2(float_velocity);
   particles[gid].ttl = mix(ttl_min, ttl_max, rand2);

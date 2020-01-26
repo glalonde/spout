@@ -1,7 +1,7 @@
 use winit::event::WindowEvent;
 
 gflags::define! {
-    --log_filter: &str = "warn,spout=trace"
+    --log_filter: &str = "warn,spout=info"
 }
 
 // "Framework" for a windowed executable.

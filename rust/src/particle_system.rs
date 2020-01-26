@@ -33,7 +33,7 @@ impl ComputeLocals {
         // This sets up the compute stage, which is responsible for updating the
         // particle system and most of the game logic. The output is updated game state
         // and a particle density texture.
-        let emitter = super::emitter::Emitter::new(device, params.max_particle_life, 100.0);
+        let emitter = super::emitter::Emitter::new(device, 10000.0, params.max_particle_life);
         let num_particles = emitter.num_particles();
 
         // This needs to match the layout size in the the particle compute shader. Maybe
