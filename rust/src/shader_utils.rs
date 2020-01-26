@@ -100,7 +100,6 @@ mod tests {
 
     #[test]
     fn internal() {
-        scrub_log::init().unwrap();
         list_shaders();
         let _test_bytes = include_shader!("collatz.comp.spv");
     }
