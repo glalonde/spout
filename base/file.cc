@@ -7,7 +7,7 @@
 #include "base/logging.h"
 #include "base/format.h"
 
-ErrorXor<std::string> TryReadFile(const std::string_view& path) {
+ErrorXor<std::string> TryReadFile(const std::string& path) {
   std::ifstream file;
   file.open(path, std::ifstream::in);
   if (!file.good()) {
@@ -18,14 +18,14 @@ ErrorXor<std::string> TryReadFile(const std::string_view& path) {
                      std::istreambuf_iterator<char>());
 }
 
-std::string ReadFileOrDie(const std::string_view& path) {
+std::string ReadFileOrDie(const std::string& path) {
   auto maybe_file = TryReadFile(path);
   CHECK(maybe_file) << *maybe_file.ErrorOrNull();
   return std::move(*maybe_file.ValueOrNull());
 }
 
-std::optional<ErrorMessage> TryWriteFile(const std::string_view& path,
-                                         const std::string_view& data) {
+std::optional<ErrorMessage> TryWriteFile(const std::string& path,
+                                         const std::string& data) {
   std::ofstream out(path);
   if (out) {
     out << data;
@@ -36,8 +36,8 @@ std::optional<ErrorMessage> TryWriteFile(const std::string_view& path,
   }
 }
 
-void WriteFileOrDie(const std::string_view& path,
-                    const std::string_view& data) {
+void WriteFileOrDie(const std::string& path,
+                    const std::string& data) {
   auto maybe_error = TryWriteFile(path, data);
   CHECK(!maybe_error) << *maybe_error;
 }

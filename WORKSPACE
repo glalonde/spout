@@ -72,13 +72,13 @@ http_archive(
     urls = ["https://github.com/grailbio/bazel-toolchain/archive/master.tar.gz"],
 )
 
-load("@com_grail_bazel_toolchain//toolchain:rules.bzl", "llvm_toolchain")
+#load("@com_grail_bazel_toolchain//toolchain:rules.bzl", "llvm_toolchain")
 
-llvm_toolchain(
-    name = "llvm_toolchain",
-    llvm_version = "8.0.0",
-)
+#llvm_toolchain(
+#    name = "llvm_toolchain",
+#    llvm_version = "8.0.0",
+#)
 
-load("@llvm_toolchain//:toolchains.bzl", "llvm_register_toolchains")
+#load("@llvm_toolchain//:toolchains.bzl", "llvm_register_toolchains")
 
-llvm_register_toolchains()
+#llvm_register_toolchains()
