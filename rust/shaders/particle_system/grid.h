@@ -10,6 +10,9 @@
 // The grid is centered at an anchor point which should be halfway into the outer grid range.
 // 
 // This is pretty much just enabling adjustable fixed-point math.
+
+// Some of these should be specialization constants...
+// but WebGPU doesn't support that yet, so until then, either just real constants or codegen could probably do it.
 const int kInnerGridBits = 12;
 const int kOuterGridBits = 32 - kInnerGridBits;
 const int kOuterGridSize = 1 << kOuterGridBits;
