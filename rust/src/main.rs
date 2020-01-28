@@ -42,6 +42,7 @@ struct GameState {
 }
 
 struct Example {
+    fps: spout::fps_estimator::FpsEstimator,
     state: GameState,
     compute_locals: spout::particle_system::ComputeLocals,
     index_count: usize,
@@ -54,8 +55,7 @@ impl Example {
     fn update_state(&mut self, device: &wgpu::Device, encoder: &mut wgpu::CommandEncoder) {
         let width = self.compute_locals.system_params.width;
         let height = self.compute_locals.system_params.height;
-        // TODO compute actual dt.
-        let dt = 1.0 / 60.0;
+        let dt = self.fps.tick() as f32;
 
         let input_state = &self.state.input_state;
         let ship_state = &mut self.state.ship_state;
@@ -250,6 +250,7 @@ impl framework::Example for Example {
         ];
 
         let this = Example {
+            fps: spout::fps_estimator::FpsEstimator::new(60.0),
             state: GameState {
                 input_state: InputState {
                     left: false,
