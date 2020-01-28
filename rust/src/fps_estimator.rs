@@ -40,6 +40,7 @@ impl FpsEstimator {
 mod tests {
     use super::*;
 
+    // Get some stats about std::thread::sleep
     #[test]
     fn sleep_test() {
         let target: f64 = 1.0 / 60.0;
@@ -71,6 +72,5 @@ mod tests {
             "Max: {}, Avg Over: {}, Avg Under: {}",
             max_err, avg_overshoot_err, avg_undershoot_err
         );
-        assert!(false);
     }
 }
