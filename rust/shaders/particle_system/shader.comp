@@ -1,5 +1,7 @@
 #version 450 core
 #include "particle.h"
+#include "grid.h"
+
 layout(local_size_x = 512, local_size_y = 1, local_size_z = 1) in;
 
 layout(std430, binding = 0) buffer Particles {
@@ -10,7 +12,19 @@ layout (binding = 1, r32ui) uniform uimage2D counter_texture;
 layout(set = 0, binding = 2) uniform Params {
     uint num_particles;
     float dt;
+    uint buffer_width;
+    uint buffer_height;
 };
+
+float Norm(in ivec2 vel) {
+  vec2 f_vel = vec2(vel);
+  return sqrt(f_vel.x*f_vel.x + f_vel.y * f_vel.y);
+}
+
+bool OnBuffer(in ivec2 cell) {
+  return cell.x >= 0 && cell.y >= 0 && cell.x < buffer_width &&
+         cell.y < buffer_height;
+}
 
 void main() {
   uint gid = gl_GlobalInvocationID.x;
@@ -19,19 +33,79 @@ void main() {
     return;
   }
 
-  ivec2 texture_size = imageSize(counter_texture);
-  // Update
-  p.position += p.velocity;
-  // Bounce
-  if (p.position.x < 0 || p.position.x >= texture_size.x) {
-    p.velocity.x *= -1;
+  ivec2 signed_delta = ivec2(p.velocity * dt);
+  uvec2 end_pos = p.position + signed_delta;
+
+  ivec2 delta = abs(signed_delta);
+  ivec2 step =
+      ivec2(signed_delta.x >= 0 ? 1 : -1, signed_delta.y >= 0 ? 1 : -1);
+  ivec2 current_cell = GetOuterGrid(p.position);
+  ivec2 end_cell = GetOuterGrid(end_pos);
+  ivec2 delta_i = end_cell - current_cell;
+
+  // Starting cell remainder:
+  ivec2 start_remainder =
+      ivec2(kHalfInnerGridSize, kHalfInnerGridSize) - ivec2(GetInnerGrid(p.position));
+  start_remainder *= step;
+  ivec2 end_remainder = ivec2(GetInnerGrid(end_pos));
+
+  // Error value
+  int error = delta.x * start_remainder.y - delta.y * start_remainder.x;
+  delta *= int(kInnerGridSize);
+
+  // Update velocity
+  ivec2 vel_out = p.velocity;
+
+  int num_cells = abs(delta_i.x) + abs(delta_i.y);
+  while (num_cells > 0) {
+    int error_horizontal = error - delta.y;
+    int error_vertical = error + delta.x;
+    if (error_vertical > -error_horizontal) {
+      // Horizontal step
+      error = error_horizontal;
+      current_cell.x += step.x;
+      // Check cell
+      bool bounce;
+      if (OnBuffer(current_cell)) {
+        // bounce = TryErodeTerrain(current_cell, Norm(vel_out));
+        bounce = false;
+      } else {
+        bounce = true;
+      }
+      if (bounce) {
+        // Bounce horizontally
+        current_cell.x -= step.x;
+        step.x *= -1;
+        vel_out.x *= -1;
+        end_remainder.y = int(kInnerGridSize) - end_remainder.y - 1;
+      }
+    } else {
+      // Vertical step
+      error = error_vertical;
+      current_cell.y += step.y;
+      // Check cell
+      bool bounce;
+      if (OnBuffer(current_cell)) {
+        // bounce = TryErodeTerrain(current_cell, Norm(vel_out));
+        bounce = false;
+      } else {
+        bounce = true;
+      }
+      if (bounce) {
+        // Bounce vertically 
+        current_cell.y -= step.y;
+        step.y *= -1;
+        vel_out.y *= -1;
+        end_remainder.x = int(kInnerGridSize) - end_remainder.x - 1;
+      }
+    }
+    --num_cells;
   }
-  if (p.position.y < 0 || p.position.y >= texture_size.y) {
-    p.velocity.y *= -1;
-  }
-  p.position = clamp(p.position, ivec2(0, 0), texture_size - ivec2(1, 1));
-  p.ttl -= dt;
-  particles[gid] = p;
-  // Add value to col, row
-  imageAtomicAdd(counter_texture, p.position, 1);
+
+  particles[gid].position = SetPositionRelative(uvec2(current_cell), uvec2(end_remainder));
+  particles[gid].velocity = vel_out;
+  particles[gid].ttl = p.ttl - dt;
+
+  // Draw to the density texture
+  imageAtomicAdd(counter_texture, current_cell, 1);
 }

@@ -1,6 +1,6 @@
 #[path = "../examples/framework.rs"]
 mod framework;
-use log::{info, trace};
+use log::trace;
 
 gflags::define! {
     --num_particles: u32 = 500
@@ -23,7 +23,7 @@ struct InputState {
 struct ShipState {
     // Params for the emit functionality
     // TODO maybe factor out
-    position: [i32; 2],
+    position: [u32; 2],
     angle: f32,
     angle_spread: f32,
     emit_speed: f32,
@@ -48,11 +48,12 @@ struct Example {
     render_bind_group: wgpu::BindGroup,
     render_pipeline: wgpu::RenderPipeline,
 }
+
 impl Example {
     // Update pre-render cpu logic
     fn update_state(&mut self, device: &wgpu::Device, encoder: &mut wgpu::CommandEncoder) {
-        // let width = self.compute_locals.system_params.width;
-        // let height = self.compute_locals.system_params.height;
+        let width = self.compute_locals.system_params.width;
+        let height = self.compute_locals.system_params.height;
         // TODO compute actual dt.
         let dt = 1.0 / 60.0;
 
@@ -63,11 +64,9 @@ impl Example {
         if input_state.left && !input_state.right {
             // Rotate ccw
             ship_state.angle -= dt * ship_state.rotation_rate;
-            info!("Rotating ccw");
         } else if !input_state.left && input_state.right {
             // Rotate cw
             ship_state.angle += dt * ship_state.rotation_rate;
-            info!("Rotating cw");
         }
 
         let emit_params = spout::emitter::EmitParams::stationary(
@@ -90,6 +89,8 @@ impl Example {
         let sim_uniforms = spout::particle_system::ComputeUniforms {
             num_particles: NUM_PARTICLES.flag as u32,
             dt,
+            buffer_width: width,
+            buffer_height: height,
         };
         spout::particle_system::ComputeLocals::set_uniforms(
             device,
@@ -243,6 +244,10 @@ impl framework::Example for Example {
             sample_mask: !0,
             alpha_to_coverage_enabled: false,
         });
+        let ship_position = [
+            spout::int_grid::set_values_relative(system_params.width / 2, 0),
+            spout::int_grid::set_values_relative(system_params.height / 2, 0),
+        ];
 
         let this = Example {
             state: GameState {
@@ -252,16 +257,13 @@ impl framework::Example for Example {
                     right: false,
                 },
                 ship_state: ShipState {
-                    position: [
-                        (system_params.width / 2) as i32,
-                        (system_params.height / 2) as i32,
-                    ],
+                    position: ship_position,
                     angle: 0.0,
-                    angle_spread: 0.5,
-                    emit_speed: 10.0,
-                    emit_speed_spread: 5.0,
+                    angle_spread: 1.0,
+                    emit_speed: 100.0 * (spout::int_grid::cell_size() as f32),
+                    emit_speed_spread: 25.0 * (spout::int_grid::cell_size() as f32),
                     ttl: 5.0,
-                    rotation_rate: 1.0,
+                    rotation_rate: 15.0,
                     acceleration: 1.0,
                 },
             },

@@ -6,7 +6,7 @@ use zerocopy::AsBytes;
 #[derive(Copy, Clone, Debug, zerocopy::FromBytes)]
 #[repr(C, packed)]
 pub struct Particle {
-    position: [i32; 2],
+    position: [u32; 2],
     velocity: [i32; 2],
     ttl: f32,
     padding: i32,
@@ -15,7 +15,6 @@ pub struct Particle {
 struct EmitterParams {
     num_particles: u32,
     emit_period: f32,
-    max_particle_life: f32,
 }
 
 pub struct Emitter {
@@ -34,8 +33,8 @@ pub struct Emitter {
 #[derive(Copy, Clone, Debug, zerocopy::FromBytes, zerocopy::AsBytes)]
 #[repr(C, packed)]
 pub struct EmitParams {
-    position_start: [i32; 2],
-    position_end: [i32; 2],
+    position_start: [u32; 2],
+    position_end: [u32; 2],
     speed_min: f32,
     speed_max: f32,
     angle: f32,
@@ -50,7 +49,7 @@ impl EmitParams {
     }
 
     pub fn stationary(
-        pos: &[i32; 2],
+        pos: &[u32; 2],
         speed_mean: f32,
         speed_spread: f32,
         angle: f32,
@@ -193,7 +192,6 @@ impl Emitter {
             params: EmitterParams {
                 num_particles: max_num_particles,
                 emit_period: 1.0 / emission_frequency,
-                max_particle_life,
             },
             time: 0.0,
             emit_progress: 0.0,

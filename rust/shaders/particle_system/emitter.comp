@@ -1,5 +1,6 @@
 #version 450 core
 #include "particle.h"
+#include "grid.h"
 #include "hash.h"
 layout(local_size_x = 512, local_size_y = 1, local_size_z = 1) in;
 layout(std430, binding = 0) buffer Particles {
@@ -9,8 +10,8 @@ layout(std430, binding = 0) buffer Particles {
 layout(std140, set = 0, binding = 1) uniform Params {
     uint start_index;
     uint num_emitted;
-    ivec2 position_start;
-    ivec2 position_end;
+    uvec2 position_start;
+    uvec2 position_end;
     float speed_min;
     float speed_max;
     float angle;
@@ -43,10 +44,19 @@ void main() {
 
   particles[gid].position = position_start + pos_delta;
 
+  // First rand is for velocity
   float rand1 = hash12(vec2(interp, time));
+
+  // First rand is for ttl 
   float rand2 = hash12(vec2(interp, rand1));
+
+  // First rand is for angle
+  float rand3 = hash12(vec2(interp, rand1));
+
+  float spray_angle = angle + rand3 - .5; 
+  
   float rand_speed = mix(speed_min, speed_max, rand1);
-  vec2 float_velocity = vec2(cos(angle), sin(angle)) * rand_speed; 
+  vec2 float_velocity = vec2(cos(spray_angle), sin(spray_angle)) * rand_speed; 
   particles[gid].velocity = ivec2(float_velocity);
   particles[gid].ttl = mix(ttl_min, ttl_max, rand2);
 }

@@ -29,8 +29,12 @@ pub const fn set_inner_grid(v: u32) -> u32 {
     v & inner_grid_bitmask()
 }
 
-pub const fn set_values(inner: u32, outer: u32) -> u32 {
+pub const fn set_values(outer: u32, inner: u32) -> u32 {
     set_outer_grid(outer) | set_inner_grid(inner)
+}
+
+pub const fn set_values_relative(outer: u32, inner: u32) -> u32 {
+    set_values(outer + half_outer_grid_size(), inner)
 }
 
 // Inner grid cell dimensions
@@ -53,6 +57,10 @@ pub const fn outer_grid_size() -> u32 {
 // it gives us the most space before hitting overflow.
 pub const fn half_outer_grid_size() -> u32 {
     outer_grid_size().wrapping_shr(1)
+}
+
+pub fn float_to_grid(v: f64) -> u32 {
+    return (v * (cell_size() as f64)).round() as u32;
 }
 
 #[cfg(test)]
@@ -84,7 +92,7 @@ mod tests {
 
     #[test]
     fn set_values_test() {
-        let packed = set_values(5, 6);
+        let packed = set_values(6, 5);
         assert_eq!(get_inner_grid(packed), 5);
         assert_eq!(get_outer_grid(packed), 6);
     }
@@ -100,8 +108,9 @@ mod tests {
     #[test]
     fn outer_grid_size_test() {
         assert_eq!(half_outer_grid_size() * 2, outer_grid_size());
+        println!("The anchor value is {}", half_outer_grid_size());
         assert_eq!(
-            set_values(cell_size() - 1, outer_grid_size() - 1),
+            set_values(outer_grid_size() - 1, cell_size() - 1,),
             u32::max_value()
         );
     }

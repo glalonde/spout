@@ -12,6 +12,8 @@ pub struct SystemParams {
 pub struct ComputeUniforms {
     pub num_particles: u32,
     pub dt: f32,
+    pub buffer_width: u32,
+    pub buffer_height: u32,
 }
 
 pub struct ComputeLocals {
@@ -66,6 +68,8 @@ impl ComputeLocals {
         let compute_uniforms = ComputeUniforms {
             num_particles: num_particles,
             dt: 0.0,
+            buffer_width: params.width,
+            buffer_height: params.height,
         };
         let uniform_buf = device
             .create_buffer_mapped(1, wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST)
