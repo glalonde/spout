@@ -31,21 +31,21 @@ pub fn run<E: Example>(title: &str) {
 
     gflags::parse();
     scrub_log::init_with_filter_string(LOG_FILTER.flag).unwrap();
+
     let event_loop = EventLoop::new();
     log::info!("Initializing the window...");
 
     #[cfg(not(feature = "gl"))]
-    let (_window, hidpi_factor, size, surface) = {
+    let (window, size, surface) = {
         let window = winit::window::Window::new(&event_loop).unwrap();
         window.set_title(title);
-        let hidpi_factor = window.hidpi_factor();
-        let size = window.inner_size().to_physical(hidpi_factor);
+        let size = window.inner_size();
         let surface = wgpu::Surface::create(&window);
-        (window, hidpi_factor, size, surface)
+        (window, size, surface)
     };
 
     #[cfg(feature = "gl")]
-    let (_window, instance, hidpi_factor, size, surface) = {
+    let (window, instance, size, surface) = {
         let wb = winit::WindowBuilder::new();
         let cb = wgpu::glutin::ContextBuilder::new().with_vsync(true);
         let context = cb.build_windowed(wb, &event_loop).unwrap();
@@ -63,7 +63,7 @@ pub fn run<E: Example>(title: &str) {
         let instance = wgpu::Instance::new(context);
         let surface = instance.get_surface();
 
-        (window, instance, hidpi_factor, size, surface)
+        (window, instance, size, surface)
     };
 
     let adapter = wgpu::Adapter::request(&wgpu::RequestAdapterOptions {
@@ -82,8 +82,8 @@ pub fn run<E: Example>(title: &str) {
     let mut sc_desc = wgpu::SwapChainDescriptor {
         usage: wgpu::TextureUsage::OUTPUT_ATTACHMENT,
         format: wgpu::TextureFormat::Bgra8UnormSrgb,
-        width: size.width.round() as u32,
-        height: size.height.round() as u32,
+        width: size.width,
+        height: size.height,
         present_mode: wgpu::PresentMode::Vsync,
     };
     let mut swap_chain = device.create_swap_chain(&surface, &sc_desc);
@@ -106,10 +106,9 @@ pub fn run<E: Example>(title: &str) {
                 event: WindowEvent::Resized(size),
                 ..
             } => {
-                let physical = size.to_physical(hidpi_factor);
-                log::info!("Resizing to {:?}", physical);
-                sc_desc.width = physical.width.round() as u32;
-                sc_desc.height = physical.height.round() as u32;
+                log::info!("Resizing to {:?}", size);
+                sc_desc.width = size.width;
+                sc_desc.height = size.height;
                 swap_chain = device.create_swap_chain(&surface, &sc_desc);
                 let command_buf = example.resize(&sc_desc, &device);
                 if let Some(command_buf) = command_buf {
@@ -133,7 +132,8 @@ pub fn run<E: Example>(title: &str) {
                     example.handle_event(event);
                 }
             },
-            event::Event::EventsCleared => {
+            event::Event::MainEventsCleared => window.request_redraw(),
+            event::Event::RedrawRequested(_) => {
                 let frame = swap_chain.get_next_texture();
                 let command_buf = example.render(&frame, &device);
                 queue.submit(&[command_buf]);
