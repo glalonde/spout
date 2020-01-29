@@ -37,7 +37,8 @@ pub struct EmitParams {
     position_end: [u32; 2],
     speed_min: f32,
     speed_max: f32,
-    angle: f32,
+    angle_start: f32,
+    angle_end: f32,
     angle_spread: f32,
     ttl_min: f32,
     ttl_max: f32,
@@ -46,6 +47,29 @@ pub struct EmitParams {
 impl EmitParams {
     pub fn default() -> Self {
         EmitParams::stationary(&[0, 0], 0.0, 0.0, 0.0, 0.0, 0.0)
+    }
+
+    pub fn moving(
+        position_start: &[u32; 2],
+        position_end: &[u32; 2],
+        speed_mean: f32,
+        speed_spread: f32,
+        angle_start: f32,
+        angle_end: f32,
+        angle_spread: f32,
+        ttl: f32,
+    ) -> Self {
+        EmitParams {
+            position_start: *position_start,
+            position_end: *position_end,
+            speed_min: speed_mean - speed_spread,
+            speed_max: speed_mean + speed_spread,
+            angle_start,
+            angle_end,
+            angle_spread,
+            ttl_min: ttl,
+            ttl_max: ttl,
+        }
     }
 
     pub fn stationary(
@@ -61,7 +85,8 @@ impl EmitParams {
             position_end: *pos,
             speed_min: speed_mean - speed_spread,
             speed_max: speed_mean + speed_spread,
-            angle,
+            angle_start: angle,
+            angle_end: angle,
             angle_spread,
             ttl_min: ttl,
             ttl_max: ttl,
@@ -250,6 +275,7 @@ impl Emitter {
             params: *params,
             time: self.time,
         };
+        info!("{}", params.angle_end - params.angle_start);
         Emitter::set_uniforms(device, encoder, &self.uniform_buffer, &emitter_uniforms);
         {
             let mut cpass = encoder.begin_compute_pass();

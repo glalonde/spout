@@ -1,5 +1,9 @@
 use zerocopy::AsBytes;
 
+gflags::define! {
+    --emission_rate: f32 = 10000.0
+}
+
 #[derive(Clone, Copy)]
 pub struct SystemParams {
     pub width: u32,
@@ -10,7 +14,6 @@ pub struct SystemParams {
 #[repr(C)]
 #[derive(Clone, Copy, zerocopy::FromBytes, zerocopy::AsBytes)]
 pub struct ComputeUniforms {
-    pub num_particles: u32,
     pub dt: f32,
     pub buffer_width: u32,
     pub buffer_height: u32,
@@ -35,7 +38,8 @@ impl ComputeLocals {
         // This sets up the compute stage, which is responsible for updating the
         // particle system and most of the game logic. The output is updated game state
         // and a particle density texture.
-        let emitter = super::emitter::Emitter::new(device, 10000.0, params.max_particle_life);
+        let emitter =
+            super::emitter::Emitter::new(device, EMISSION_RATE.flag, params.max_particle_life);
         let num_particles = emitter.num_particles();
 
         // This needs to match the layout size in the the particle compute shader. Maybe
@@ -66,7 +70,6 @@ impl ComputeLocals {
 
         let compute_uniform_size = std::mem::size_of::<ComputeUniforms>() as wgpu::BufferAddress;
         let compute_uniforms = ComputeUniforms {
-            num_particles: num_particles,
             dt: 0.0,
             buffer_width: params.width,
             buffer_height: params.height,

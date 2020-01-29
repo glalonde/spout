@@ -2,6 +2,7 @@
 #include "particle.h"
 #include "grid.h"
 #include "hash.h"
+#include "noise.h"
 layout(local_size_x = 512, local_size_y = 1, local_size_z = 1) in;
 layout(std430, binding = 0) buffer Particles {
   Particle particles[];
@@ -14,12 +15,26 @@ layout(std140, set = 0, binding = 1) uniform Params {
     uvec2 position_end;
     float speed_min;
     float speed_max;
-    float angle;
+    float angle_start;
+    float angle_end;
     float angle_spread;
     float ttl_min;
     float ttl_max;
     float time;
 };
+
+const float PI = 3.1415926535897932384626433832795;
+const float PI_2 = 1.57079632679489661923;
+
+// a % b
+float signed_mod(float a, float b) {
+  return a - floor(a/b) * b;
+}
+
+float angle_difference(float a, float b) {
+  // https://stackoverflow.com/questions/1878907/the-smallest-difference-between-2-angles
+  return signed_mod(a - b + PI_2, PI) - PI_2;
+}
 
 void main() {
   int gid = int(gl_GlobalInvocationID.x);
@@ -53,9 +68,11 @@ void main() {
   // First rand is for angle
   float rand3 = hash12(vec2(interp, rand1));
 
-  float spray_angle = angle + rand3 - .5; 
+  float angle_delta =  angle_difference(angle_end, angle_start);
+  float interp_angle = mix(angle_start, angle_start + angle_delta, interp);
+  float spray_angle = interp_angle + noise1d(time) - .5 + (rand3 - 0.5) * .05; 
   
-  float rand_speed = mix(speed_min, speed_max, rand1);
+  float rand_speed = mix(speed_min, speed_max, noise1d(interp));
   vec2 float_velocity = vec2(cos(spray_angle), sin(spray_angle)) * rand_speed; 
   particles[gid].velocity = ivec2(float_velocity);
   particles[gid].ttl = mix(ttl_min, ttl_max, rand2);

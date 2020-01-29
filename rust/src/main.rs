@@ -3,13 +3,10 @@ mod framework;
 use log::{info, trace};
 
 gflags::define! {
-    --num_particles: u32 = 500
+    --width: u32 = 768
 }
 gflags::define! {
-    --width: u32 = 500
-}
-gflags::define! {
-    --height: u32 = 500
+    --height: u32 = 480
 }
 
 #[derive(Debug)]
@@ -63,6 +60,7 @@ impl Example {
         let ship_state = &mut self.state.ship_state;
 
         // Update "ship"
+        let angle_start = ship_state.angle;
         if input_state.left && !input_state.right {
             // Rotate ccw
             ship_state.angle -= dt * ship_state.rotation_rate;
@@ -71,10 +69,12 @@ impl Example {
             ship_state.angle += dt * ship_state.rotation_rate;
         }
 
-        let emit_params = spout::emitter::EmitParams::stationary(
+        let emit_params = spout::emitter::EmitParams::moving(
+            &ship_state.position,
             &ship_state.position,
             ship_state.emit_speed,
             ship_state.emit_speed_spread,
+            angle_start,
             ship_state.angle,
             ship_state.angle_spread,
             ship_state.ttl,
@@ -89,7 +89,6 @@ impl Example {
 
         // Update simulation
         let sim_uniforms = spout::particle_system::ComputeUniforms {
-            num_particles: NUM_PARTICLES.flag as u32,
             dt,
             buffer_width: width,
             buffer_height: height,

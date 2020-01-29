@@ -10,7 +10,6 @@ layout(std430, binding = 0) buffer Particles {
 
 layout (binding = 1, r32ui) uniform uimage2D counter_texture;
 layout(set = 0, binding = 2) uniform Params {
-    uint num_particles;
     float dt;
     uint buffer_width;
     uint buffer_height;
