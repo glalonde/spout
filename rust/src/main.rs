@@ -1,6 +1,6 @@
 #[path = "../examples/framework.rs"]
 mod framework;
-use log::trace;
+use log::{info, trace};
 
 gflags::define! {
     --num_particles: u32 = 500
@@ -53,11 +53,13 @@ struct Example {
 impl Example {
     // Update pre-render cpu logic
     fn update_state(&mut self, device: &wgpu::Device, encoder: &mut wgpu::CommandEncoder) {
+        let input_state = &self.state.input_state;
+
         let width = self.compute_locals.system_params.width;
         let height = self.compute_locals.system_params.height;
         let dt = self.fps.tick() as f32;
+        info!("fps: {}", 1.0 / dt);
 
-        let input_state = &self.state.input_state;
         let ship_state = &mut self.state.ship_state;
 
         // Update "ship"

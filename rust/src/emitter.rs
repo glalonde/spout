@@ -217,7 +217,6 @@ impl Emitter {
             self.emit_progress -= (num_emitted as f32) * self.params.emit_period;
             self.emit(device, encoder, num_emitted, params)
         }
-        info!("Time: {}", self.time);
     }
     fn set_uniforms(
         device: &wgpu::Device,

@@ -116,7 +116,17 @@ pub fn run<E: Example>(title: &str) {
                 }
             }
             event::Event::WindowEvent { event, .. } => match event {
+                // TODO factor out a better way to handle user requested exits.
                 WindowEvent::KeyboardInput {
+                    input:
+                        event::KeyboardInput {
+                            virtual_keycode: Some(event::VirtualKeyCode::Q),
+                            state: event::ElementState::Pressed,
+                            ..
+                        },
+                    ..
+                }
+                | WindowEvent::KeyboardInput {
                     input:
                         event::KeyboardInput {
                             virtual_keycode: Some(event::VirtualKeyCode::Escape),
