@@ -26,11 +26,15 @@ layout(std140, set = 0, binding = 1) uniform Params {
 const float PI = 3.1415926535897932384626433832795;
 const float PI_2 = 1.57079632679489661923;
 
+// This should be a uniform...
+const float DT = 1.0 / 60.0;
+
 // a % b
 float signed_mod(float a, float b) {
   return a - floor(a/b) * b;
 }
 
+// Returns signed a - b
 float angle_difference(float a, float b) {
   // https://stackoverflow.com/questions/1878907/the-smallest-difference-between-2-angles
   return signed_mod(a - b + PI_2, PI) - PI_2;
@@ -50,17 +54,18 @@ void main() {
     return;
   }
 
+
   // Interpolation parameter for time of iteration.
   float interp = float(distance) / num_emitted;
 
-  // Linear interpolate position 
-  ivec2 pos_delta =
-      ivec2(interp * vec2(position_end - position_start));
+  // Interpolated time through the iteration.
+  float interp_time = interp * DT + time;
 
-  particles[gid].position = position_start + pos_delta;
+  // Linear interpolate position 
+  vec2 pos_delta = interp * vec2(position_end - position_start);
 
   // First rand is for velocity
-  float rand1 = hash12(vec2(interp, time));
+  float rand1 = hash12(vec2(interp, interp_time));
 
   // First rand is for ttl 
   float rand2 = hash12(vec2(interp, rand1));
@@ -70,10 +75,17 @@ void main() {
 
   float angle_delta =  angle_difference(angle_end, angle_start);
   float interp_angle = mix(angle_start, angle_start + angle_delta, interp);
-  float spray_angle = interp_angle + noise1d(time) - .5 + (rand3 - 0.5) * .05; 
+  float spray_angle = interp_angle + noise1d(interp_time) - .5 + (rand3 - 0.5) * .05;
+  vec2 unit_emit_rotation = vec2(cos(spray_angle), sin(spray_angle));
+
   
-  float rand_speed = mix(speed_min, speed_max, noise1d(interp));
-  vec2 float_velocity = vec2(cos(spray_angle), sin(spray_angle)) * rand_speed; 
+  float rand_speed = mix(speed_min, speed_max, rand2);
+  vec2 float_velocity = unit_emit_rotation * rand_speed; 
+
+  // Adjustment from travel during the emission iteration. 
+  vec2 position_adjustment = float_velocity * (DT * (1.0 - interp));
+
+  particles[gid].position = position_start + ivec2(pos_delta + position_adjustment);
   particles[gid].velocity = ivec2(float_velocity);
   particles[gid].ttl = mix(ttl_min, ttl_max, rand2);
 }
