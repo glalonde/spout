@@ -3,10 +3,10 @@ mod framework;
 use log::{info, trace};
 
 gflags::define! {
-    --width: u32 = 768
+    --width: u32 = 320
 }
 gflags::define! {
-    --height: u32 = 480
+    --height: u32 = 180
 }
 
 #[derive(Debug)]

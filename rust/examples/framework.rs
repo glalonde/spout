@@ -43,8 +43,17 @@ pub fn run<E: Example>(title: &str) {
 
     #[cfg(not(feature = "gl"))]
     let (window, size, surface) = {
-        let window = winit::window::Window::new(&event_loop).unwrap();
-        window.set_title(title);
+        use winit::platform::unix::WindowBuilderExtUnix;
+        let window = winit::window::WindowBuilder::new()
+            .with_title(title)
+            .with_x11_window_type(vec![winit::platform::unix::XWindowType::Splash])
+            .with_decorations(false)
+            .with_inner_size(winit::dpi::Size::from(winit::dpi::LogicalSize::new(
+                640 * 2,
+                360 * 2,
+            )))
+            .build(&event_loop)
+            .unwrap();
         let size = window.inner_size();
         let surface = wgpu::Surface::create(&window);
         (window, size, surface)

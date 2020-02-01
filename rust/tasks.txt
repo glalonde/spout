@@ -2,9 +2,10 @@
 * scrolling behavior
 * terrain collision capabilities
 * level generation
-* color scheme selection
 * progressive game mechanics
 * resolution selection
 * cross platform (windows and mac os)
 * music
-* fix fps estimator
+* window aspect ratio
+* initialization (flags, logging)
+* text rendering
