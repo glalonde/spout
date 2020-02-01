@@ -40,6 +40,30 @@ float angle_difference(float a, float b) {
   return signed_mod(a - b + PI_2, PI) - PI_2;
 }
 
+vec2 ship_shape(float interp) {
+  const int rocket_width = 11;
+  const int rocket_height = 21;
+  const vec2 p0 = vec2(-rocket_height, rocket_width / 2);
+  const vec2 p1 = vec2(-rocket_height, -rocket_width / 2);
+  return mix(p0, p1, interp) * kInnerGridSize;
+}
+
+// Distribute the emission position over a shape:
+vec2 emit_position(uint num_emitted, int emit_index) {
+  // We want to distribute the emissions over several sub-iterations so the discretization artifacts aren't as bad.
+  const uint num_passes_per_iteration = 10;
+  uint emits_per_pass = uint(ceil(float(num_emitted) / float(num_passes_per_iteration)));
+  if (emits_per_pass <= 1) {
+    return ship_shape(.5);
+  }
+  return ship_shape(float(emit_index % emits_per_pass) / float(emits_per_pass - 1));
+}
+
+mat2 rotate2d(float angle){
+    return mat2(cos(angle),-sin(angle),
+                sin(angle),cos(angle));
+}
+
 void main() {
   int gid = int(gl_GlobalInvocationID.x);
   int total_particles = int(gl_NumWorkGroups * gl_WorkGroupSize);
@@ -54,15 +78,11 @@ void main() {
     return;
   }
 
-
   // Interpolation parameter for time of iteration.
   float interp = float(distance) / num_emitted;
 
   // Interpolated time through the iteration.
   float interp_time = interp * DT + time;
-
-  // Linear interpolate position 
-  vec2 pos_delta = interp * vec2(position_end - position_start);
 
   // First rand is for velocity
   float rand1 = hash12(vec2(interp, interp_time));
@@ -73,19 +93,23 @@ void main() {
   // First rand is for angle
   float rand3 = hash12(vec2(interp, rand1));
 
-  float angle_delta =  angle_difference(angle_end, angle_start);
-  float interp_angle = mix(angle_start, angle_start + angle_delta, interp);
-  float spray_angle = interp_angle + noise1d(interp_time) - .5 + (rand3 - 0.5) * .05;
-  vec2 unit_emit_rotation = vec2(cos(spray_angle), sin(spray_angle));
+  float angle_delta = angle_difference(angle_end, angle_start);
 
-  
-  float rand_speed = mix(speed_min, speed_max, rand2);
-  vec2 float_velocity = unit_emit_rotation * rand_speed; 
+  // Do all of the math as if the ship were at the origin oriented down the X axis, and then transform at the end.
+  float local_emit_angle = noise1d(interp_time) - .5 + (rand3 - 0.5) * .05 + PI;
+  vec2 unit_emit_rotation = vec2(cos(local_emit_angle), sin(local_emit_angle));
+  float local_emit_speed = mix(speed_min, speed_max, rand1);
+  vec2 local_emit_velocity = unit_emit_rotation * local_emit_speed;
+  // This is "emit position on the wing" + "particle travel during the emission iteration"
+  vec2 local_emit_position = emit_position(num_emitted, distance) + local_emit_velocity * (DT * (1.0 - interp));
 
-  // Adjustment from travel during the emission iteration. 
-  vec2 position_adjustment = float_velocity * (DT * (1.0 - interp));
+  // Get the global frame of the ship.
+  float ship_angle = mix(angle_start, angle_start + angle_delta, interp);
+  ivec2 ship_position = ivec2(mix(position_start, position_end, interp));
 
-  particles[gid].position = position_start + ivec2(pos_delta + position_adjustment);
-  particles[gid].velocity = ivec2(float_velocity);
+  // Get a matrix that rotates points from the local frame to the global frame.
+  mat2 global_rotate_local = rotate2d(-ship_angle);
+  particles[gid].position =  position_start + ivec2(global_rotate_local * local_emit_position);
+  particles[gid].velocity = ivec2(global_rotate_local * local_emit_velocity);
   particles[gid].ttl = mix(ttl_min, ttl_max, rand2);
 }

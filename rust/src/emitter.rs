@@ -275,7 +275,6 @@ impl Emitter {
             params: *params,
             time: self.time,
         };
-        info!("{}", params.angle_end - params.angle_start);
         Emitter::set_uniforms(device, encoder, &self.uniform_buffer, &emitter_uniforms);
         {
             let mut cpass = encoder.begin_compute_pass();
