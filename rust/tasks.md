@@ -1,0 +1,13 @@
+
+- [ ] ship rendering
+- [ ] ship motion
+- [ ] scrolling behavior
+- [ ] terrain collision capabilities
+- [ ] level generation
+- [ ] progressive game mechanics
+- [ ] resolution selection
+- [ ] cross platform (windows and mac os)
+- [ ] music
+- [ ] window aspect ratio
+- [ ] initialization (flags, logging)
+- [ ] text rendering
