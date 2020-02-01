@@ -1,5 +1,5 @@
 use super::include_shader;
-use log::{info, trace};
+use log::trace;
 use zerocopy::AsBytes;
 
 // This should match the struct defined in the relevant compute shader.

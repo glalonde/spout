@@ -7,3 +7,4 @@
 * resolution selection
 * cross platform (windows and mac os)
 * music
+* fix fps estimator

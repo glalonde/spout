@@ -1,6 +1,6 @@
 #[derive(Debug)]
 pub struct FpsEstimator {
-    last_tick_time: std::time::Instant,
+    iteration_start: std::time::Instant,
     iteration_duration: std::time::Duration,
 }
 
@@ -9,30 +9,27 @@ static NATIVE_SLEEP_ACCURACY: std::time::Duration = std::time::Duration::from_mi
 impl FpsEstimator {
     pub fn new(fps: f64) -> FpsEstimator {
         FpsEstimator {
-            last_tick_time: std::time::Instant::now(),
+            iteration_start: std::time::Instant::now(),
             iteration_duration: std::time::Duration::from_secs_f64(1.0 / fps),
         }
     }
 
-    fn high_resolution_sleep_for(duration: &std::time::Duration) {
-        // Accuracy of rust sleep on my machine is .0005 max oversleep and no
-        // undersleep.
-        if duration > &NATIVE_SLEEP_ACCURACY {
-            let start = std::time::Instant::now();
-            std::thread::sleep(*duration - NATIVE_SLEEP_ACCURACY);
-            while &start.elapsed() < duration {}
+    fn high_resolution_sleep_until(done: &std::time::Instant) {
+        let now = std::time::Instant::now();
+        let system_sleep_until = done.checked_sub(NATIVE_SLEEP_ACCURACY).unwrap_or(now);
+        if now < system_sleep_until {
+            std::thread::sleep(system_sleep_until.duration_since(now));
         }
+        while *done > std::time::Instant::now() {}
     }
 
     pub fn tick(&mut self) -> f64 {
-        let elapsed = self.last_tick_time.elapsed();
-        let maybe_delta = self.iteration_duration.checked_sub(elapsed);
-        if maybe_delta.is_some() {
-            FpsEstimator::high_resolution_sleep_for(&maybe_delta.unwrap());
-        }
-        let dt = self.last_tick_time.elapsed();
-        self.last_tick_time = std::time::Instant::now();
-        dt.as_secs_f64()
+        FpsEstimator::high_resolution_sleep_until(
+            &(self.iteration_start + self.iteration_duration),
+        );
+        let dt = self.iteration_start.elapsed().as_secs_f64();
+        self.iteration_start = std::time::Instant::now();
+        dt
     }
 }
 
