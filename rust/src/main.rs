@@ -126,7 +126,12 @@ impl framework::Example for Example {
         let fs_module =
             device.create_shader_module(&wgpu::read_spirv(std::io::Cursor::new(&fs[..])).unwrap());
 
-        let cm_texture = spout::color_maps::create_color_map(256, device, &mut init_encoder);
+        let cm_texture = spout::color_maps::create_color_map(
+            256,
+            device,
+            spout::color_maps::get_color_map_from_flag(),
+            &mut init_encoder,
+        );
 
         // The render pipeline renders data into this texture
         let density_sampler = device.create_sampler(&wgpu::SamplerDescriptor {

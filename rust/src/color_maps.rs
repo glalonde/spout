@@ -1,16 +1,56 @@
+use gflags::custom::{Arg, Error, Result, Value};
+
+gflags::define! {
+    --color_map: ColorMap = ColorMap::Viridis
+}
+
+#[repr(u8)]
+#[derive(Copy, Clone)]
+enum ColorMap {
+    Viridis = 0,
+    Magma = 1,
+    Inferno = 2,
+    Plasma = 3,
+}
+
+use lazy_static::lazy_static;
+lazy_static! {
+    static ref COLOR_MAPS: [scarlet::colormap::ListedColorMap; 4] = [
+        scarlet::colormap::ListedColorMap::viridis(),
+        scarlet::colormap::ListedColorMap::magma(),
+        scarlet::colormap::ListedColorMap::inferno(),
+        scarlet::colormap::ListedColorMap::plasma(),
+    ];
+}
+
+impl Value for ColorMap {
+    fn parse(arg: Arg) -> Result<Self> {
+        match arg.get_str() {
+            "viridis" => Ok(ColorMap::Viridis),
+            "magma" => Ok(ColorMap::Magma),
+            "inferno" => Ok(ColorMap::Inferno),
+            "plasma" => Ok(ColorMap::Plasma),
+            _ => Err(Error::new("Invalid ColorMap")),
+        }
+    }
+}
+
+pub fn get_color_map_from_flag() -> &'static scarlet::colormap::ListedColorMap {
+    &COLOR_MAPS[COLOR_MAP.flag as usize]
+}
+
 // Create a particle density color map rgba
 // Rust image defaults to row major.
 pub fn create_color_map(
     size: u32,
     device: &wgpu::Device,
+    cm: &scarlet::colormap::ListedColorMap,
     encoder: &mut wgpu::CommandEncoder,
 ) -> wgpu::Texture {
-    // TODO: get color map name from flag
-    let cm = scarlet::colormap::ListedColorMap::viridis();
     let im = image::ImageBuffer::<image::Rgba<u8>, Vec<u8>>::from_fn(size, 1, |x, _y| {
         let parameter = x as f64 / (size - 1) as f64;
         let color_point: scarlet::color::RGBColor =
-            scarlet::colormap::ColorMap::transform_single(&cm, parameter);
+            scarlet::colormap::ColorMap::transform_single(cm, parameter);
         image::Rgba([
             color_point.int_r(),
             color_point.int_g(),

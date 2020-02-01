@@ -3,6 +3,9 @@ use winit::event::WindowEvent;
 gflags::define! {
     --log_filter: &str = "warn,spout=info"
 }
+gflags::define! {
+    -h, --help = false
+}
 
 // "Framework" for a windowed executable.
 pub trait Example: 'static + Sized {
@@ -30,6 +33,9 @@ pub fn run<E: Example>(title: &str) {
     };
 
     gflags::parse();
+    if HELP.flag {
+        gflags::print_help_and_exit(0);
+    }
     scrub_log::init_with_filter_string(LOG_FILTER.flag).unwrap();
 
     let event_loop = EventLoop::new();
