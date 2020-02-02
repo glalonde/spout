@@ -17,25 +17,9 @@ struct InputState {
 }
 
 #[derive(Debug)]
-struct ShipState {
-    // Params for the emit functionality
-    // TODO maybe factor out
-    position: [u32; 2],
-    angle: f32,
-    angle_spread: f32,
-    emit_speed: f32,
-    emit_speed_spread: f32,
-    ttl: f32,
-
-    // Params for the ship's motion
-    rotation_rate: f32,
-    acceleration: f32,
-}
-
-#[derive(Debug)]
 struct GameState {
     input_state: InputState,
-    ship_state: ShipState,
+    ship_state: spout::ship::ShipState,
 }
 
 struct Example {
@@ -55,36 +39,25 @@ impl Example {
         let width = self.compute_locals.system_params.width;
         let height = self.compute_locals.system_params.height;
         let dt = self.fps.tick() as f32;
-        info!("fps: {}", 1.0 / dt);
 
         let ship_state = &mut self.state.ship_state;
 
         // Update "ship"
-        let angle_start = ship_state.angle;
-        if input_state.left && !input_state.right {
-            // Rotate ccw
-            ship_state.angle -= dt * ship_state.rotation_rate;
-        } else if !input_state.left && input_state.right {
-            // Rotate cw
-            ship_state.angle += dt * ship_state.rotation_rate;
-        }
-
-        let emit_params = spout::emitter::EmitParams::moving(
-            &ship_state.position,
-            &ship_state.position,
-            ship_state.emit_speed,
-            ship_state.emit_speed_spread,
-            angle_start,
-            ship_state.angle,
-            ship_state.angle_spread,
-            ship_state.ttl,
-        );
+        let rotation: spout::ship::RotationDirection = match (input_state.left, input_state.right) {
+            (true, false) => spout::ship::RotationDirection::CCW,
+            (false, true) => spout::ship::RotationDirection::CW,
+            _ => spout::ship::RotationDirection::None,
+        };
+        ship_state.update(dt, input_state.forward, rotation);
 
         // Emit particles
         if input_state.forward {
-            self.compute_locals
-                .emitter
-                .emit_over_time(device, encoder, dt, &emit_params);
+            self.compute_locals.emitter.emit_over_time(
+                device,
+                encoder,
+                dt,
+                &ship_state.emit_params,
+            );
         }
 
         // Update simulation
@@ -263,7 +236,8 @@ impl framework::Example for Example {
                     forward: false,
                     right: false,
                 },
-                ship_state: ShipState {
+                // TODO finish this.
+                ship_state: spout::ship::ShipState {
                     position: ship_position,
                     angle: 0.0,
                     angle_spread: 1.0,
