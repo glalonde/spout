@@ -1,5 +1,6 @@
 use super::include_shader;
-use log::trace;
+
+use log::{info, trace};
 use zerocopy::AsBytes;
 
 // This should match the struct defined in the relevant compute shader.
@@ -33,20 +34,24 @@ pub struct Emitter {
 #[derive(Copy, Clone, Debug, zerocopy::FromBytes, zerocopy::AsBytes)]
 #[repr(C, packed)]
 pub struct EmitParams {
-    position_start: [u32; 2],
-    position_end: [u32; 2],
-    speed_min: f32,
-    speed_max: f32,
-    angle_start: f32,
-    angle_end: f32,
-    angle_spread: f32,
-    ttl_min: f32,
-    ttl_max: f32,
+    // Boundary values for the emitter base
+    pub position_start: [u32; 2],
+    pub position_end: [u32; 2],
+    pub velocity: [i32; 2],
+    pub angle_start: f32,
+    pub angle_end: f32,
+
+    // Parameters for the "nozzle"
+    pub speed_min: f32,
+    pub speed_max: f32,
+    pub angle_spread: f32,
+    pub ttl_min: f32,
+    pub ttl_max: f32,
 }
 
 impl EmitParams {
     pub fn default() -> Self {
-        EmitParams::stationary(&[0, 0], 0.0, 0.0, 0.0, 0.0, 0.0)
+        EmitParams::stationary(&[0, 0], 0.0, 0.0, 0.0, 0.0, 5.0)
     }
 
     pub fn moving(
@@ -59,13 +64,15 @@ impl EmitParams {
         angle_spread: f32,
         ttl: f32,
     ) -> Self {
+        // TODO fix velocity
         EmitParams {
             position_start: *position_start,
             position_end: *position_end,
-            speed_min: speed_mean - speed_spread,
-            speed_max: speed_mean + speed_spread,
+            velocity: [0, 0],
             angle_start,
             angle_end,
+            speed_min: speed_mean - speed_spread,
+            speed_max: speed_mean + speed_spread,
             angle_spread,
             ttl_min: ttl,
             ttl_max: ttl,
@@ -83,10 +90,11 @@ impl EmitParams {
         EmitParams {
             position_start: *pos,
             position_end: *pos,
-            speed_min: speed_mean - speed_spread,
-            speed_max: speed_mean + speed_spread,
+            velocity: [0, 0],
             angle_start: angle,
             angle_end: angle,
+            speed_min: speed_mean - speed_spread,
+            speed_max: speed_mean + speed_spread,
             angle_spread,
             ttl_min: ttl,
             ttl_max: ttl,
@@ -269,6 +277,8 @@ impl Emitter {
         num_emitted: u32,
         params: &EmitParams,
     ) {
+        // let mut params2 = params;
+        info!("params: {:?}", params);
         let emitter_uniforms = EmitterUniforms {
             start_index: self.write_index,
             num_emitted: num_emitted,

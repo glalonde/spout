@@ -13,10 +13,12 @@ layout(std140, set = 0, binding = 1) uniform Params {
     uint num_emitted;
     uvec2 position_start;
     uvec2 position_end;
-    float speed_min;
-    float speed_max;
+    ivec2 velocity;
     float angle_start;
     float angle_end;
+
+    float speed_min;
+    float speed_max;
     float angle_spread;
     float ttl_min;
     float ttl_max;
@@ -109,7 +111,7 @@ void main() {
 
   // Get a matrix that rotates points from the local frame to the global frame.
   mat2 global_rotate_local = rotate2d(-ship_angle);
-  particles[gid].position =  position_start + ivec2(global_rotate_local * local_emit_position);
+  particles[gid].position = position_start + ivec2(global_rotate_local * local_emit_position);
   particles[gid].velocity = ivec2(global_rotate_local * local_emit_velocity);
   particles[gid].ttl = mix(ttl_min, ttl_max, rand2);
 }

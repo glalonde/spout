@@ -37,6 +37,13 @@ pub const fn set_values_relative(outer: u32, inner: u32) -> u32 {
     set_values(outer + half_outer_grid_size(), inner)
 }
 
+pub const fn get_values_relative(v: u32) -> [u32; 2] {
+    [
+        get_outer_grid(v) - half_outer_grid_size(),
+        get_inner_grid(v),
+    ]
+}
+
 // Inner grid cell dimensions
 pub const fn cell_size() -> u32 {
     inner_grid_bitmask() + 1

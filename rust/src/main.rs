@@ -236,17 +236,7 @@ impl framework::Example for Example {
                     forward: false,
                     right: false,
                 },
-                // TODO finish this.
-                ship_state: spout::ship::ShipState {
-                    position: ship_position,
-                    angle: 0.0,
-                    angle_spread: 1.0,
-                    emit_speed: 100.0 * (spout::int_grid::cell_size() as f32),
-                    emit_speed_spread: 25.0 * (spout::int_grid::cell_size() as f32),
-                    ttl: 5.0,
-                    rotation_rate: 15.0,
-                    acceleration: 1.0,
-                },
+                ship_state: spout::ship::ShipState::init_from_flags(ship_position),
             },
             compute_locals: compute_locals,
             index_count: 4,
