@@ -37,6 +37,7 @@ pub const fn set_values_relative(outer: u32, inner: u32) -> u32 {
     set_values(outer + half_outer_grid_size(), inner)
 }
 
+// TODO this panics for returning negative values.
 pub const fn get_values_relative(v: u32) -> [u32; 2] {
     [
         get_outer_grid(v) - half_outer_grid_size(),

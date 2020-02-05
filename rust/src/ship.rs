@@ -75,16 +75,11 @@ impl ShipState {
         self.position[0] = self.position[0].wrapping_add((dt * self.velocity[0] as f32) as u32);
         self.position[1] = self.position[1].wrapping_add((dt * self.velocity[1] as f32) as u32);
         self.emit_params.position_end = [self.position[0], self.position[1]];
-        info!(
-            "Position:{}, {}",
-            super::int_grid::get_values_relative(self.position[0])[0],
-            super::int_grid::get_values_relative(self.position[1])[0]
-        );
 
         // Update velocity.
         self.emit_params.velocity = [self.velocity[0], self.velocity[1]];
         if accelerate {
-            info!("accelerationg: {:?}", self.velocity);
+            info!("acceleration: {:?}", self.velocity);
             self.velocity[0] += (dt
                 * self.acceleration
                 * self.orientation.cos()
@@ -99,5 +94,6 @@ impl ShipState {
         let angle_delta = dt * (rotation as i8 as f32) * self.rotation_rate;
         self.emit_params.angle_start = self.orientation;
         self.orientation += angle_delta;
+        self.emit_params.angle_end = self.orientation;
     }
 }
