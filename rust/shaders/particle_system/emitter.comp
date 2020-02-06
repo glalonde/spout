@@ -44,7 +44,7 @@ float angle_difference(float a, float b) {
 
 vec2 ship_shape(float interp) {
   const int rocket_width = 11;
-  const int rocket_height = 21;
+  const int rocket_height = 5;
   const vec2 p0 = vec2(-rocket_height, rocket_width / 2);
   const vec2 p1 = vec2(-rocket_height, -rocket_width / 2);
   return mix(p0, p1, interp) * kInnerGridSize;
@@ -112,6 +112,6 @@ void main() {
   // Get a matrix that rotates points from the local frame to the global frame.
   mat2 global_rotate_local = rotate2d(-ship_angle);
   particles[gid].position = position_start + ivec2(global_rotate_local * local_emit_position);
-  particles[gid].velocity = ivec2(global_rotate_local * local_emit_velocity);
+  particles[gid].velocity = ivec2(global_rotate_local * local_emit_velocity) + velocity;
   particles[gid].ttl = mix(ttl_min, ttl_max, rand2);
 }
