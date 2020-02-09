@@ -1,15 +1,20 @@
 #version 450 core
 #include "grid.h"
 
+out gl_PerVertex {
+    vec4 gl_Position;
+};
+
 layout(std140, set = 0, binding = 0) uniform Params {
     uvec2 position;
     float angle;
-    float time;
 };
 
 const float ship_width = 2.0;
 const float ship_height = 4.0;
 // Pixel coordinate ship...
+// TODO this probably needs to render to a framebuffer/texture/image of the same size as the main particle density buffer.
+//
 //     +x
 //
 //      1
@@ -41,6 +46,9 @@ mat2 rotate2d(float angle){
 
 void main() {
     mat2 rotation = rotate2d(angle);
-    vec2 vertex_position = rotation * scaled_ship_vertices[gl_VertexIndex] + position;
-    gl_Position = vec4(vertex_position, 0.0, 1.0);
+    ivec2 vertex_position = ivec2(rotation * scaled_ship_vertices[gl_VertexIndex]);
+    // Grid coordinates...
+    ivec2 current_cell = GetOuterGrid(position) + vertex_position;
+    vec2 image_coordinates = vec2(vertex_position) / (vec2(320, 180) * kInnerGridSize);// (current_cell - kGridAnchor) / vec2(320, 180);
+    gl_Position = vec4(image_coordinates, 0.0, 1.0);
 }

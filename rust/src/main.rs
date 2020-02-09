@@ -29,6 +29,7 @@ struct Example {
     index_count: usize,
     render_bind_group: wgpu::BindGroup,
     render_pipeline: wgpu::RenderPipeline,
+    ship_renderer: spout::ship::ShipRenderer,
 }
 
 impl Example {
@@ -246,6 +247,7 @@ impl framework::Example for Example {
             index_count: 4,
             render_bind_group: render_bind_group,
             render_pipeline: render_pipeline,
+            ship_renderer: spout::ship::ShipRenderer::init(device),
         };
         (this, Some(init_encoder.finish()))
     }
@@ -293,7 +295,7 @@ impl framework::Example for Example {
         self.update_state(device, &mut encoder);
 
         {
-            // Clear the density texture
+            // Clear the density texture.
             encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
                     attachment: &self.compute_locals.density_texture.create_default_view(),
@@ -306,6 +308,7 @@ impl framework::Example for Example {
             });
         }
         {
+            // Update the particles state and density texture.
             let mut cpass = encoder.begin_compute_pass();
             cpass.set_pipeline(&self.compute_locals.compute_pipeline);
             cpass.set_bind_group(0, &self.compute_locals.compute_bind_group, &[]);
@@ -315,7 +318,9 @@ impl framework::Example for Example {
             );
             cpass.dispatch(self.compute_locals.compute_work_groups as u32, 1, 1);
         }
+        /*
         {
+            // Render the density texture.
             let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
                     attachment: &frame.view,
@@ -329,6 +334,12 @@ impl framework::Example for Example {
             rpass.set_pipeline(&self.render_pipeline);
             rpass.set_bind_group(0, &self.render_bind_group, &[]);
             rpass.draw(0..self.index_count as u32, 0..1);
+        }
+        */
+        {
+            // Render the ship.
+            self.ship_renderer
+                .render(frame, device, &self.state.ship_state, &mut encoder);
         }
 
         encoder.finish()

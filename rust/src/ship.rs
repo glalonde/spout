@@ -1,4 +1,5 @@
 use log::{info, trace};
+use zerocopy::AsBytes;
 
 gflags::define! {
     --ship_acceleration: f32 = 100.0
@@ -22,11 +23,6 @@ pub enum RotationDirection {
     CW = -1,
     None = 0,
     CCW = 1,
-}
-
-pub struct Rendering {
-    render_bind_group: wgpu::BindGroup,
-    render_pipeline: wgpu::RenderPipeline,
 }
 
 #[derive(Debug)]
@@ -101,8 +97,32 @@ impl ShipState {
         self.orientation += angle_delta;
         self.emit_params.angle_end = self.orientation;
     }
+}
 
-    pub fn make_render_pipeline(_sc_desc: &wgpu::SwapChainDescriptor, device: &wgpu::Device) {
+#[repr(C)]
+#[derive(Clone, Copy, zerocopy::FromBytes, zerocopy::AsBytes)]
+pub struct ComputeUniforms {
+    pub position: [u32; 2],
+    pub angle: f32,
+}
+
+pub struct ShipRenderer {
+    pub render_bind_group: wgpu::BindGroup,
+    pub render_pipeline: wgpu::RenderPipeline,
+    pub uniform_buf: wgpu::Buffer,
+}
+
+impl ShipRenderer {
+    pub fn init(device: &wgpu::Device) -> Self {
+        let compute_uniform_size = std::mem::size_of::<ComputeUniforms>() as wgpu::BufferAddress;
+        let compute_uniforms = ComputeUniforms {
+            position: [0, 0],
+            angle: 0.0,
+        };
+        let uniform_buf = device
+            .create_buffer_mapped(1, wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST)
+            .fill_from_slice(&[compute_uniforms]);
+
         // Sets up the quad canvas.
         let vs = super::include_shader!("particle_system/ship.vert.spv");
         let vs_module =
@@ -113,10 +133,28 @@ impl ShipState {
             device.create_shader_module(&wgpu::read_spirv(std::io::Cursor::new(&fs[..])).unwrap());
 
         let render_bind_group_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor { bindings: &[] });
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                bindings: &[
+                    // Uniform inputs
+                    wgpu::BindGroupLayoutBinding {
+                        binding: 0,
+                        visibility: wgpu::ShaderStage::VERTEX,
+                        ty: wgpu::BindingType::UniformBuffer { dynamic: false },
+                    },
+                ],
+            });
         let render_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &render_bind_group_layout,
-            bindings: &[],
+            bindings: &[
+                // Uniforms
+                wgpu::Binding {
+                    binding: 0,
+                    resource: wgpu::BindingResource::Buffer {
+                        buffer: &uniform_buf,
+                        range: 0..compute_uniform_size,
+                    },
+                },
+            ],
         });
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -154,5 +192,54 @@ impl ShipState {
             sample_mask: !0,
             alpha_to_coverage_enabled: false,
         });
+
+        ShipRenderer {
+            render_bind_group,
+            render_pipeline,
+            uniform_buf,
+        }
+    }
+
+    pub fn render(
+        &self,
+        frame: &wgpu::SwapChainOutput,
+        device: &wgpu::Device,
+        ship: &ShipState,
+        encoder: &mut wgpu::CommandEncoder,
+    ) {
+        // Update the ship orientation uniforms.
+        let values = ComputeUniforms {
+            position: ship.position,
+            angle: ship.orientation,
+        };
+        let bytes: &[u8] = values.as_bytes();
+        let uniform_buf_size = std::mem::size_of::<ComputeUniforms>();
+        let temp_buf = device
+            .create_buffer_mapped(uniform_buf_size, wgpu::BufferUsage::COPY_SRC)
+            .fill_from_slice(bytes);
+        encoder.copy_buffer_to_buffer(
+            &temp_buf,
+            0,
+            &self.uniform_buf,
+            0,
+            uniform_buf_size as wgpu::BufferAddress,
+        );
+
+        // Render the ship.
+        let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
+                attachment: &frame.view,
+                resolve_target: None,
+                load_op: wgpu::LoadOp::Clear,
+                store_op: wgpu::StoreOp::Store,
+                clear_color: wgpu::Color::BLACK,
+            }],
+            depth_stencil_attachment: None,
+        });
+        rpass.set_pipeline(&self.render_pipeline);
+        rpass.set_bind_group(0, &self.render_bind_group, &[]);
+        // TODO don't hardcode this index count, it needs to be the number
+        // of vertices in the ship.
+        rpass.draw(0..4 as u32, 0..1);
     }
 }
