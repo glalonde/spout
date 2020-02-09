@@ -136,6 +136,7 @@ impl framework::Example for Example {
         let render_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 bindings: &[
+                    // Particle density texture.
                     wgpu::BindGroupLayoutBinding {
                         binding: 0,
                         visibility: wgpu::ShaderStage::FRAGMENT,
@@ -144,11 +145,13 @@ impl framework::Example for Example {
                             dimension: wgpu::TextureViewDimension::D2,
                         },
                     },
+                    // Particle density texture sampler.
                     wgpu::BindGroupLayoutBinding {
                         binding: 1,
                         visibility: wgpu::ShaderStage::FRAGMENT,
                         ty: wgpu::BindingType::Sampler,
                     },
+                    // Color map.
                     wgpu::BindGroupLayoutBinding {
                         binding: 2,
                         visibility: wgpu::ShaderStage::FRAGMENT,
@@ -157,6 +160,7 @@ impl framework::Example for Example {
                             dimension: wgpu::TextureViewDimension::D1,
                         },
                     },
+                    // Color map sampler.
                     wgpu::BindGroupLayoutBinding {
                         binding: 3,
                         visibility: wgpu::ShaderStage::FRAGMENT,

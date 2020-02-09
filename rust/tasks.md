@@ -2,7 +2,8 @@
 ## Easy/Straightforward
 - [ ] initialization (flags, logging)
 - [ ] ship rendering
-- [ ] ship motion
+- [x] ship motion
+- [ ] ship collision detection 
 - [ ] text rendering
 - [ ] terrain collision capabilities
 - [ ] resolution selection
@@ -11,6 +12,7 @@
 ---
 ## Medium
 - [ ] level generation
+- [ ] configs
 ---
 ## Hard
 - [ ] scrolling behavior
