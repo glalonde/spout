@@ -101,7 +101,7 @@ impl ShipState {
 
 #[repr(C)]
 #[derive(Clone, Copy, zerocopy::FromBytes, zerocopy::AsBytes)]
-pub struct ComputeUniforms {
+pub struct RenderUniforms {
     pub position: [u32; 2],
     pub angle: f32,
 }
@@ -136,8 +136,8 @@ impl ShipRenderer {
         });
         let ship_texture_view = ship_texture.create_default_view();
 
-        let compute_uniform_size = std::mem::size_of::<ComputeUniforms>() as wgpu::BufferAddress;
-        let compute_uniforms = ComputeUniforms {
+        let compute_uniform_size = std::mem::size_of::<RenderUniforms>() as wgpu::BufferAddress;
+        let compute_uniforms = RenderUniforms {
             position: [0, 0],
             angle: 0.0,
         };
@@ -232,12 +232,12 @@ impl ShipRenderer {
         encoder: &mut wgpu::CommandEncoder,
     ) {
         // Update the ship orientation uniforms.
-        let values = ComputeUniforms {
+        let values = RenderUniforms {
             position: ship.position,
             angle: ship.orientation,
         };
         let bytes: &[u8] = values.as_bytes();
-        let uniform_buf_size = std::mem::size_of::<ComputeUniforms>();
+        let uniform_buf_size = std::mem::size_of::<RenderUniforms>();
         let temp_buf = device
             .create_buffer_mapped(uniform_buf_size, wgpu::BufferUsage::COPY_SRC)
             .fill_from_slice(bytes);

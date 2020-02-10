@@ -10,8 +10,8 @@ layout(std140, set = 0, binding = 0) uniform Params {
     float angle;
 };
 
-const float ship_width = 2.0;
-const float ship_height = 4.0;
+const float ship_width = 20.0;
+const float ship_height = 40.0;
 // Pixel coordinate ship...
 // TODO this probably needs to render to a framebuffer/texture/image of the same size as the main particle density buffer.
 //
