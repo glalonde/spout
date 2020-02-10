@@ -1,4 +1,4 @@
-use log::{info, trace};
+use log::info;
 use zerocopy::AsBytes;
 
 gflags::define! {
