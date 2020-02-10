@@ -141,7 +141,7 @@ impl ComputeLocals {
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 bind_group_layouts: &[&compute_bind_group_layout],
             });
-        let cs = super::include_shader!("particle_system/shader.comp.spv");
+        let cs = super::include_shader!("particle_system/particles.comp.spv");
         let cs_module =
             device.create_shader_module(&wgpu::read_spirv(std::io::Cursor::new(&cs[..])).unwrap());
         let compute_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
@@ -199,11 +199,11 @@ impl ParticleRenderer {
         init_encoder: &mut wgpu::CommandEncoder,
     ) -> Self {
         // Sets up the quad canvas.
-        let vs = super::include_shader!("particle_system/shader.vert.spv");
+        let vs = super::include_shader!("particle_system/particles.vert.spv");
         let vs_module =
             device.create_shader_module(&wgpu::read_spirv(std::io::Cursor::new(&vs[..])).unwrap());
         // Renders the data texture onto the canvas.
-        let fs = super::include_shader!("particle_system/shader.frag.spv");
+        let fs = super::include_shader!("particle_system/particles.frag.spv");
         let fs_module =
             device.create_shader_module(&wgpu::read_spirv(std::io::Cursor::new(&fs[..])).unwrap());
 
@@ -341,11 +341,11 @@ impl ParticleRenderer {
         }
     }
 
-    pub fn render(&self, frame: &wgpu::SwapChainOutput, encoder: &mut wgpu::CommandEncoder) {
+    pub fn render(&self, texture_view: &wgpu::TextureView, encoder: &mut wgpu::CommandEncoder) {
         // Render the density texture.
         let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
-                attachment: &frame.view,
+                attachment: texture_view,
                 resolve_target: None,
                 load_op: wgpu::LoadOp::Clear,
                 store_op: wgpu::StoreOp::Store,

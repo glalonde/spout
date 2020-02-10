@@ -226,7 +226,7 @@ impl ShipRenderer {
 
     pub fn render(
         &self,
-        frame: &wgpu::SwapChainOutput,
+        texture_view: &wgpu::TextureView,
         device: &wgpu::Device,
         ship: &ShipState,
         encoder: &mut wgpu::CommandEncoder,
@@ -252,7 +252,7 @@ impl ShipRenderer {
         // Render the ship to a texture.
         let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
-                attachment: &frame.view,
+                attachment: texture_view,
                 resolve_target: None,
                 load_op: wgpu::LoadOp::Load,
                 store_op: wgpu::StoreOp::Store,

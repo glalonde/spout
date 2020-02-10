@@ -28,7 +28,7 @@ const float ship_height = 40.0;
 const vec2 ship_vertices[4] = vec2[4](
     vec2(-ship_height, ship_width/2.0),
     vec2(0.0, 0.0),
-    vec2(-ship_height/2.0, 0.0),
+    vec2(-ship_height, 0.0),
     vec2(-ship_height, -ship_width/2.0)
 );
 
