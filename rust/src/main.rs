@@ -247,7 +247,11 @@ impl framework::Example for Example {
             index_count: 4,
             render_bind_group: render_bind_group,
             render_pipeline: render_pipeline,
-            ship_renderer: spout::ship::ShipRenderer::init(device),
+            ship_renderer: spout::ship::ShipRenderer::init(
+                device,
+                system_params.width,
+                system_params.height,
+            ),
         };
         (this, Some(init_encoder.finish()))
     }
@@ -318,7 +322,6 @@ impl framework::Example for Example {
             );
             cpass.dispatch(self.compute_locals.compute_work_groups as u32, 1, 1);
         }
-        /*
         {
             // Render the density texture.
             let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -335,7 +338,7 @@ impl framework::Example for Example {
             rpass.set_bind_group(0, &self.render_bind_group, &[]);
             rpass.draw(0..self.index_count as u32, 0..1);
         }
-        */
+
         {
             // Render the ship.
             self.ship_renderer

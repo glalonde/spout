@@ -110,10 +110,32 @@ pub struct ShipRenderer {
     pub render_bind_group: wgpu::BindGroup,
     pub render_pipeline: wgpu::RenderPipeline,
     pub uniform_buf: wgpu::Buffer,
+    pub ship_texture: wgpu::Texture,
+    pub ship_texture_view: wgpu::TextureView,
 }
 
 impl ShipRenderer {
-    pub fn init(device: &wgpu::Device) -> Self {
+    pub fn init(device: &wgpu::Device, width: u32, height: u32) -> Self {
+        let texture_extent = wgpu::Extent3d {
+            width,
+            height,
+            depth: 1,
+        };
+        let ship_texture = device.create_texture(&wgpu::TextureDescriptor {
+            size: texture_extent,
+            array_layer_count: 1,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::R32Uint,
+            usage: wgpu::TextureUsage::COPY_SRC
+                | wgpu::TextureUsage::STORAGE
+                | wgpu::TextureUsage::OUTPUT_ATTACHMENT
+                | wgpu::TextureUsage::COPY_DST
+                | wgpu::TextureUsage::SAMPLED,
+        });
+        let ship_texture_view = ship_texture.create_default_view();
+
         let compute_uniform_size = std::mem::size_of::<ComputeUniforms>() as wgpu::BufferAddress;
         let compute_uniforms = ComputeUniforms {
             position: [0, 0],
@@ -197,6 +219,8 @@ impl ShipRenderer {
             render_bind_group,
             render_pipeline,
             uniform_buf,
+            ship_texture,
+            ship_texture_view,
         }
     }
 
@@ -225,12 +249,12 @@ impl ShipRenderer {
             uniform_buf_size as wgpu::BufferAddress,
         );
 
-        // Render the ship.
+        // Render the ship to a texture.
         let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
                 attachment: &frame.view,
                 resolve_target: None,
-                load_op: wgpu::LoadOp::Clear,
+                load_op: wgpu::LoadOp::Load,
                 store_op: wgpu::StoreOp::Store,
                 clear_color: wgpu::Color::BLACK,
             }],
