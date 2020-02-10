@@ -1,7 +1,8 @@
 # Tasks
 ## Easy/Straightforward
 - [ ] initialization (flags, logging)
-- [ ] ship rendering
+- [x] ship rendering
+- [ ] ship position rendering 
 - [x] ship motion
 - [ ] ship collision detection 
 - [ ] text rendering
