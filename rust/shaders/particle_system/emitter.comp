@@ -62,8 +62,8 @@ vec2 emit_position(uint num_emitted, int emit_index) {
 }
 
 mat2 rotate2d(float angle){
-    return mat2(cos(angle),-sin(angle),
-                sin(angle),cos(angle));
+    return mat2(/*first column=*/vec2(cos(angle),sin(angle)),
+                /*second column=*/vec2(-sin(angle),cos(angle)));
 }
 
 void main() {
@@ -110,8 +110,8 @@ void main() {
   ivec2 ship_position = ivec2(mix(position_start, position_end, interp));
 
   // Get a matrix that rotates points from the local frame to the global frame.
-  mat2 global_rotate_local = rotate2d(-ship_angle);
-  particles[gid].position = position_start + ivec2(global_rotate_local * local_emit_position);
-  particles[gid].velocity = ivec2(global_rotate_local * local_emit_velocity) + velocity;
+  mat2 local_rotate_global = rotate2d(ship_angle);
+  particles[gid].position = position_start + ivec2(local_rotate_global * local_emit_position);
+  particles[gid].velocity = ivec2(local_rotate_global * local_emit_velocity) + velocity;
   particles[gid].ttl = mix(ttl_min, ttl_max, rand2);
 }

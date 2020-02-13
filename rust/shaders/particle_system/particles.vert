@@ -7,10 +7,10 @@ layout(location = 0) out vec2 v_TexCoord;
 //  | \|
 //  0--2
 const vec2 positions[4] = vec2[4](
-    vec2(-1.0, 1.0),
     vec2(-1.0, -1.0),
-    vec2(1.0, 1.0),
-    vec2(1.0, -1.0)
+    vec2(-1.0, 1.0),
+    vec2(1.0, -1.0),
+    vec2(1.0, 1.0)
 );
 
 const vec2 tex_coord[4] = vec2[4](

@@ -44,8 +44,8 @@ impl Example {
 
         // Update "ship"
         let rotation: spout::ship::RotationDirection = match (input_state.left, input_state.right) {
-            (true, false) => spout::ship::RotationDirection::CCW,
-            (false, true) => spout::ship::RotationDirection::CW,
+            (true, false) => spout::ship::RotationDirection::CW,
+            (false, true) => spout::ship::RotationDirection::CCW,
             _ => spout::ship::RotationDirection::None,
         };
         ship_state.update(dt, input_state.forward, rotation);
@@ -97,8 +97,8 @@ impl framework::Example for Example {
         );
 
         let ship_position = [
-            spout::int_grid::set_values_relative(system_params.width / 2, 0),
-            spout::int_grid::set_values_relative(system_params.height / 2, 0),
+            spout::int_grid::set_values_relative(system_params.width / 4, 0),
+            spout::int_grid::set_values_relative(system_params.height / 4, 0),
         ];
 
         let this = Example {

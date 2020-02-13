@@ -4,14 +4,16 @@
 out gl_PerVertex {
     vec4 gl_Position;
 };
+const int width = 320;
+const int height = 180;
 
 layout(std140, set = 0, binding = 0) uniform Params {
     uvec2 position;
     float angle;
 };
 
-const float ship_width = 20.0;
-const float ship_height = 40.0;
+const float ship_width = 10.0;
+const float ship_height = 5.0;
 // Pixel coordinate ship...
 // TODO this probably needs to render to a framebuffer/texture/image of the same size as the main particle density buffer.
 //
@@ -39,16 +41,25 @@ const vec2 scaled_ship_vertices[4] = vec2[4](
     ship_vertices[3] * kInnerGridSize
 );
 
+const vec2 others[4] = vec2[4](
+    vec2(-1.0, -1.0),
+    vec2(-1.0, -.8),
+    vec2(-.8, -1.0),
+    vec2(-.8, -.8)
+);
+
 mat2 rotate2d(float angle){
-    return mat2(cos(angle),-sin(angle),
-                sin(angle),cos(angle));
+    return mat2(/*first column=*/vec2(cos(angle),sin(angle)),
+                /*second column=*/vec2(-sin(angle),cos(angle)));
 }
 
 void main() {
     mat2 rotation = rotate2d(angle);
     ivec2 vertex_position = ivec2(rotation * scaled_ship_vertices[gl_VertexIndex]);
     // Grid coordinates...
-    ivec2 current_cell = GetOuterGrid(position) + vertex_position;
-    vec2 image_coordinates = vec2(vertex_position) / (vec2(320, 180) * kInnerGridSize);// (current_cell - kGridAnchor) / vec2(320, 180);
+    ivec2 current_cell = vertex_position + ivec2(uvec2(position - kGridAnchor * kInnerGridSize));
+
+    // Convert to NDC
+    vec2 image_coordinates = (current_cell) / (vec2(width/2, height/2) * kInnerGridSize) + vec2(-1.0, -1.0);
     gl_Position = vec4(image_coordinates, 0.0, 1.0);
 }
