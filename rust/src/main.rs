@@ -210,7 +210,14 @@ impl framework::Example for Example {
         }
         {
             // Render the composition texture.
-            self.composition.render(&frame.view, &mut encoder);
+            self.composition.render(
+                &device,
+                &frame.view,
+                &mut encoder,
+                self.compute_locals.system_params.width,
+                self.compute_locals.system_params.height,
+                self.fps.fps(),
+            );
         }
 
         encoder.finish()

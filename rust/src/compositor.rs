@@ -1,3 +1,12 @@
+use log::error;
+use wgpu_glyph::{GlyphBrushBuilder, Scale, Section};
+
+gflags::define! {
+    --fps_overlay: bool = true
+}
+
+static INCONSOLATA: &[u8] = include_bytes!("../assets/Inconsolata-Regular.ttf");
+
 // Keep track of the rendering members and logic to turn the integer particle
 // density texture into a colormapped texture ready to be visualized.
 pub struct Composition {
@@ -5,6 +14,7 @@ pub struct Composition {
     pub texture_view: wgpu::TextureView,
     pub render_bind_group: wgpu::BindGroup,
     pub render_pipeline: wgpu::RenderPipeline,
+    pub glyph_brush: wgpu_glyph::GlyphBrush<'static, ()>,
 }
 
 impl Composition {
@@ -127,23 +137,56 @@ impl Composition {
             texture_view,
             render_bind_group,
             render_pipeline,
+            glyph_brush: GlyphBrushBuilder::using_font_bytes(INCONSOLATA)
+                .texture_filter_method(wgpu::FilterMode::Nearest)
+                .build(device, wgpu::TextureFormat::Bgra8UnormSrgb),
         }
     }
 
-    pub fn render(&self, texture_view: &wgpu::TextureView, encoder: &mut wgpu::CommandEncoder) {
+    pub fn render(
+        &mut self,
+        device: &wgpu::Device,
+        texture_view: &wgpu::TextureView,
+        encoder: &mut wgpu::CommandEncoder,
+        width: u32,
+        height: u32,
+        fps: f64,
+    ) {
         // Render the composition texture.
-        let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
-                attachment: texture_view,
-                resolve_target: None,
-                load_op: wgpu::LoadOp::Clear,
-                store_op: wgpu::StoreOp::Store,
-                clear_color: wgpu::Color::BLACK,
-            }],
-            depth_stencil_attachment: None,
-        });
-        rpass.set_pipeline(&self.render_pipeline);
-        rpass.set_bind_group(0, &self.render_bind_group, &[]);
-        rpass.draw(0..4 as u32, 0..1);
+        {
+            let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
+                    attachment: texture_view,
+                    resolve_target: None,
+                    load_op: wgpu::LoadOp::Clear,
+                    store_op: wgpu::StoreOp::Store,
+                    clear_color: wgpu::Color::BLACK,
+                }],
+                depth_stencil_attachment: None,
+            });
+            rpass.set_pipeline(&self.render_pipeline);
+            rpass.set_bind_group(0, &self.render_bind_group, &[]);
+            rpass.draw(0..4 as u32, 0..1);
+        }
+
+        {
+            if FPS_OVERLAY.flag {
+                let section = Section {
+                    text: &format!("FPS: {}", fps),
+                    screen_position: (00.0, 00.0),
+                    color: [1.0, 1.0, 1.0, 1.0],
+                    scale: Scale { x: 20.0, y: 20.0 },
+                    bounds: (width as f32, height as f32),
+                    ..Section::default()
+                };
+                self.glyph_brush.queue(section);
+                let result =
+                    self.glyph_brush
+                        .draw_queued(&device, encoder, texture_view, width, height);
+                if !result.is_ok() {
+                    error!("Failed to draw glyph: {}", result.unwrap_err());
+                }
+            }
+        }
     }
 }

@@ -25,6 +25,7 @@ nalgebra = "0.19"
 rand = "*"
 png = "0.15"
 scarlet = "*"
+wgpu_glyph = {git = "https://github.com/hecrj/wgpu_glyph" }
 
 [build-dependencies]
 log = "*"

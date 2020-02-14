@@ -2,7 +2,9 @@
 ## Easy/Straightforward
 - [ ] initialization (flags, logging)
 - [x] ship rendering
-- [ ] ship position rendering 
+- [ ] improved ship rendering
+- [ ] gravity
+- [x] ship position rendering 
 - [x] ship motion
 - [ ] ship collision detection 
 - [ ] text rendering
@@ -10,6 +12,7 @@
 - [ ] resolution selection
 - [ ] window aspect ratio
 - [ ] music
+- [ ] text rendering 
 ---
 ## Medium
 - [ ] level generation

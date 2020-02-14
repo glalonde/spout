@@ -2,6 +2,7 @@
 pub struct FpsEstimator {
     iteration_start: std::time::Instant,
     iteration_duration: std::time::Duration,
+    fps: f64,
 }
 
 static NATIVE_SLEEP_ACCURACY: std::time::Duration = std::time::Duration::from_micros(500);
@@ -11,6 +12,7 @@ impl FpsEstimator {
         FpsEstimator {
             iteration_start: std::time::Instant::now(),
             iteration_duration: std::time::Duration::from_secs_f64(1.0 / fps),
+            fps: 0.0,
         }
     }
 
@@ -23,12 +25,17 @@ impl FpsEstimator {
         while *done > std::time::Instant::now() {}
     }
 
+    pub fn fps(&self) -> f64 {
+        self.fps
+    }
+
     pub fn tick(&mut self) -> f64 {
         FpsEstimator::high_resolution_sleep_until(
             &(self.iteration_start + self.iteration_duration),
         );
         let dt = self.iteration_start.elapsed().as_secs_f64();
         self.iteration_start = std::time::Instant::now();
+        self.fps = 1.0 / dt;
         dt
     }
 }
