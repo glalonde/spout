@@ -13,7 +13,7 @@ layout(std140, set = 0, binding = 0) uniform Params {
 };
 
 const float ship_width = 10.0;
-const float ship_height = 5.0;
+const float ship_height = 10.0;
 // Pixel coordinate ship...
 // TODO this probably needs to render to a framebuffer/texture/image of the same size as the main particle density buffer.
 //
