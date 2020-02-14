@@ -1,10 +1,35 @@
+use log::{error, info};
 use sdl2::mixer::{InitFlag, AUDIO_S16LSB, DEFAULT_CHANNELS};
 /// Demonstrates the simultaneous mixing of music and sound effects.
 use std::path::Path;
 
+gflags::define! {
+    --log_filter: &str = "info"
+}
+gflags::define! {
+    --music_file: &str = "bviinaaa.mod"
+}
+gflags::define! {
+    -h, --help = false
+}
+
 fn main() -> Result<(), String> {
-    let filename = "../archaeology/spout/spoutSDL/src/music/brainless_2.mod";
-    demo(Path::new(filename))?;
+    gflags::parse();
+    if HELP.flag {
+        gflags::print_help_and_exit(0);
+    }
+    scrub_log::init_with_filter_string(LOG_FILTER.flag).unwrap();
+    const MUSIC_PATH: &'static str = "../archaeology/spout/spoutSDL/src/music/";
+    let dest_path = std::path::Path::new(MUSIC_PATH).join(MUSIC_FILE.flag);
+    if demo(&dest_path).is_err() {
+        error!("Failed to get file, use flag --music_file with one of these names");
+        walkdir::WalkDir::new(MUSIC_PATH)
+            .into_iter()
+            .filter_map(Result::ok)
+            .filter(|e| !e.file_type().is_dir())
+            .filter_map(Some)
+            .for_each(|e| info!("Music: {:?}", e.path().file_name().unwrap()));
+    }
     Ok(())
 }
 
@@ -57,23 +82,9 @@ fn demo(music_file: &Path) -> Result<(), String> {
     println!("music type => {:?}", music.get_type());
     println!("music volume => {:?}", sdl2::mixer::Music::get_volume());
     println!("play => {:?}", music.play(1));
-
-    timer.delay(10_000);
-
-    println!("fading out ... {:?}", sdl2::mixer::Music::fade_out(4_000));
-
-    timer.delay(5_000);
-
-    println!(
-        "fading in from pos ... {:?}",
-        music.fade_in_from_pos(1, 10_000, 100.0)
-    );
-
-    timer.delay(5_000);
+    while sdl2::mixer::Music::is_playing() {
+        timer.delay(10);
+    }
     sdl2::mixer::Music::halt();
-    timer.delay(1_000);
-
-    println!("quitting sdl");
-
     Ok(())
 }
