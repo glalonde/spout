@@ -1,86 +1,79 @@
-use memmap::Mmap;
-use sdl2::audio::{AudioCallback, AudioSpecDesired};
-use std::env;
-use std::error::Error;
-use std::fs::File;
-use std::io::{stdout, Write};
+use sdl2::mixer::{InitFlag, AUDIO_S16LSB, DEFAULT_CHANNELS};
+/// Demonstrates the simultaneous mixing of music and sound effects.
 use std::path::Path;
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
 
-fn main() {
-    match run() {
-        Ok(_) => {}
-        Err(e) => eprintln!("error: {}", e),
-    }
-}
-
-struct ModPlayer<'a> {
-    oxdz: oxdz::Oxdz<'a>,
-    data: Arc<Mutex<oxdz::FrameInfo>>,
-}
-
-impl<'a> AudioCallback for ModPlayer<'a> {
-    type Channel = i16;
-
-    fn callback(&mut self, mut out: &mut [i16]) {
-        {
-            let mut fi = self.data.lock().unwrap();
-            self.oxdz.frame_info(&mut fi);
-        }
-        self.oxdz.fill_buffer(&mut out, 0);
-    }
-}
-
-fn run() -> Result<(), Box<dyn Error>> {
+fn main() -> Result<(), String> {
     let filename = "../archaeology/spout/spoutSDL/src/music/brainless_2.mod";
-    let file = File::open(filename)?;
+    demo(Path::new(filename))?;
+    Ok(())
+}
 
-    let oxdz = {
-        let mmap = unsafe { Mmap::map(&file).expect("failed to map the file") };
-        oxdz::Oxdz::new(&mmap[..], 44100, "")?
-    };
+fn demo(music_file: &Path) -> Result<(), String> {
+    println!("linked version: {}", sdl2::mixer::get_linked_version());
 
-    // Display basic module information
-    let mut mi = oxdz::ModuleInfo::new();
-    oxdz.module_info(&mut mi);
-    println!("Title : {}", mi.title);
-    println!("Format: {}", mi.description);
+    let sdl = sdl2::init()?;
+    let _audio = sdl.audio()?;
+    let mut timer = sdl.timer()?;
 
-    // From Rust-SDL2 SquareWave example
-    let sdl_context = sdl2::init().unwrap();
-    let audio_subsystem = sdl_context.audio().unwrap();
+    let frequency = 44_100;
+    let format = AUDIO_S16LSB; // signed 16 bit samples, in little-endian byte order
+    let channels = DEFAULT_CHANNELS; // Stereo
+    let chunk_size = 1_024;
+    sdl2::mixer::open_audio(frequency, format, channels, chunk_size)?;
+    let _mixer_context =
+        sdl2::mixer::init(InitFlag::MP3 | InitFlag::FLAC | InitFlag::MOD | InitFlag::OGG)?;
 
-    let desired_spec = AudioSpecDesired {
-        freq: Some(44100),
-        channels: Some(2), // stereo
-        samples: None,     // default buffer size
-    };
+    // Number of mixing channels available for sound effect `Chunk`s to play
+    // simultaneously.
+    sdl2::mixer::allocate_channels(4);
 
-    let data = Arc::new(Mutex::new(oxdz::FrameInfo::new()));
-
-    let device = audio_subsystem
-        .open_playback(None, &desired_spec, |spec| {
-            // Show obtained AudioSpec
-            println!("{:?}", spec);
-
-            // initialize the audio callback
-            ModPlayer {
-                oxdz,
-                data: data.clone(),
-            }
-        })
-        .unwrap();
-
-    // Start playback
-    device.resume();
-
-    loop {
-        {
-            let fi = data.lock().unwrap();
-            print!("pos:{:3} - row:{:3} \r", fi.pos, fi.row);
+    {
+        let n = sdl2::mixer::get_chunk_decoders_number();
+        println!("available chunk(sample) decoders: {}", n);
+        for i in 0..n {
+            println!("  decoder {} => {}", i, sdl2::mixer::get_chunk_decoder(i));
         }
-        stdout().flush().unwrap();
-        std::thread::sleep(Duration::from_millis(50));
     }
+
+    {
+        let n = sdl2::mixer::get_music_decoders_number();
+        println!("available music decoders: {}", n);
+        for i in 0..n {
+            println!("  decoder {} => {}", i, sdl2::mixer::get_music_decoder(i));
+        }
+    }
+
+    println!("query spec => {:?}", sdl2::mixer::query_spec());
+
+    let music = sdl2::mixer::Music::from_file(music_file)?;
+
+    fn hook_finished() {
+        println!("play ends! from rust cb");
+    }
+
+    sdl2::mixer::Music::hook_finished(hook_finished);
+
+    println!("music => {:?}", music);
+    println!("music type => {:?}", music.get_type());
+    println!("music volume => {:?}", sdl2::mixer::Music::get_volume());
+    println!("play => {:?}", music.play(1));
+
+    timer.delay(10_000);
+
+    println!("fading out ... {:?}", sdl2::mixer::Music::fade_out(4_000));
+
+    timer.delay(5_000);
+
+    println!(
+        "fading in from pos ... {:?}",
+        music.fade_in_from_pos(1, 10_000, 100.0)
+    );
+
+    timer.delay(5_000);
+    sdl2::mixer::Music::halt();
+    timer.delay(1_000);
+
+    println!("quitting sdl");
+
+    Ok(())
 }
