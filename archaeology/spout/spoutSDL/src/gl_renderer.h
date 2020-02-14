@@ -1,8 +1,8 @@
 #include "SDL2/SDL.h"
 #include "GL/glew.h"
 #include <SDL2/SDL_opengl.h>
-#include <OpenGL/gl.h>
-#include <OpenGL/glu.h>
+#include <GL/gl.h>
+#include <GL/glu.h>
 #include <pthread.h>
 #include "timer.h"
 #include "constants.h"

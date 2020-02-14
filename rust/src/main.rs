@@ -44,8 +44,8 @@ impl Example {
 
         // Update "ship"
         let rotation: spout::ship::RotationDirection = match (input_state.left, input_state.right) {
-            (true, false) => spout::ship::RotationDirection::CW,
-            (false, true) => spout::ship::RotationDirection::CCW,
+            (true, false) => spout::ship::RotationDirection::CCW,
+            (false, true) => spout::ship::RotationDirection::CW,
             _ => spout::ship::RotationDirection::None,
         };
         ship_state.update(dt, input_state.forward, rotation);

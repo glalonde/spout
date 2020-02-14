@@ -1,11 +1,11 @@
 //The headers
 #include "SDL2/SDL.h"
-//#include <SDL2/SDL_mixer.h>
+#include <SDL2/SDL_mixer.h>
 #include "GL/glew.h"
 
 #include <SDL2/SDL_opengl.h>
-#include <OpenGL/gl.h>
-#include <OpenGL/glu.h>
+#include <GL/gl.h>
+#include <GL/glu.h>
 #include <pthread.h>
 #include <time.h>   
 
@@ -43,7 +43,7 @@ bool initGL() {
   return true;
 }
 
-bool Init(SDL_Window** win, SDL_GLContext* gl_context) {
+bool Init(SDL_Window** win, SDL_GLContext* gl_context, Mix_Music** music) {
   //Initialization flag
   bool success = true;
 
@@ -86,20 +86,20 @@ bool Init(SDL_Window** win, SDL_GLContext* gl_context) {
 
   SDL_ShowCursor(0);
 
-  // Mix_OpenAudio( MIX_DEFAULT_FREQUENCY, MIX_DEFAULT_FORMAT, 2, 4096);
-  // *music = Mix_LoadMUS(MUSIC_PATH);
+  Mix_OpenAudio( MIX_DEFAULT_FREQUENCY, MIX_DEFAULT_FORMAT, 2, 4096);
+  *music = Mix_LoadMUS(MUSIC_PATH);
 
   return success;
 }
 
 // Free the graphics structs
-void CleanUp(SDL_Window* win, SDL_GLContext gl_context) {
+void CleanUp(SDL_Window* win, SDL_GLContext gl_context, Mix_Music* music) {
   SDL_DestroyWindow(win);
   SDL_GL_DeleteContext(gl_context);
   SDL_Quit();
 
-  // Mix_FreeMusic(music);
-  // Mix_CloseAudio();
+  Mix_FreeMusic(music);
+  Mix_CloseAudio();
 }
 
 
@@ -172,7 +172,7 @@ void* UpdateLoop(void* argptr) {
   return NULL;
 }
 
-void GameLoop(counter_t pixels1[GRID_HEIGHT][GRID_WIDTH], counter_t pixels2[GRID_HEIGHT][GRID_WIDTH], SDL_Window* win) {
+void GameLoop(counter_t pixels1[GRID_HEIGHT][GRID_WIDTH], counter_t pixels2[GRID_HEIGHT][GRID_WIDTH], SDL_Window* win, Mix_Music* music) {
   // The main canvas. Has two buffers.
   Screen<counter_t> screen(pixels1);
   Screen<counter_t> particle_screen(pixels2);
@@ -183,7 +183,7 @@ void GameLoop(counter_t pixels1[GRID_HEIGHT][GRID_WIDTH], counter_t pixels2[GRID
   SpoutGame* game = new SpoutGame(&screen, &particle_screen);
 
   // Start the music
-  // Mix_PlayMusic( music, -1);
+  Mix_PlayMusic( music, -1);
 
   bool is_playing = true;
 
@@ -222,7 +222,7 @@ int main(int argc, char* args[]) {
   SDL_Init( SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_EVENTS);
   SDL_Window* win = NULL;
   SDL_GLContext gl_context = NULL;
-  // Mix_Music* music = NULL;
+  Mix_Music* music = NULL;
   static counter_t pixels1[GRID_HEIGHT][GRID_WIDTH];
   static counter_t pixels2[GRID_HEIGHT][GRID_WIDTH];
 
@@ -230,12 +230,12 @@ int main(int argc, char* args[]) {
   //_MM_SET_FLUSH_ZERO_MODE(_MM_FLUSH_ZERO_ON);
   //_MM_SET_DENORMALS_ZERO_MODE(_MM_DENORMALS_ZERO_ON);
   
-  Init(&win, &gl_context);
+  Init(&win, &gl_context, &music);
 
 
   // Start loop
-  GameLoop(pixels1, pixels2, win);
+  GameLoop(pixels1, pixels2, win, music);
   
-  CleanUp(win, gl_context);
+  CleanUp(win, gl_context, music);
   return 0;
 }

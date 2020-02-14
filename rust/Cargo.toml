@@ -26,6 +26,9 @@ rand = "*"
 png = "0.15"
 scarlet = "*"
 wgpu_glyph = {git = "https://github.com/hecrj/wgpu_glyph" }
+sdl2 = { version = "0.33.0", features = ["mixer"]}
+oxdz = {git = "https://github.com/cmatsuoka/oxdz" }
+memmap = "0.6"
 
 [build-dependencies]
 log = "*"

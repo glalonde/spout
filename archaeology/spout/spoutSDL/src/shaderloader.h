@@ -7,8 +7,8 @@
 #include <vector>
 #include <algorithm>
 
-#include <OpenGL/gl.h>
-#include <OpenGL/glu.h>
+#include <GL/gl.h>
+#include <GL/glu.h>
 
 
 std::string ReadFile(const char *filePath) {
