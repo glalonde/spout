@@ -1,4 +1,4 @@
-use log::info;
+use log::trace;
 use zerocopy::AsBytes;
 
 gflags::define! {
@@ -80,7 +80,7 @@ impl ShipState {
         // Update velocity.
         self.emit_params.velocity = [self.velocity[0], self.velocity[1]];
         if accelerate {
-            info!("acceleration: {:?}", self.velocity);
+            trace!("acceleration: {:?}", self.velocity);
             self.velocity[0] += (dt
                 * self.acceleration
                 * self.orientation.cos()

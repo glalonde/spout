@@ -1,6 +1,6 @@
 use super::include_shader;
 
-use log::{info, trace};
+use log::trace;
 use zerocopy::AsBytes;
 
 // This should match the struct defined in the relevant compute shader.
@@ -51,7 +51,7 @@ pub struct EmitParams {
 
 impl EmitParams {
     pub fn default() -> Self {
-        EmitParams::stationary(&[0, 0], 0.0, 0.0, 0.0, 0.0, 5.0)
+        EmitParams::stationary(&[0, 0], 0.0, 0.0, 0.0, 0.0, 3.0)
     }
 
     pub fn moving(
@@ -277,8 +277,7 @@ impl Emitter {
         num_emitted: u32,
         params: &EmitParams,
     ) {
-        // let mut params2 = params;
-        info!("params: {:?}", params);
+        trace!("Emit params: {:?}", params);
         let emitter_uniforms = EmitterUniforms {
             start_index: self.write_index,
             num_emitted: num_emitted,

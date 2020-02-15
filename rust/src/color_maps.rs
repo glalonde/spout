@@ -1,7 +1,7 @@
 use gflags::custom::{Arg, Error, Result, Value};
 
 gflags::define! {
-    --color_map: ColorMap = ColorMap::Viridis
+    --color_map: ColorMap = ColorMap::Inferno
 }
 
 #[repr(u8)]

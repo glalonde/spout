@@ -42,7 +42,6 @@ impl FpsEstimator {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
 
     // Get some stats about std::thread::sleep
     #[test]
