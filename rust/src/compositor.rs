@@ -172,7 +172,7 @@ impl Composition {
         {
             if FPS_OVERLAY.flag {
                 let section = Section {
-                    text: &format!("FPS: {}", fps),
+                    text: &format!("FPS: {:0.2}s", fps),
                     screen_position: (00.0, 00.0),
                     color: [1.0, 1.0, 1.0, 1.0],
                     scale: Scale { x: 20.0, y: 20.0 },
