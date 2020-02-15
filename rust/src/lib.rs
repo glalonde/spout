@@ -2,6 +2,7 @@ pub mod color_maps;
 pub mod compositor;
 pub mod emitter;
 pub mod fps_estimator;
+pub mod glow_pass;
 pub mod int_grid;
 pub mod particle_system;
 pub mod shader_utils;

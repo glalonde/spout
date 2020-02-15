@@ -27,6 +27,7 @@ struct Example {
     state: GameState,
     compute_locals: spout::particle_system::ComputeLocals,
     particle_renderer: spout::particle_system::ParticleRenderer,
+    glow_renderer: spout::glow_pass::GlowRenderer,
     ship_renderer: spout::ship::ShipRenderer,
     composition: spout::compositor::Composition,
 }
@@ -95,6 +96,8 @@ impl framework::Example for Example {
             &compute_locals,
             &mut init_encoder,
         );
+        let glow_renderer =
+            spout::glow_pass::GlowRenderer::init(device, &particle_renderer.output_texture_view);
 
         let ship_position = [
             spout::int_grid::set_values_relative(system_params.width / 4, 0),
@@ -113,6 +116,7 @@ impl framework::Example for Example {
             },
             compute_locals: compute_locals,
             particle_renderer,
+            glow_renderer,
             ship_renderer: spout::ship::ShipRenderer::init(
                 device,
                 system_params.width,
@@ -195,10 +199,13 @@ impl framework::Example for Example {
         }
         {
             // Render the density texture.
-            self.particle_renderer
+            self.particle_renderer.render(&mut encoder);
+        }
+        {
+            // Render the particle glow pass.
+            self.glow_renderer
                 .render(&self.composition.texture_view, &mut encoder);
         }
-
         {
             // Render the ship.
             self.ship_renderer.render(

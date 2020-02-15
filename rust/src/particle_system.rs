@@ -190,6 +190,7 @@ impl ComputeLocals {
 pub struct ParticleRenderer {
     pub render_bind_group: wgpu::BindGroup,
     pub render_pipeline: wgpu::RenderPipeline,
+    pub output_texture_view: wgpu::TextureView,
 }
 
 impl ParticleRenderer {
@@ -199,7 +200,7 @@ impl ParticleRenderer {
         init_encoder: &mut wgpu::CommandEncoder,
     ) -> Self {
         // Sets up the quad canvas.
-        let vs = super::include_shader!("particle_system/particles.vert.spv");
+        let vs = super::include_shader!("particle_system/quad.vert.spv");
         let vs_module =
             device.create_shader_module(&wgpu::read_spirv(std::io::Cursor::new(&vs[..])).unwrap());
         // Renders the data texture onto the canvas.
@@ -213,6 +214,20 @@ impl ParticleRenderer {
             super::color_maps::get_color_map_from_flag(),
             init_encoder,
         );
+        let output_extents = wgpu::Extent3d {
+            width: compute_locals.system_params.width,
+            height: compute_locals.system_params.height,
+            depth: 1,
+        };
+        let output_texture = device.create_texture(&wgpu::TextureDescriptor {
+            size: output_extents,
+            array_layer_count: 1,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Bgra8UnormSrgb,
+            usage: wgpu::TextureUsage::SAMPLED | wgpu::TextureUsage::OUTPUT_ATTACHMENT,
+        });
 
         // The render pipeline renders data into this texture
         let density_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
@@ -338,14 +353,15 @@ impl ParticleRenderer {
         ParticleRenderer {
             render_bind_group,
             render_pipeline,
+            output_texture_view: output_texture.create_default_view(),
         }
     }
 
-    pub fn render(&self, texture_view: &wgpu::TextureView, encoder: &mut wgpu::CommandEncoder) {
+    pub fn render(&self, encoder: &mut wgpu::CommandEncoder) {
         // Render the density texture.
         let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
-                attachment: texture_view,
+                attachment: &self.output_texture_view,
                 resolve_target: None,
                 load_op: wgpu::LoadOp::Clear,
                 store_op: wgpu::StoreOp::Store,
