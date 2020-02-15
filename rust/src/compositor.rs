@@ -59,6 +59,19 @@ impl Composition {
             compare_function: wgpu::CompareFunction::Always,
         });
 
+        // The render pipeline renders data into this texture
+        let glow_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::FilterMode::Linear,
+            lod_min_clamp: -100.0,
+            lod_max_clamp: 100.0,
+            compare_function: wgpu::CompareFunction::Always,
+        });
+
         // Create pipeline layout
         let render_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -78,6 +91,12 @@ impl Composition {
                         visibility: wgpu::ShaderStage::FRAGMENT,
                         ty: wgpu::BindingType::Sampler,
                     },
+                    // Glow texture sampler.
+                    wgpu::BindGroupLayoutBinding {
+                        binding: 2,
+                        visibility: wgpu::ShaderStage::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler,
+                    },
                 ],
             });
 
@@ -91,6 +110,10 @@ impl Composition {
                 wgpu::Binding {
                     binding: 1,
                     resource: wgpu::BindingResource::Sampler(&output_sampler),
+                },
+                wgpu::Binding {
+                    binding: 2,
+                    resource: wgpu::BindingResource::Sampler(&glow_sampler),
                 },
             ],
         });
