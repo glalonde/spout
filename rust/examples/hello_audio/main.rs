@@ -1,90 +1,160 @@
-use log::{error, info};
-use sdl2::mixer::{InitFlag, AUDIO_S16LSB, DEFAULT_CHANNELS};
-/// Demonstrates the simultaneous mixing of music and sound effects.
-use std::path::Path;
+use lazy_static::lazy_static;
+use log::{error, info, trace};
+
+// Singleton music player...
+lazy_static! {
+    static ref MUSIC_PLAYER: std::sync::Mutex<MusicThread> =
+        std::sync::Mutex::new(MusicThread::init());
+}
 
 gflags::define! {
     --log_filter: &str = "info"
 }
 gflags::define! {
-    --music_file: &str = "bviinaaa.mod"
-}
-gflags::define! {
-    -h, --help = false
+    --library_dir: &str = "../archaeology/spout/spoutSDL/src/music/"
 }
 
-fn main() -> Result<(), String> {
-    gflags::parse();
-    if HELP.flag {
-        gflags::print_help_and_exit(0);
-    }
-    scrub_log::init_with_filter_string(LOG_FILTER.flag).unwrap();
-    const MUSIC_PATH: &'static str = "../archaeology/spout/spoutSDL/src/music/";
-    let dest_path = std::path::Path::new(MUSIC_PATH).join(MUSIC_FILE.flag);
-    if demo(&dest_path).is_err() {
-        error!("Failed to get file, use flag --music_file with one of these names");
-        walkdir::WalkDir::new(MUSIC_PATH)
+fn notify_track_finished() {
+    MUSIC_PLAYER.lock().unwrap().notify_track_finished();
+}
+
+enum MusicPlayerCommand {
+    Play,
+    Pause,
+    NextTrack,
+    TrackFinished,
+}
+
+struct MusicPlayer<'a> {
+    sdl: sdl2::Sdl,
+    library: Vec<Box<sdl2::mixer::Music<'a>>>,
+    current_track: usize,
+    command_channel: std::sync::mpsc::Receiver<MusicPlayerCommand>,
+}
+
+impl<'a> MusicPlayer<'a> {
+    pub fn init(
+        music_dir: &std::path::Path,
+        command_channel: std::sync::mpsc::Receiver<MusicPlayerCommand>,
+    ) -> Result<Self, String> {
+        let mut player = MusicPlayer::<'a> {
+            sdl: sdl2::init()?,
+            library: vec![],
+            current_track: 0,
+            command_channel,
+        };
+        player.sdl.audio()?;
+        let frequency = 44_100;
+        let format = sdl2::mixer::AUDIO_S16LSB; // signed 16 bit samples, in little-endian byte order
+        let channels = sdl2::mixer::DEFAULT_CHANNELS; // Stereo
+        let chunk_size = 1_024;
+        sdl2::mixer::open_audio(frequency, format, channels, chunk_size)?;
+        sdl2::mixer::Music::hook_finished(notify_track_finished);
+
+        // Open all the library files.
+        let files: Vec<Box<sdl2::mixer::Music<'a>>> = walkdir::WalkDir::new(music_dir)
             .into_iter()
             .filter_map(Result::ok)
             .filter(|e| !e.file_type().is_dir())
             .filter_map(Some)
-            .for_each(|e| info!("Music: {:?}", e.path().file_name().unwrap()));
+            .map(|e| e.path().to_path_buf())
+            .map(|e| -> Result<Box<sdl2::mixer::Music<'a>>, String> {
+                Ok(Box::new(sdl2::mixer::Music::from_file(e)?))
+            })
+            .filter_map(Result::ok)
+            .collect();
+
+        if files.len() <= 0 {
+            return Err(String::from("No songs to play"));
+        }
+        // player.library = files;
+        player.library = files;
+
+        Ok(player)
     }
-    Ok(())
+
+    pub fn run(&mut self) {
+        loop {
+            // Keep looping here so we can check if the song is still playing and move on if
+            // it isn't.
+            match self.command_channel.recv() {
+                Ok(command) => match command {
+                    MusicPlayerCommand::Play => self.handle_play(),
+                    MusicPlayerCommand::Pause => self.handle_pause(),
+                    MusicPlayerCommand::NextTrack => self.handle_next_track(),
+                    MusicPlayerCommand::TrackFinished => self.handle_track_finished(),
+                },
+                Err(err) => error!("Error: {}", err),
+            }
+        }
+    }
+
+    fn handle_play(&mut self) {
+        trace!("Starting playback");
+        if sdl2::mixer::Music::is_paused() {
+            // If we were already playing something.
+            sdl2::mixer::Music::resume();
+        } else {
+            if let Err(err) = self.library[self.current_track].play(1) {
+                error!("Error playing file: {}", err);
+            }
+        }
+    }
+
+    fn handle_pause(&mut self) {
+        trace!("Pausing playback");
+        sdl2::mixer::Music::pause();
+    }
+
+    fn handle_next_track(&mut self) {
+        trace!("Next track");
+        let num_songs = self.library.len();
+        self.current_track = (self.current_track + 1) % num_songs;
+        self.handle_play();
+    }
+
+    fn handle_track_finished(&mut self) {
+        trace!("Track finished");
+        self.handle_next_track();
+    }
 }
 
-fn demo(music_file: &Path) -> Result<(), String> {
-    println!("linked version: {}", sdl2::mixer::get_linked_version());
-
-    let sdl = sdl2::init()?;
-    let _audio = sdl.audio()?;
-    let mut timer = sdl.timer()?;
-
-    let frequency = 44_100;
-    let format = AUDIO_S16LSB; // signed 16 bit samples, in little-endian byte order
-    let channels = DEFAULT_CHANNELS; // Stereo
-    let chunk_size = 1_024;
-    sdl2::mixer::open_audio(frequency, format, channels, chunk_size)?;
-    let _mixer_context =
-        sdl2::mixer::init(InitFlag::MP3 | InitFlag::FLAC | InitFlag::MOD | InitFlag::OGG)?;
-
-    // Number of mixing channels available for sound effect `Chunk`s to play
-    // simultaneously.
-    sdl2::mixer::allocate_channels(4);
-
-    {
-        let n = sdl2::mixer::get_chunk_decoders_number();
-        println!("available chunk(sample) decoders: {}", n);
-        for i in 0..n {
-            println!("  decoder {} => {}", i, sdl2::mixer::get_chunk_decoder(i));
+struct MusicThread {
+    command_channel: std::sync::mpsc::Sender<MusicPlayerCommand>,
+    thread: std::thread::JoinHandle<()>,
+}
+impl MusicThread {
+    // TODO pass through failed player init result
+    pub fn init() -> Self {
+        let (tx, rx) = std::sync::mpsc::channel::<MusicPlayerCommand>();
+        MusicThread {
+            command_channel: tx,
+            thread: std::thread::spawn(move || {
+                let mut player =
+                    MusicPlayer::init(std::path::Path::new(LIBRARY_DIR.flag), rx).unwrap();
+                player.run();
+            }),
         }
     }
-
-    {
-        let n = sdl2::mixer::get_music_decoders_number();
-        println!("available music decoders: {}", n);
-        for i in 0..n {
-            println!("  decoder {} => {}", i, sdl2::mixer::get_music_decoder(i));
-        }
+    pub fn play(&self) {
+        self.command_channel.send(MusicPlayerCommand::Play);
     }
-
-    println!("query spec => {:?}", sdl2::mixer::query_spec());
-
-    let music = sdl2::mixer::Music::from_file(music_file)?;
-
-    fn hook_finished() {
-        println!("play ends! from rust cb");
+    pub fn pause(&self) {
+        self.command_channel.send(MusicPlayerCommand::Pause);
     }
-
-    sdl2::mixer::Music::hook_finished(hook_finished);
-
-    println!("music => {:?}", music);
-    println!("music type => {:?}", music.get_type());
-    println!("music volume => {:?}", sdl2::mixer::Music::get_volume());
-    println!("play => {:?}", music.play(1));
-    while sdl2::mixer::Music::is_playing() {
-        timer.delay(10);
+    pub fn next_track(&self) {
+        self.command_channel.send(MusicPlayerCommand::NextTrack);
     }
-    sdl2::mixer::Music::halt();
-    Ok(())
+    pub fn notify_track_finished(&self) {
+        self.command_channel.send(MusicPlayerCommand::TrackFinished);
+    }
+}
+
+fn main() {
+    gflags::parse();
+    scrub_log::init_with_filter_string(LOG_FILTER.flag).unwrap();
+    MUSIC_PLAYER.lock().unwrap().play();
+    loop {
+        std::thread::sleep(std::time::Duration::from_secs(1));
+    }
 }
