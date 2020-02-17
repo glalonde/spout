@@ -8,6 +8,9 @@ gflags::define! {
 gflags::define! {
     --height: u32 = 180
 }
+gflags::define! {
+    --music_starts_on: bool = false
+}
 
 #[derive(Debug)]
 struct InputState {
@@ -128,6 +131,9 @@ impl framework::Example for Example {
                 system_params.height,
             ),
         };
+        if MUSIC_STARTS_ON.flag {
+            spout::music_player::MUSIC_PLAYER.lock().unwrap().play();
+        }
         (this, Some(init_encoder.finish()))
     }
     fn handle_event(&mut self, event: winit::event::WindowEvent) {
