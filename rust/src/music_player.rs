@@ -1,5 +1,5 @@
 use lazy_static::lazy_static;
-use log::{error, info, trace};
+use log::{error, trace};
 
 // Singleton music player...
 lazy_static! {
@@ -43,6 +43,9 @@ impl<'a> MusicPlayer<'a> {
             current_track: 0,
             command_channel,
         };
+        // this is some sketchy stuff, for some reason the lifetime management of the
+        // music doesn't work unless it is boxed... TODO replace with a better
+        // library if one exists.
         player.sdl.audio()?;
         let frequency = 44_100;
         let format = sdl2::mixer::AUDIO_S16LSB; // signed 16 bit samples, in little-endian byte order
@@ -67,7 +70,6 @@ impl<'a> MusicPlayer<'a> {
         if files.len() <= 0 {
             return Err(String::from("No songs to play"));
         }
-        // player.library = files;
         player.library = files;
 
         Ok(player)
@@ -121,7 +123,7 @@ impl<'a> MusicPlayer<'a> {
 
 pub struct MusicThread {
     command_channel: std::sync::mpsc::Sender<MusicPlayerCommand>,
-    thread: std::thread::JoinHandle<()>,
+    _thread: std::thread::JoinHandle<()>,
 }
 impl MusicThread {
     // TODO pass through failed player init result
@@ -129,7 +131,7 @@ impl MusicThread {
         let (tx, rx) = std::sync::mpsc::channel::<MusicPlayerCommand>();
         MusicThread {
             command_channel: tx,
-            thread: std::thread::spawn(move || {
+            _thread: std::thread::spawn(move || {
                 let mut player =
                     MusicPlayer::init(std::path::Path::new(LIBRARY_DIR.flag), rx).unwrap();
                 player.run();
@@ -137,15 +139,15 @@ impl MusicThread {
         }
     }
     pub fn play(&self) {
-        self.command_channel.send(MusicPlayerCommand::Play);
+        let _ = self.command_channel.send(MusicPlayerCommand::Play);
     }
     pub fn pause(&self) {
-        self.command_channel.send(MusicPlayerCommand::Pause);
+        let _ = self.command_channel.send(MusicPlayerCommand::Pause);
     }
     pub fn next_track(&self) {
-        self.command_channel.send(MusicPlayerCommand::NextTrack);
+        let _ = self.command_channel.send(MusicPlayerCommand::NextTrack);
     }
     pub fn notify_track_finished(&self) {
-        self.command_channel.send(MusicPlayerCommand::TrackFinished);
+        let _ = self.command_channel.send(MusicPlayerCommand::TrackFinished);
     }
 }
