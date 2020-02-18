@@ -9,7 +9,7 @@
 - [ ] terrain collision capabilities
 - [ ] resolution selection
 - [ ] window aspect ratio
-- [ ] pausing 
+- [x] pausing 
 - [x] music
 ---
 ## Medium

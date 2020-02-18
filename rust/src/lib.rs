@@ -5,6 +5,7 @@ pub mod emitter;
 pub mod fps_estimator;
 pub mod glow_pass;
 pub mod int_grid;
+pub mod level_buffer;
 pub mod music_player;
 pub mod particle_system;
 pub mod shader_utils;

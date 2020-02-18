@@ -56,6 +56,7 @@ struct Example {
     particle_renderer: spout::particle_system::ParticleRenderer,
     glow_renderer: spout::glow_pass::GlowRenderer,
     ship_renderer: spout::ship::ShipRenderer,
+    level_buffer: spout::level_buffer::LevelBuffer,
     composition: spout::compositor::Composition,
 }
 
@@ -112,7 +113,7 @@ impl Example {
 
 impl framework::Example for Example {
     fn init(
-        _sc_desc: &wgpu::SwapChainDescriptor,
+        sc_desc: &wgpu::SwapChainDescriptor,
         device: &wgpu::Device,
     ) -> (Self, Option<wgpu::CommandBuffer>) {
         let mut init_encoder =
@@ -158,6 +159,11 @@ impl framework::Example for Example {
                 system_params.width,
                 system_params.height,
             ),
+            level_buffer: spout::level_buffer::LevelBuffer::init(
+                sc_desc,
+                device,
+                &mut init_encoder,
+            ),
             composition: spout::compositor::Composition::init(
                 device,
                 system_params.width,
@@ -199,15 +205,18 @@ impl framework::Example for Example {
     fn resize(
         &mut self,
         sc_desc: &wgpu::SwapChainDescriptor,
-        _device: &wgpu::Device,
+        device: &wgpu::Device,
     ) -> Option<wgpu::CommandBuffer> {
+        let mut encoder =
+            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { todo: 0 });
         let viewport_aspect_ratio =
             self.game_params.viewport_width as f64 / self.game_params.viewport_height as f64;
         let new_window_aspect_ratio = sc_desc.width as f64 / sc_desc.height as f64;
         info!("Resizing: ({}, {})", sc_desc.width, sc_desc.height);
         info!("Game aspect ratio: {}", viewport_aspect_ratio);
         info!("Window aspect ratio: {}", new_window_aspect_ratio);
-        None
+        self.level_buffer.resize(sc_desc, device, &mut encoder);
+        Some(encoder.finish())
     }
 
     fn render(
@@ -274,6 +283,9 @@ impl framework::Example for Example {
                 self.compute_locals.system_params.height,
                 self.fps.fps(),
             );
+        }
+        {
+            self.level_buffer.render(&frame, &mut encoder);
         }
 
         encoder.finish()
