@@ -9,6 +9,9 @@ gflags::define! {
     --height: u32 = 180
 }
 gflags::define! {
+    --fps: u32 = 60
+}
+gflags::define! {
     --music_starts_on: bool = false
 }
 
@@ -140,7 +143,7 @@ impl framework::Example for Example {
                 viewport_width: WIDTH.flag,
                 viewport_height: HEIGHT.flag,
             },
-            fps: spout::fps_estimator::FpsEstimator::new(60.0),
+            fps: spout::fps_estimator::FpsEstimator::new(FPS.flag as f64),
             state: GameState {
                 input_state: InputState::default(),
                 prev_input_state: InputState::default(),

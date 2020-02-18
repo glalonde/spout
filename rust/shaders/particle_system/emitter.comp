@@ -23,13 +23,11 @@ layout(std140, set = 0, binding = 1) uniform Params {
     float ttl_min;
     float ttl_max;
     float time;
+    float dt;
 };
 
 const float PI = 3.1415926535897932384626433832795;
 const float PI_2 = 1.57079632679489661923;
-
-// This should be a uniform...
-const float DT = 1.0 / 60.0;
 
 // a % b
 float signed_mod(float a, float b) {
@@ -84,7 +82,7 @@ void main() {
   float interp = float(distance) / num_emitted;
 
   // Interpolated time through the iteration.
-  float interp_time = interp * DT + time;
+  float interp_time = interp * dt + time;
 
   // First rand is for velocity
   float rand1 = hash12(vec2(interp, interp_time));
@@ -103,7 +101,7 @@ void main() {
   float local_emit_speed = mix(speed_min, speed_max, rand1);
   vec2 local_emit_velocity = unit_emit_rotation * local_emit_speed;
   // This is "emit position on the wing" + "particle travel during the emission iteration"
-  vec2 local_emit_position = emit_position(num_emitted, distance) + local_emit_velocity * (DT * (1.0 - interp));
+  vec2 local_emit_position = emit_position(num_emitted, distance) + local_emit_velocity * (dt * (1.0 - interp));
 
   // Get the global frame of the ship.
   float ship_angle = mix(angle_start, angle_start + angle_delta, interp);

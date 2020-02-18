@@ -21,6 +21,7 @@ struct EmitterParams {
 pub struct Emitter {
     params: EmitterParams,
     time: f32,
+    dt: f32,
     emit_progress: f32,
     write_index: u32,
     compute_work_groups: u32,
@@ -110,6 +111,7 @@ struct EmitterUniforms {
     num_emitted: u32,
     params: EmitParams,
     time: f32,
+    dt: f32,
 }
 
 impl Emitter {
@@ -139,6 +141,7 @@ impl Emitter {
             num_emitted: 0,
             params: EmitParams::default(),
             time: 0.0,
+            dt: 0.0,
         };
         (
             std::mem::size_of::<EmitterUniforms>() as wgpu::BufferAddress,
@@ -227,6 +230,7 @@ impl Emitter {
                 emit_period: 1.0 / emission_frequency,
             },
             time: 0.0,
+            dt: 0.0,
             emit_progress: 0.0,
             write_index: 0,
             compute_work_groups,
@@ -244,6 +248,7 @@ impl Emitter {
         params: &EmitParams,
     ) {
         self.time += dt;
+        self.dt = dt;
         self.emit_progress += dt;
         if self.emit_progress > self.params.emit_period {
             let num_emitted: u32 = (self.emit_progress / self.params.emit_period) as u32;
@@ -283,6 +288,7 @@ impl Emitter {
             num_emitted: num_emitted,
             params: *params,
             time: self.time,
+            dt: self.dt,
         };
         Emitter::set_uniforms(device, encoder, &self.uniform_buffer, &emitter_uniforms);
         {
