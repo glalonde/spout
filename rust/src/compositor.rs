@@ -176,13 +176,17 @@ impl Composition {
                     screen_position: (00.0, 00.0),
                     color: [1.0, 1.0, 1.0, 1.0],
                     scale: Scale { x: 20.0, y: 20.0 },
-                    bounds: (width as f32, height as f32),
+                    bounds: (3.0 * width as f32, 3.0 * height as f32),
                     ..Section::default()
                 };
                 self.glyph_brush.queue(section);
-                let result =
-                    self.glyph_brush
-                        .draw_queued(&device, encoder, texture_view, width, height);
+                let result = self.glyph_brush.draw_queued(
+                    &device,
+                    encoder,
+                    texture_view,
+                    3 * width,
+                    3 * height,
+                );
                 if !result.is_ok() {
                     error!("Failed to draw glyph: {}", result.unwrap_err());
                 }

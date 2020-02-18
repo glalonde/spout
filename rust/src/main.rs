@@ -1,6 +1,6 @@
 #[path = "../examples/framework.rs"]
 mod framework;
-use log::trace;
+use log::{info, trace};
 
 gflags::define! {
     --width: u32 = 320
@@ -12,20 +12,41 @@ gflags::define! {
     --music_starts_on: bool = false
 }
 
+// Parameters that define the game. These don't change at runtime.
 #[derive(Debug)]
+struct GameParams {
+    viewport_width: u32,
+    viewport_height: u32,
+}
+
+#[derive(Debug, Copy, Clone)]
 struct InputState {
     forward: bool,
     left: bool,
     right: bool,
+    pause: bool,
+}
+impl InputState {
+    pub fn default() -> Self {
+        InputState {
+            forward: false,
+            left: false,
+            right: false,
+            pause: false,
+        }
+    }
 }
 
 #[derive(Debug)]
 struct GameState {
     input_state: InputState,
+    prev_input_state: InputState,
     ship_state: spout::ship::ShipState,
+    paused: bool,
 }
 
 struct Example {
+    game_params: GameParams,
     fps: spout::fps_estimator::FpsEstimator,
     state: GameState,
     compute_locals: spout::particle_system::ComputeLocals,
@@ -39,10 +60,17 @@ impl Example {
     // Update pre-render cpu logic
     fn update_state(&mut self, device: &wgpu::Device, encoder: &mut wgpu::CommandEncoder) {
         let input_state = &self.state.input_state;
+        let dt = self.fps.tick() as f32;
+        if input_state.pause && !self.state.prev_input_state.pause {
+            // new pause signal.
+            self.state.paused = !self.state.paused;
+        }
+        if self.state.paused {
+            return;
+        }
 
         let width = self.compute_locals.system_params.width;
         let height = self.compute_locals.system_params.height;
-        let dt = self.fps.tick() as f32;
 
         let ship_state = &mut self.state.ship_state;
 
@@ -108,14 +136,16 @@ impl framework::Example for Example {
         ];
 
         let this = Example {
+            game_params: GameParams {
+                viewport_width: WIDTH.flag,
+                viewport_height: HEIGHT.flag,
+            },
             fps: spout::fps_estimator::FpsEstimator::new(60.0),
             state: GameState {
-                input_state: InputState {
-                    left: false,
-                    forward: false,
-                    right: false,
-                },
+                input_state: InputState::default(),
+                prev_input_state: InputState::default(),
                 ship_state: spout::ship::ShipState::init_from_flags(ship_position),
+                paused: false,
             },
             compute_locals: compute_locals,
             particle_renderer,
@@ -146,7 +176,7 @@ impl framework::Example for Example {
                                 state,
                                 ..
                             } => match state {
-                                winit::event::ElementState::Pressed => $result = true,
+                                winit::event::ElementState::Pressed =>  $result = true,
                                 winit::event::ElementState::Released => $result = false,
                             }
                         ),*
@@ -158,15 +188,22 @@ impl framework::Example for Example {
             winit::event::WindowEvent::KeyboardInput { input, .. } => bind_keys!(input,
                 winit::event::VirtualKeyCode::W => self.state.input_state.forward,
                 winit::event::VirtualKeyCode::A => self.state.input_state.left,
+                winit::event::VirtualKeyCode::P => self.state.input_state.pause,
                 winit::event::VirtualKeyCode::D => self.state.input_state.right),
             _ => (),
         }
     }
     fn resize(
         &mut self,
-        _sc_desc: &wgpu::SwapChainDescriptor,
+        sc_desc: &wgpu::SwapChainDescriptor,
         _device: &wgpu::Device,
     ) -> Option<wgpu::CommandBuffer> {
+        let viewport_aspect_ratio =
+            self.game_params.viewport_width as f64 / self.game_params.viewport_height as f64;
+        let new_window_aspect_ratio = sc_desc.width as f64 / sc_desc.height as f64;
+        info!("Resizing: ({}, {})", sc_desc.width, sc_desc.height);
+        info!("Game aspect ratio: {}", viewport_aspect_ratio);
+        info!("Window aspect ratio: {}", new_window_aspect_ratio);
         None
     }
 
@@ -178,48 +215,51 @@ impl framework::Example for Example {
         let mut encoder =
             device.create_command_encoder(&wgpu::CommandEncoderDescriptor { todo: 0 });
         self.update_state(device, &mut encoder);
+        self.state.prev_input_state = self.state.input_state;
 
-        {
-            // Clear the density texture.
-            encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
-                    attachment: &self.compute_locals.density_texture.create_default_view(),
-                    resolve_target: None,
-                    load_op: wgpu::LoadOp::Clear,
-                    store_op: wgpu::StoreOp::Store,
-                    clear_color: wgpu::Color::BLACK,
-                }],
-                depth_stencil_attachment: None,
-            });
-        }
-        {
-            // Update the particles state and density texture.
-            let mut cpass = encoder.begin_compute_pass();
-            cpass.set_pipeline(&self.compute_locals.compute_pipeline);
-            cpass.set_bind_group(0, &self.compute_locals.compute_bind_group, &[]);
-            trace!(
-                "Dispatching {} work groups",
-                self.compute_locals.compute_work_groups
-            );
-            cpass.dispatch(self.compute_locals.compute_work_groups as u32, 1, 1);
-        }
-        {
-            // Render the density texture.
-            self.particle_renderer.render(&mut encoder);
-        }
-        {
-            // Render the particle glow pass.
-            self.glow_renderer
-                .render(&self.composition.texture_view, &mut encoder);
-        }
-        {
-            // Render the ship.
-            self.ship_renderer.render(
-                &self.composition.texture_view,
-                device,
-                &self.state.ship_state,
-                &mut encoder,
-            );
+        if !self.state.paused {
+            {
+                // Clear the density texture.
+                encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
+                        attachment: &self.compute_locals.density_texture.create_default_view(),
+                        resolve_target: None,
+                        load_op: wgpu::LoadOp::Clear,
+                        store_op: wgpu::StoreOp::Store,
+                        clear_color: wgpu::Color::BLACK,
+                    }],
+                    depth_stencil_attachment: None,
+                });
+            }
+            {
+                // Update the particles state and density texture.
+                let mut cpass = encoder.begin_compute_pass();
+                cpass.set_pipeline(&self.compute_locals.compute_pipeline);
+                cpass.set_bind_group(0, &self.compute_locals.compute_bind_group, &[]);
+                trace!(
+                    "Dispatching {} work groups",
+                    self.compute_locals.compute_work_groups
+                );
+                cpass.dispatch(self.compute_locals.compute_work_groups as u32, 1, 1);
+            }
+            {
+                // Render the density texture.
+                self.particle_renderer.render(&mut encoder);
+            }
+            {
+                // Render the particle glow pass.
+                self.glow_renderer
+                    .render(&self.composition.texture_view, &mut encoder);
+            }
+            {
+                // Render the ship.
+                self.ship_renderer.render(
+                    &self.composition.texture_view,
+                    device,
+                    &self.state.ship_state,
+                    &mut encoder,
+                );
+            }
         }
         {
             // Render the composition texture.

@@ -81,6 +81,8 @@ pub fn run<E: Example>(title: &str) {
         (window, instance, size, surface)
     };
 
+    window.set_cursor_visible(false);
+
     let adapter = wgpu::Adapter::request(&wgpu::RequestAdapterOptions {
         power_preference: wgpu::PowerPreference::Default,
         backends: wgpu::BackendBit::PRIMARY,

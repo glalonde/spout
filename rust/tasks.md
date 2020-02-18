@@ -9,7 +9,8 @@
 - [ ] terrain collision capabilities
 - [ ] resolution selection
 - [ ] window aspect ratio
-- [ ] music
+- [ ] pausing 
+- [x] music
 ---
 ## Medium
 - [ ] level generation

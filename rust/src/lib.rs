@@ -1,5 +1,6 @@
 pub mod color_maps;
 pub mod compositor;
+pub mod debug_overlay;
 pub mod emitter;
 pub mod fps_estimator;
 pub mod glow_pass;
