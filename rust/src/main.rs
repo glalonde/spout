@@ -86,6 +86,8 @@ impl Example {
         };
         ship_state.update(dt, input_state.forward, rotation);
 
+        // TODO udpate scrolling state here.
+
         // Emit particles
         if input_state.forward {
             self.compute_locals.emitter.emit_over_time(
@@ -97,10 +99,14 @@ impl Example {
         }
 
         // Update simulation
+        let starting_height = 0;
         let sim_uniforms = spout::particle_system::ComputeUniforms {
             dt,
             buffer_width: width,
             buffer_height: height,
+            bottom_height: starting_height,
+            middle_height: starting_height + height,
+            top_height: starting_height + height * 2,
         };
         spout::particle_system::ComputeLocals::set_uniforms(
             device,
@@ -118,9 +124,11 @@ impl framework::Example for Example {
     ) -> (Self, Option<wgpu::CommandBuffer>) {
         let mut init_encoder =
             device.create_command_encoder(&wgpu::CommandEncoderDescriptor { todo: 0 });
+        let width = WIDTH.flag;
+        let height = HEIGHT.flag;
         let system_params = spout::particle_system::SystemParams {
-            width: WIDTH.flag,
-            height: HEIGHT.flag,
+            width,
+            height,
             max_particle_life: 5.0,
         };
 
@@ -131,8 +139,20 @@ impl framework::Example for Example {
             &compute_locals,
             &mut init_encoder,
         );
-        let glow_renderer =
-            spout::glow_pass::GlowRenderer::init(device, &particle_renderer.output_texture_view);
+        let glow_renderer = spout::glow_pass::GlowRenderer::init(
+            device,
+            &particle_renderer.output_texture_view,
+            width,
+            height,
+        );
+        let level_buffer = spout::level_buffer::LevelBuffer::init(
+            sc_desc,
+            device,
+            &glow_renderer.output_texture_view,
+            width,
+            height,
+            &mut init_encoder,
+        );
 
         let ship_position = [
             spout::int_grid::set_values_relative(system_params.width / 4, 0),
@@ -159,11 +179,7 @@ impl framework::Example for Example {
                 system_params.width,
                 system_params.height,
             ),
-            level_buffer: spout::level_buffer::LevelBuffer::init(
-                sc_desc,
-                device,
-                &mut init_encoder,
-            ),
+            level_buffer,
             composition: spout::compositor::Composition::init(
                 device,
                 system_params.width,
@@ -232,27 +248,11 @@ impl framework::Example for Example {
         if !self.state.paused {
             {
                 // Clear the density texture.
-                encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                    color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
-                        attachment: &self.compute_locals.density_texture.create_default_view(),
-                        resolve_target: None,
-                        load_op: wgpu::LoadOp::Clear,
-                        store_op: wgpu::StoreOp::Store,
-                        clear_color: wgpu::Color::BLACK,
-                    }],
-                    depth_stencil_attachment: None,
-                });
+                self.compute_locals.clear_density(&mut encoder);
             }
             {
                 // Update the particles state and density texture.
-                let mut cpass = encoder.begin_compute_pass();
-                cpass.set_pipeline(&self.compute_locals.compute_pipeline);
-                cpass.set_bind_group(0, &self.compute_locals.compute_bind_group, &[]);
-                trace!(
-                    "Dispatching {} work groups",
-                    self.compute_locals.compute_work_groups
-                );
-                cpass.dispatch(self.compute_locals.compute_work_groups as u32, 1, 1);
+                self.compute_locals.compute(&mut encoder);
             }
             {
                 // Render the density texture.
@@ -260,8 +260,7 @@ impl framework::Example for Example {
             }
             {
                 // Render the particle glow pass.
-                self.glow_renderer
-                    .render(&self.composition.texture_view, &mut encoder);
+                self.glow_renderer.render(&mut encoder);
             }
             {
                 // Render the ship.

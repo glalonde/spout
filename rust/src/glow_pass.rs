@@ -3,10 +3,16 @@
 pub struct GlowRenderer {
     pub render_bind_group: wgpu::BindGroup,
     pub render_pipeline: wgpu::RenderPipeline,
+    pub output_texture_view: wgpu::TextureView,
 }
 
 impl GlowRenderer {
-    pub fn init(device: &wgpu::Device, input_texture: &wgpu::TextureView) -> Self {
+    pub fn init(
+        device: &wgpu::Device,
+        input_texture: &wgpu::TextureView,
+        width: u32,
+        height: u32,
+    ) -> Self {
         // Sets up the quad canvas.
         let vs = super::include_shader!("particle_system/quad.vert.spv");
         let vs_module =
@@ -27,6 +33,21 @@ impl GlowRenderer {
             lod_min_clamp: -100.0,
             lod_max_clamp: 100.0,
             compare_function: wgpu::CompareFunction::Always,
+        });
+
+        let output_extents = wgpu::Extent3d {
+            width,
+            height,
+            depth: 1,
+        };
+        let output_texture = device.create_texture(&wgpu::TextureDescriptor {
+            size: output_extents,
+            array_layer_count: 1,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Bgra8UnormSrgb,
+            usage: wgpu::TextureUsage::SAMPLED | wgpu::TextureUsage::OUTPUT_ATTACHMENT,
         });
 
         // Create pipeline layout
@@ -102,14 +123,15 @@ impl GlowRenderer {
         GlowRenderer {
             render_bind_group,
             render_pipeline,
+            output_texture_view: output_texture.create_default_view(),
         }
     }
 
-    pub fn render(&self, texture_view: &wgpu::TextureView, encoder: &mut wgpu::CommandEncoder) {
+    pub fn render(&self, encoder: &mut wgpu::CommandEncoder) {
         // Render the density texture.
         let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
-                attachment: texture_view,
+                attachment: &self.output_texture_view,
                 resolve_target: None,
                 load_op: wgpu::LoadOp::Clear,
                 store_op: wgpu::StoreOp::Store,

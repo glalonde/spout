@@ -8,11 +8,15 @@ layout(std430, binding = 0) buffer Particles {
   Particle particles[];
 };
 
-layout (binding = 1, r32ui) uniform uimage2D counter_texture;
-layout(set = 0, binding = 2) uniform Params {
+layout (binding = 1, r32ui) uniform uimage2D bottom_counter_texture;
+layout (binding = 2, r32ui) uniform uimage2D top_counter_texture;
+layout(set = 0, binding = 3) uniform Params {
     float dt;
     uint buffer_width;
     uint buffer_height;
+    uint bottom_height;
+    uint middle_height;
+    uint top_height;
 };
 
 float Norm(in ivec2 vel) {
@@ -20,9 +24,30 @@ float Norm(in ivec2 vel) {
   return sqrt(f_vel.x*f_vel.x + f_vel.y * f_vel.y);
 }
 
-bool OnBuffer(in ivec2 cell) {
-  return cell.x >= 0 && cell.y >= 0 && cell.x < buffer_width &&
-         cell.y < buffer_height;
+bool OnBotBuffer(in uint y) {
+  return y >= bottom_height && y < middle_height;
+}
+
+bool OnTopBuffer(in uint y) {
+  return y >= middle_height && y < top_height;
+}
+
+bool OnBuffersX(in uint x) {
+  return x >= 0 && x < buffer_width;
+}
+
+bool OnBuffer(in uvec2 cell) {
+  return OnBuffersX(cell.x) && (OnTopBuffer(cell.y) || OnBotBuffer(cell.y));
+}
+
+void IncrementCell(in uvec2 cell) {
+  cell.y -= bottom_height;
+  if (cell.y >= buffer_height) {
+    cell.y -= buffer_height;
+    imageAtomicAdd(top_counter_texture, ivec2(cell), 1);
+  } else {
+    imageAtomicAdd(bottom_counter_texture, ivec2(cell), 1);
+  }
 }
 
 void main() {
@@ -106,5 +131,5 @@ void main() {
   particles[gid].ttl = p.ttl - dt;
 
   // Draw to the density texture
-  imageAtomicAdd(counter_texture, current_cell, 1);
+  IncrementCell(current_cell);
 }
