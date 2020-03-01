@@ -3,6 +3,7 @@ pub mod compositor;
 pub mod debug_overlay;
 pub mod emitter;
 pub mod fps_estimator;
+pub mod game_params;
 pub mod glow_pass;
 pub mod int_grid;
 pub mod level_buffer;

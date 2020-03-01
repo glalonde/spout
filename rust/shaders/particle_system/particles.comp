@@ -8,15 +8,19 @@ layout(std430, binding = 0) buffer Particles {
   Particle particles[];
 };
 
-layout (binding = 1, r32ui) uniform uimage2D bottom_counter_texture;
-layout (binding = 2, r32ui) uniform uimage2D top_counter_texture;
-layout(set = 0, binding = 3) uniform Params {
+layout (binding = 1, r32ui) uniform uimage2D terrain_texture_bottom;
+layout (binding = 2, r32ui) uniform uimage2D terrain_texture_top;
+layout (binding = 3, r32ui) uniform uimage2D density_texture;
+layout(set = 0, binding = 4) uniform Params {
     float dt;
-    uint buffer_width;
-    uint buffer_height;
-    uint bottom_height;
-    uint middle_height;
-    uint top_height;
+    uint level_width;
+    uint level_height;
+    uint bottom_level_height;
+    uint middle_level_height;
+    uint top_level_height;
+    // It is assumed with viewport width is the same as the level width.
+    uint viewport_height;
+    uint viewport_bottom_height;
 };
 
 float Norm(in ivec2 vel) {
@@ -24,30 +28,25 @@ float Norm(in ivec2 vel) {
   return sqrt(f_vel.x*f_vel.x + f_vel.y * f_vel.y);
 }
 
-bool OnBotBuffer(in uint y) {
-  return y >= bottom_height && y < middle_height;
+bool OnBotLevelBuffer(in uint y) {
+  return y >= bottom_level_height && y < middle_level_height;
 }
 
-bool OnTopBuffer(in uint y) {
-  return y >= middle_height && y < top_height;
+bool OnTopLevelBuffer(in uint y) {
+  return y >= middle_level_height && y < top_level_height;
 }
 
-bool OnBuffersX(in uint x) {
-  return x >= 0 && x < buffer_width;
+bool OnLevelBuffersX(in uint x) {
+  return x >= 0 && x < level_width;
 }
 
-bool OnBuffer(in uvec2 cell) {
-  return OnBuffersX(cell.x) && (OnTopBuffer(cell.y) || OnBotBuffer(cell.y));
+bool OnLevelBuffers(in uvec2 cell) {
+  return OnLevelBuffersX(cell.x) && (OnTopLevelBuffer(cell.y) || OnBotLevelBuffer(cell.y));
 }
 
 void IncrementCell(in uvec2 cell) {
-  cell.y -= bottom_height;
-  if (cell.y >= buffer_height) {
-    cell.y -= buffer_height;
-    imageAtomicAdd(top_counter_texture, ivec2(cell), 1);
-  } else {
-    imageAtomicAdd(bottom_counter_texture, ivec2(cell), 1);
-  }
+  cell.y -= viewport_bottom_height;
+  imageAtomicAdd(density_texture, ivec2(cell), 1);
 }
 
 void main() {
@@ -90,7 +89,7 @@ void main() {
       current_cell.x += step.x;
       // Check cell
       bool bounce;
-      if (OnBuffer(current_cell)) {
+      if (OnLevelBuffers(current_cell)) {
         // bounce = TryErodeTerrain(current_cell, Norm(vel_out));
         bounce = false;
       } else {
@@ -109,7 +108,7 @@ void main() {
       current_cell.y += step.y;
       // Check cell
       bool bounce;
-      if (OnBuffer(current_cell)) {
+      if (OnLevelBuffers(current_cell)) {
         // bounce = TryErodeTerrain(current_cell, Norm(vel_out));
         bounce = false;
       } else {

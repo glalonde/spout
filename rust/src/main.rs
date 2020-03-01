@@ -1,6 +1,6 @@
 #[path = "../examples/framework.rs"]
 mod framework;
-use log::{info, trace};
+use log::info;
 
 gflags::define! {
     --width: u32 = 320
@@ -13,13 +13,6 @@ gflags::define! {
 }
 gflags::define! {
     --music_starts_on: bool = false
-}
-
-// Parameters that define the game. These don't change at runtime.
-#[derive(Debug)]
-struct GameParams {
-    viewport_width: u32,
-    viewport_height: u32,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -49,7 +42,7 @@ struct GameState {
 }
 
 struct Example {
-    game_params: GameParams,
+    game_params: spout::game_params::GameParams,
     fps: spout::fps_estimator::FpsEstimator,
     state: GameState,
     compute_locals: spout::particle_system::ComputeLocals,
@@ -160,9 +153,11 @@ impl framework::Example for Example {
         ];
 
         let this = Example {
-            game_params: GameParams {
+            game_params: spout::game_params::GameParams {
                 viewport_width: WIDTH.flag,
                 viewport_height: HEIGHT.flag,
+                level_width: WIDTH.flag,
+                level_height: HEIGHT.flag * 3,
             },
             fps: spout::fps_estimator::FpsEstimator::new(FPS.flag as f64),
             state: GameState {

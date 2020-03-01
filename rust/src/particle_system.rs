@@ -15,11 +15,14 @@ pub struct SystemParams {
 #[derive(Clone, Copy, zerocopy::FromBytes, zerocopy::AsBytes)]
 pub struct ComputeUniforms {
     pub dt: f32,
-    pub buffer_width: u32,
-    pub buffer_height: u32,
-    pub bottom_height: u32,
-    pub middle_height: u32,
-    pub top_height: u32,
+    pub level_width: u32,
+    pub level_height: u32,
+    pub bottom_level_height: u32,
+    pub middle_level_height: u32,
+    pub top_level_height: u32,
+    // It is assumed with viewport width is the same as the level width.
+    pub viewport_height: u32,
+    pub viewport_bottom_height: u32,
 }
 
 pub struct ComputeLocals {
@@ -28,8 +31,9 @@ pub struct ComputeLocals {
     pub compute_work_groups: usize,
     pub compute_bind_group_a: wgpu::BindGroup,
     pub compute_bind_group_b: wgpu::BindGroup,
-    pub density_texture_a: wgpu::Texture,
-    pub density_texture_b: wgpu::Texture,
+    pub terrain_texture_a_view: wgpu::TextureView,
+    pub terrain_texture_b_view: wgpu::TextureView,
+    pub density_texture_view: wgpu::TextureView,
     pub uniform_buf: wgpu::Buffer,
     pub compute_pipeline: wgpu::ComputePipeline,
 }
@@ -53,10 +57,31 @@ impl ComputeLocals {
                 | wgpu::TextureUsage::SAMPLED,
         })
     }
+
+    fn make_terrain_texture(
+        device: &wgpu::Device,
+        texture_extent: &wgpu::Extent3d,
+    ) -> wgpu::Texture {
+        device.create_texture(&wgpu::TextureDescriptor {
+            size: *texture_extent,
+            array_layer_count: 1,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::R32Uint,
+            usage: wgpu::TextureUsage::COPY_SRC
+                | wgpu::TextureUsage::STORAGE
+                | wgpu::TextureUsage::OUTPUT_ATTACHMENT
+                | wgpu::TextureUsage::COPY_DST
+                | wgpu::TextureUsage::SAMPLED,
+        })
+    }
+
     pub fn init(
         device: &wgpu::Device,
         _init_encoder: &mut wgpu::CommandEncoder,
         params: &SystemParams,
+        game_params: &super::game_params::GameParams,
     ) -> Self {
         // This sets up the compute stage, which is responsible for updating the
         // particle system and most of the game logic. The output is updated game state
@@ -76,20 +101,23 @@ impl ComputeLocals {
             height: params.height,
             depth: 1,
         };
-        let density_texture_a = ComputeLocals::make_density_texture(device, &texture_extent);
-        let density_texture_a_view = density_texture_a.create_default_view();
+        let terrain_texture_a = ComputeLocals::make_terrain_texture(device, &texture_extent);
+        let terrain_texture_a_view = terrain_texture_a.create_default_view();
 
-        let density_texture_b = ComputeLocals::make_density_texture(device, &texture_extent);
-        let density_texture_b_view = density_texture_b.create_default_view();
+        let terrain_texture_b = ComputeLocals::make_terrain_texture(device, &texture_extent);
+        let terrain_texture_b_view = terrain_texture_b.create_default_view();
+
+        let density_texture = ComputeLocals::make_density_texture(device, &texture_extent);
+        let density_texture_view = density_texture.create_default_view();
 
         let compute_uniform_size = std::mem::size_of::<ComputeUniforms>() as wgpu::BufferAddress;
         let compute_uniforms = ComputeUniforms {
             dt: 0.0,
-            buffer_width: params.width,
-            buffer_height: params.height,
-            bottom_height: 0,
-            middle_height: params.height,
-            top_height: params.height * 2,
+            level_width: params.width,
+            level_height: params.height,
+            bottom_level_height: 0,
+            middle_level_height: params.height,
+            top_level_height: params.height * 2,
         };
         let uniform_buf = device
             .create_buffer_mapped(1, wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST)
@@ -147,19 +175,24 @@ impl ComputeLocals {
                         range: 0..particle_buffer_size,
                     },
                 },
-                // Particle density buffer
+                // Bottom level buffer
                 wgpu::Binding {
                     binding: 1,
-                    resource: wgpu::BindingResource::TextureView(&density_texture_a_view),
+                    resource: wgpu::BindingResource::TextureView(&terrain_texture_a_view),
+                },
+                // Top level buffer
+                wgpu::Binding {
+                    binding: 2,
+                    resource: wgpu::BindingResource::TextureView(&terrain_texture_b_view),
                 },
                 // Particle density buffer
                 wgpu::Binding {
-                    binding: 2,
-                    resource: wgpu::BindingResource::TextureView(&density_texture_b_view),
+                    binding: 3,
+                    resource: wgpu::BindingResource::TextureView(&density_texture_view),
                 },
                 // Uniforms
                 wgpu::Binding {
-                    binding: 3,
+                    binding: 4,
                     resource: wgpu::BindingResource::Buffer {
                         buffer: &uniform_buf,
                         range: 0..compute_uniform_size,
@@ -181,16 +214,21 @@ impl ComputeLocals {
                 // Particle density buffer
                 wgpu::Binding {
                     binding: 1,
-                    resource: wgpu::BindingResource::TextureView(&density_texture_b_view),
+                    resource: wgpu::BindingResource::TextureView(&terrain_texture_b_view),
                 },
                 // Particle density buffer
                 wgpu::Binding {
                     binding: 2,
-                    resource: wgpu::BindingResource::TextureView(&density_texture_a_view),
+                    resource: wgpu::BindingResource::TextureView(&terrain_texture_a_view),
+                },
+                // Particle density buffer
+                wgpu::Binding {
+                    binding: 3,
+                    resource: wgpu::BindingResource::TextureView(&density_texture_view),
                 },
                 // Uniforms
                 wgpu::Binding {
-                    binding: 3,
+                    binding: 4,
                     resource: wgpu::BindingResource::Buffer {
                         buffer: &uniform_buf,
                         range: 0..compute_uniform_size,
@@ -220,8 +258,9 @@ impl ComputeLocals {
             compute_work_groups,
             compute_bind_group_a,
             compute_bind_group_b,
-            density_texture_a,
-            density_texture_b,
+            terrain_texture_a_view,
+            terrain_texture_b_view,
+            density_texture_view,
             uniform_buf,
             compute_pipeline,
         }
@@ -260,7 +299,7 @@ impl ComputeLocals {
         // Clear the density texture.
         encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
-                attachment: &self.density_texture_a.create_default_view(),
+                attachment: &self.terrain_texture_a_view,
                 resolve_target: None,
                 load_op: wgpu::LoadOp::Clear,
                 store_op: wgpu::StoreOp::Store,
@@ -271,7 +310,7 @@ impl ComputeLocals {
         // Clear the density texture.
         encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
-                attachment: &self.density_texture_b.create_default_view(),
+                attachment: &self.terrain_texture_b_view,
                 resolve_target: None,
                 load_op: wgpu::LoadOp::Clear,
                 store_op: wgpu::StoreOp::Store,
@@ -394,7 +433,7 @@ impl ParticleRenderer {
                 wgpu::Binding {
                     binding: 0,
                     resource: wgpu::BindingResource::TextureView(
-                        &compute_locals.density_texture_a.create_default_view(),
+                        &compute_locals.density_texture_view,
                     ),
                 },
                 wgpu::Binding {
