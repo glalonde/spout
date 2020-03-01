@@ -118,6 +118,8 @@ impl ComputeLocals {
             bottom_level_height: 0,
             middle_level_height: params.height,
             top_level_height: params.height * 2,
+            viewport_height: game_params.viewport_height,
+            viewport_bottom_height: 0,
         };
         let uniform_buf = device
             .create_buffer_mapped(1, wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST)
@@ -266,10 +268,31 @@ impl ComputeLocals {
         }
     }
 
-    pub fn set_uniforms(
+    pub fn update_uniforms(
+        &mut self,
         device: &wgpu::Device,
         encoder: &mut wgpu::CommandEncoder,
-        uniform_buffer: &wgpu::Buffer,
+        dt: f32,
+        game_params: &super::game_params::GameParams,
+    ) {
+        // Update simulation
+        let compute_uniforms = ComputeUniforms {
+            dt,
+            level_width: game_params.level_width,
+            level_height: game_params.level_height,
+            bottom_level_height: 0,
+            middle_level_height: game_params.level_height,
+            top_level_height: game_params.level_height * 2,
+            viewport_height: game_params.viewport_height,
+            viewport_bottom_height: 0,
+        };
+        self.set_uniforms(device, encoder, &compute_uniforms);
+    }
+
+    fn set_uniforms(
+        &mut self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
         values: &ComputeUniforms,
     ) {
         let bytes: &[u8] = values.as_bytes();
@@ -280,7 +303,7 @@ impl ComputeLocals {
         encoder.copy_buffer_to_buffer(
             &temp_buf,
             0,
-            uniform_buffer,
+            &self.uniform_buf,
             0,
             uniform_buf_size as wgpu::BufferAddress,
         );

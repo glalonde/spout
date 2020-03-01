@@ -79,7 +79,7 @@ impl Example {
         };
         ship_state.update(dt, input_state.forward, rotation);
 
-        // TODO udpate scrolling state here.
+        // TODO update scrolling state here.
 
         // Emit particles
         if input_state.forward {
@@ -92,21 +92,7 @@ impl Example {
         }
 
         // Update simulation
-        let starting_height = 0;
-        let sim_uniforms = spout::particle_system::ComputeUniforms {
-            dt,
-            buffer_width: width,
-            buffer_height: height,
-            bottom_height: starting_height,
-            middle_height: starting_height + height,
-            top_height: starting_height + height * 2,
-        };
-        spout::particle_system::ComputeLocals::set_uniforms(
-            device,
-            encoder,
-            &mut self.compute_locals.uniform_buf,
-            &sim_uniforms,
-        );
+        self.compute_locals.update_uniforms(device, encoder, dt);
     }
 }
 
