@@ -137,7 +137,7 @@ impl ComputeLocals {
                             readonly: false,
                         },
                     },
-                    // Bottom particle density buffer
+                    // Bottom terrain buffer
                     wgpu::BindGroupLayoutBinding {
                         binding: 1,
                         visibility: wgpu::ShaderStage::COMPUTE,
@@ -145,7 +145,7 @@ impl ComputeLocals {
                             dimension: wgpu::TextureViewDimension::D2,
                         },
                     },
-                    // Top particle density buffer
+                    // Top terrain buffer
                     wgpu::BindGroupLayoutBinding {
                         binding: 2,
                         visibility: wgpu::ShaderStage::COMPUTE,
@@ -153,9 +153,17 @@ impl ComputeLocals {
                             dimension: wgpu::TextureViewDimension::D2,
                         },
                     },
-                    // Uniform inputs
+                    // Particle density buffer
                     wgpu::BindGroupLayoutBinding {
                         binding: 3,
+                        visibility: wgpu::ShaderStage::COMPUTE,
+                        ty: wgpu::BindingType::StorageTexture {
+                            dimension: wgpu::TextureViewDimension::D2,
+                        },
+                    },
+                    // Uniform inputs
+                    wgpu::BindGroupLayoutBinding {
+                        binding: 4,
                         visibility: wgpu::ShaderStage::COMPUTE,
                         ty: wgpu::BindingType::UniformBuffer { dynamic: false },
                     },

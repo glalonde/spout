@@ -66,9 +66,6 @@ impl Example {
             return;
         }
 
-        let width = self.compute_locals.system_params.width;
-        let height = self.compute_locals.system_params.height;
-
         let ship_state = &mut self.state.ship_state;
 
         // Update "ship"
@@ -92,7 +89,8 @@ impl Example {
         }
 
         // Update simulation
-        self.compute_locals.update_uniforms(device, encoder, dt);
+        self.compute_locals
+            .update_uniforms(device, encoder, dt, &self.game_params);
     }
 }
 
@@ -103,6 +101,12 @@ impl framework::Example for Example {
     ) -> (Self, Option<wgpu::CommandBuffer>) {
         let mut init_encoder =
             device.create_command_encoder(&wgpu::CommandEncoderDescriptor { todo: 0 });
+        let game_params = spout::game_params::GameParams {
+            viewport_width: WIDTH.flag,
+            viewport_height: HEIGHT.flag,
+            level_width: WIDTH.flag,
+            level_height: HEIGHT.flag * 3,
+        };
         let width = WIDTH.flag;
         let height = HEIGHT.flag;
         let system_params = spout::particle_system::SystemParams {
@@ -111,8 +115,12 @@ impl framework::Example for Example {
             max_particle_life: 5.0,
         };
 
-        let compute_locals =
-            spout::particle_system::ComputeLocals::init(device, &mut init_encoder, &system_params);
+        let compute_locals = spout::particle_system::ComputeLocals::init(
+            device,
+            &mut init_encoder,
+            &system_params,
+            &game_params,
+        );
         let particle_renderer = spout::particle_system::ParticleRenderer::init(
             device,
             &compute_locals,
@@ -139,12 +147,7 @@ impl framework::Example for Example {
         ];
 
         let this = Example {
-            game_params: spout::game_params::GameParams {
-                viewport_width: WIDTH.flag,
-                viewport_height: HEIGHT.flag,
-                level_width: WIDTH.flag,
-                level_height: HEIGHT.flag * 3,
-            },
+            game_params,
             fps: spout::fps_estimator::FpsEstimator::new(FPS.flag as f64),
             state: GameState {
                 input_state: InputState::default(),
