@@ -48,15 +48,16 @@ impl ComputeLocals {
     ) {
         let width = texture_extent.width;
         let height = texture_extent.height;
-        let im = image::ImageBuffer::<image::Luma<u8>, Vec<u8>>::from_fn(width, height, |x, y| {
-            let (index, extent) = match level_num % 2 {
-                0 => (x, width),
-                1 => (y, height),
-                _ => panic!(),
-            };
-            let parameter = index as f64 / extent as f64;
-            image::Luma([(parameter * 255.0).floor() as u8])
-        });
+        let im =
+            image::ImageBuffer::<image::Luma<i32>, Vec<i32>>::from_fn(width, height, |x, y| {
+                let (index, extent) = match level_num % 2 {
+                    0 => (x, width),
+                    1 => (y, height),
+                    _ => panic!(),
+                };
+                let parameter = index as f64 / extent as f64;
+                image::Luma::<i32>([(parameter * 1000.0).floor() as i32])
+            });
         let data = im.into_raw();
         let temp_buf = device
             .create_buffer_mapped(
@@ -70,7 +71,7 @@ impl ComputeLocals {
             wgpu::BufferCopyView {
                 buffer: &temp_buf,
                 offset: 0,
-                row_pitch: 1 * width,
+                row_pitch: 4 * width,
                 image_height: height,
             },
             wgpu::TextureCopyView {
@@ -116,7 +117,7 @@ impl ComputeLocals {
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::R8Uint,
+            format: wgpu::TextureFormat::R32Sint,
             usage: wgpu::TextureUsage::COPY_SRC
                 | wgpu::TextureUsage::STORAGE
                 | wgpu::TextureUsage::OUTPUT_ATTACHMENT
