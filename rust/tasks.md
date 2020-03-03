@@ -34,3 +34,10 @@
 ## Hard
 - [ ] cross platform (windows and mac os)
 ---
+
+
+# Scrolling Subtasks
+- [ ] Create N buffers for the world space data: particle accumulation, terrain
+- [ ] Read the ship height in CPU and adjust the world space coordinates of the buffers to scroll
+- [ ] Set orthographic camera perspective
+- [ ] Render camera perspective and apply glow pass / visual effects

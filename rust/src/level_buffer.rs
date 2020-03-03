@@ -59,7 +59,7 @@ impl LevelBuffer {
     fn generate_matrix(aspect_ratio: f32) -> cgmath::Matrix4<f32> {
         let mx_projection = cgmath::perspective(cgmath::Deg(45f32), aspect_ratio, 1.0, 10.0);
         let mx_view = cgmath::Matrix4::look_at(
-            cgmath::Point3::new(1.5f32, -5.0, 3.0),
+            cgmath::Point3::new(0.0f32, -2.0, 3.0),
             cgmath::Point3::new(0f32, 0.0, 0.0),
             cgmath::Vector3::unit_z(),
         );
@@ -70,7 +70,10 @@ impl LevelBuffer {
     pub fn init(
         sc_desc: &wgpu::SwapChainDescriptor,
         device: &wgpu::Device,
-        init_encoder: &mut wgpu::CommandEncoder,
+        input_texture_view: &wgpu::TextureView,
+        _width: u32,
+        _height: u32,
+        _init_encoder: &mut wgpu::CommandEncoder,
     ) -> Self {
         // Sets up the quad canvas.
         let vs = super::include_shader!("particle_system/perspective.vert.spv");
@@ -81,8 +84,9 @@ impl LevelBuffer {
         let fs_module =
             device.create_shader_module(&wgpu::read_spirv(std::io::Cursor::new(&fs[..])).unwrap());
 
-        let texture_view =
-            super::shader_utils::load_png_to_texture(device, TEST_TEXTURE_FILE.flag, init_encoder);
+        //let texture_view =
+        //    super::shader_utils::load_png_to_texture(device, TEST_TEXTURE_FILE.flag,
+        // init_encoder);
 
         // Create the vertex and index buffers
         let vertex_size = std::mem::size_of::<Vertex>();
@@ -153,7 +157,7 @@ impl LevelBuffer {
                 },
                 wgpu::Binding {
                     binding: 1,
-                    resource: wgpu::BindingResource::TextureView(&texture_view),
+                    resource: wgpu::BindingResource::TextureView(&input_texture_view),
                 },
                 wgpu::Binding {
                     binding: 2,

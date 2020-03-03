@@ -1,23 +1,26 @@
 // Keep track of the rendering members and logic to turn the integer particle
 // density texture into a colormapped texture ready to be visualized.
-pub struct GlowRenderer {
+pub struct TerrainRenderer {
     pub render_bind_group: wgpu::BindGroup,
     pub render_pipeline: wgpu::RenderPipeline,
 }
 
-impl GlowRenderer {
-    pub fn init(device: &wgpu::Device, input_texture: &wgpu::TextureView) -> Self {
+impl TerrainRenderer {
+    pub fn init(
+        device: &wgpu::Device,
+        compute_locals: &super::particle_system::ComputeLocals,
+    ) -> Self {
         // Sets up the quad canvas.
         let vs = super::include_shader!("particle_system/quad.vert.spv");
         let vs_module =
             device.create_shader_module(&wgpu::read_spirv(std::io::Cursor::new(&vs[..])).unwrap());
         // Renders the data texture onto the canvas.
-        let fs = super::include_shader!("particle_system/glow.frag.spv");
+        let fs = super::include_shader!("particle_system/terrain.frag.spv");
         let fs_module =
             device.create_shader_module(&wgpu::read_spirv(std::io::Cursor::new(&fs[..])).unwrap());
 
         // The render pipeline renders data into this texture
-        let input_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+        let terrain_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             address_mode_u: wgpu::AddressMode::ClampToEdge,
             address_mode_v: wgpu::AddressMode::ClampToEdge,
             address_mode_w: wgpu::AddressMode::ClampToEdge,
@@ -33,7 +36,7 @@ impl GlowRenderer {
         let render_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 bindings: &[
-                    // Input texture.
+                    // Particle density texture.
                     wgpu::BindGroupLayoutBinding {
                         binding: 0,
                         visibility: wgpu::ShaderStage::FRAGMENT,
@@ -42,7 +45,7 @@ impl GlowRenderer {
                             dimension: wgpu::TextureViewDimension::D2,
                         },
                     },
-                    // Input texture sampler.
+                    // Particle density texture sampler.
                     wgpu::BindGroupLayoutBinding {
                         binding: 1,
                         visibility: wgpu::ShaderStage::FRAGMENT,
@@ -50,16 +53,19 @@ impl GlowRenderer {
                     },
                 ],
             });
+        // TODO bind in second terrain texture when the fragment supports it.
         let render_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &render_bind_group_layout,
             bindings: &[
                 wgpu::Binding {
                     binding: 0,
-                    resource: wgpu::BindingResource::TextureView(input_texture),
+                    resource: wgpu::BindingResource::TextureView(
+                        &compute_locals.terrain_texture_a_view,
+                    ),
                 },
                 wgpu::Binding {
                     binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&input_sampler),
+                    resource: wgpu::BindingResource::Sampler(&terrain_sampler),
                 },
             ],
         });
@@ -99,7 +105,7 @@ impl GlowRenderer {
             sample_mask: !0,
             alpha_to_coverage_enabled: false,
         });
-        GlowRenderer {
+        TerrainRenderer {
             render_bind_group,
             render_pipeline,
         }
@@ -115,7 +121,7 @@ impl GlowRenderer {
             color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
                 attachment: output_texture_view,
                 resolve_target: None,
-                load_op: wgpu::LoadOp::Clear,
+                load_op: wgpu::LoadOp::Load,
                 store_op: wgpu::StoreOp::Store,
                 clear_color: wgpu::Color::BLACK,
             }],

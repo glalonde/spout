@@ -8,11 +8,19 @@ layout(std430, binding = 0) buffer Particles {
   Particle particles[];
 };
 
-layout (binding = 1, r32ui) uniform uimage2D counter_texture;
-layout(set = 0, binding = 2) uniform Params {
+layout (binding = 1, r32ui) uniform uimage2D terrain_texture_bottom;
+layout (binding = 2, r32ui) uniform uimage2D terrain_texture_top;
+layout (binding = 3, r32ui) uniform uimage2D density_texture;
+layout(set = 0, binding = 4) uniform Params {
     float dt;
-    uint buffer_width;
-    uint buffer_height;
+    uint level_width;
+    uint level_height;
+    uint bottom_level_height;
+    uint middle_level_height;
+    uint top_level_height;
+    // It is assumed with viewport width is the same as the level width.
+    uint viewport_height;
+    uint viewport_bottom_height;
 };
 
 float Norm(in ivec2 vel) {
@@ -20,9 +28,25 @@ float Norm(in ivec2 vel) {
   return sqrt(f_vel.x*f_vel.x + f_vel.y * f_vel.y);
 }
 
-bool OnBuffer(in ivec2 cell) {
-  return cell.x >= 0 && cell.y >= 0 && cell.x < buffer_width &&
-         cell.y < buffer_height;
+bool OnBotLevelBuffer(in uint y) {
+  return y >= bottom_level_height && y < middle_level_height;
+}
+
+bool OnTopLevelBuffer(in uint y) {
+  return y >= middle_level_height && y < top_level_height;
+}
+
+bool OnLevelBuffersX(in uint x) {
+  return x >= 0 && x < level_width;
+}
+
+bool OnLevelBuffers(in uvec2 cell) {
+  return OnLevelBuffersX(cell.x) && (OnTopLevelBuffer(cell.y) || OnBotLevelBuffer(cell.y));
+}
+
+void IncrementCell(in uvec2 cell) {
+  cell.y -= viewport_bottom_height;
+  imageAtomicAdd(density_texture, ivec2(cell), 1);
 }
 
 void main() {
@@ -65,7 +89,7 @@ void main() {
       current_cell.x += step.x;
       // Check cell
       bool bounce;
-      if (OnBuffer(current_cell)) {
+      if (OnLevelBuffers(current_cell)) {
         // bounce = TryErodeTerrain(current_cell, Norm(vel_out));
         bounce = false;
       } else {
@@ -84,7 +108,7 @@ void main() {
       current_cell.y += step.y;
       // Check cell
       bool bounce;
-      if (OnBuffer(current_cell)) {
+      if (OnLevelBuffers(current_cell)) {
         // bounce = TryErodeTerrain(current_cell, Norm(vel_out));
         bounce = false;
       } else {
@@ -106,5 +130,5 @@ void main() {
   particles[gid].ttl = p.ttl - dt;
 
   // Draw to the density texture
-  imageAtomicAdd(counter_texture, current_cell, 1);
+  IncrementCell(current_cell);
 }

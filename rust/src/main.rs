@@ -1,6 +1,6 @@
 #[path = "../examples/framework.rs"]
 mod framework;
-use log::{info, trace};
+use log::info;
 
 gflags::define! {
     --width: u32 = 320
@@ -13,13 +13,6 @@ gflags::define! {
 }
 gflags::define! {
     --music_starts_on: bool = false
-}
-
-// Parameters that define the game. These don't change at runtime.
-#[derive(Debug)]
-struct GameParams {
-    viewport_width: u32,
-    viewport_height: u32,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -49,10 +42,13 @@ struct GameState {
 }
 
 struct Example {
-    game_params: GameParams,
+    game_params: spout::game_params::GameParams,
     fps: spout::fps_estimator::FpsEstimator,
     state: GameState,
     compute_locals: spout::particle_system::ComputeLocals,
+    pre_glow_texture: wgpu::TextureView,
+    post_glow_texture: wgpu::TextureView,
+    terrain_renderer: spout::terrain_renderer::TerrainRenderer,
     particle_renderer: spout::particle_system::ParticleRenderer,
     glow_renderer: spout::glow_pass::GlowRenderer,
     ship_renderer: spout::ship::ShipRenderer,
@@ -73,9 +69,6 @@ impl Example {
             return;
         }
 
-        let width = self.compute_locals.system_params.width;
-        let height = self.compute_locals.system_params.height;
-
         let ship_state = &mut self.state.ship_state;
 
         // Update "ship"
@@ -85,6 +78,8 @@ impl Example {
             _ => spout::ship::RotationDirection::None,
         };
         ship_state.update(dt, input_state.forward, rotation);
+
+        // TODO update scrolling state here.
 
         // Emit particles
         if input_state.forward {
@@ -97,17 +92,8 @@ impl Example {
         }
 
         // Update simulation
-        let sim_uniforms = spout::particle_system::ComputeUniforms {
-            dt,
-            buffer_width: width,
-            buffer_height: height,
-        };
-        spout::particle_system::ComputeLocals::set_uniforms(
-            device,
-            encoder,
-            &mut self.compute_locals.uniform_buf,
-            &sim_uniforms,
-        );
+        self.compute_locals
+            .update_uniforms(device, encoder, dt, &self.game_params);
     }
 }
 
@@ -118,21 +104,72 @@ impl framework::Example for Example {
     ) -> (Self, Option<wgpu::CommandBuffer>) {
         let mut init_encoder =
             device.create_command_encoder(&wgpu::CommandEncoderDescriptor { todo: 0 });
+        let game_params = spout::game_params::GameParams {
+            viewport_width: WIDTH.flag,
+            viewport_height: HEIGHT.flag,
+            level_width: WIDTH.flag,
+            level_height: HEIGHT.flag * 3,
+        };
+        let width = WIDTH.flag;
+        let height = HEIGHT.flag;
         let system_params = spout::particle_system::SystemParams {
-            width: WIDTH.flag,
-            height: HEIGHT.flag,
+            width,
+            height,
             max_particle_life: 5.0,
         };
 
-        let compute_locals =
-            spout::particle_system::ComputeLocals::init(device, &mut init_encoder, &system_params);
+        let compute_locals = spout::particle_system::ComputeLocals::init(
+            device,
+            &mut init_encoder,
+            &system_params,
+            &game_params,
+        );
+        let pre_glow_texture = device.create_texture(&wgpu::TextureDescriptor {
+            size: wgpu::Extent3d {
+                width: game_params.viewport_width,
+                height: game_params.viewport_height,
+                depth: 1,
+            },
+            array_layer_count: 1,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Bgra8UnormSrgb,
+            usage: wgpu::TextureUsage::SAMPLED | wgpu::TextureUsage::OUTPUT_ATTACHMENT,
+        });
+        let pre_glow_texture_view = pre_glow_texture.create_default_view();
+        let post_glow_texture = device.create_texture(&wgpu::TextureDescriptor {
+            size: wgpu::Extent3d {
+                width: game_params.viewport_width,
+                height: game_params.viewport_height,
+                depth: 1,
+            },
+            array_layer_count: 1,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Bgra8UnormSrgb,
+            usage: wgpu::TextureUsage::SAMPLED | wgpu::TextureUsage::OUTPUT_ATTACHMENT,
+        });
+        let post_glow_texture_view = post_glow_texture.create_default_view();
+
+        let terrain_renderer =
+            spout::terrain_renderer::TerrainRenderer::init(device, &compute_locals);
+
         let particle_renderer = spout::particle_system::ParticleRenderer::init(
             device,
             &compute_locals,
             &mut init_encoder,
         );
-        let glow_renderer =
-            spout::glow_pass::GlowRenderer::init(device, &particle_renderer.output_texture_view);
+        let glow_renderer = spout::glow_pass::GlowRenderer::init(device, &pre_glow_texture_view);
+        let level_buffer = spout::level_buffer::LevelBuffer::init(
+            sc_desc,
+            device,
+            &post_glow_texture_view,
+            width,
+            height,
+            &mut init_encoder,
+        );
 
         let ship_position = [
             spout::int_grid::set_values_relative(system_params.width / 4, 0),
@@ -140,10 +177,7 @@ impl framework::Example for Example {
         ];
 
         let this = Example {
-            game_params: GameParams {
-                viewport_width: WIDTH.flag,
-                viewport_height: HEIGHT.flag,
-            },
+            game_params,
             fps: spout::fps_estimator::FpsEstimator::new(FPS.flag as f64),
             state: GameState {
                 input_state: InputState::default(),
@@ -152,6 +186,9 @@ impl framework::Example for Example {
                 paused: false,
             },
             compute_locals: compute_locals,
+            pre_glow_texture: pre_glow_texture_view,
+            post_glow_texture: post_glow_texture_view,
+            terrain_renderer,
             particle_renderer,
             glow_renderer,
             ship_renderer: spout::ship::ShipRenderer::init(
@@ -159,11 +196,7 @@ impl framework::Example for Example {
                 system_params.width,
                 system_params.height,
             ),
-            level_buffer: spout::level_buffer::LevelBuffer::init(
-                sc_desc,
-                device,
-                &mut init_encoder,
-            ),
+            level_buffer,
             composition: spout::compositor::Composition::init(
                 device,
                 system_params.width,
@@ -232,9 +265,17 @@ impl framework::Example for Example {
         if !self.state.paused {
             {
                 // Clear the density texture.
+                self.compute_locals.clear_density(&mut encoder);
+            }
+            {
+                // Update the particles state and density texture.
+                self.compute_locals.compute(&mut encoder);
+            }
+            {
+                // Clear the pre-glow pass
                 encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                     color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
-                        attachment: &self.compute_locals.density_texture.create_default_view(),
+                        attachment: &self.pre_glow_texture,
                         resolve_target: None,
                         load_op: wgpu::LoadOp::Clear,
                         store_op: wgpu::StoreOp::Store,
@@ -244,29 +285,24 @@ impl framework::Example for Example {
                 });
             }
             {
-                // Update the particles state and density texture.
-                let mut cpass = encoder.begin_compute_pass();
-                cpass.set_pipeline(&self.compute_locals.compute_pipeline);
-                cpass.set_bind_group(0, &self.compute_locals.compute_bind_group, &[]);
-                trace!(
-                    "Dispatching {} work groups",
-                    self.compute_locals.compute_work_groups
-                );
-                cpass.dispatch(self.compute_locals.compute_work_groups as u32, 1, 1);
+                // Render the terrain
+                self.terrain_renderer
+                    .render(&mut encoder, &self.pre_glow_texture);
             }
             {
                 // Render the density texture.
-                self.particle_renderer.render(&mut encoder);
+                self.particle_renderer
+                    .render(&mut encoder, &self.pre_glow_texture);
             }
             {
                 // Render the particle glow pass.
                 self.glow_renderer
-                    .render(&self.composition.texture_view, &mut encoder);
+                    .render(&mut encoder, &self.post_glow_texture);
             }
             {
                 // Render the ship.
                 self.ship_renderer.render(
-                    &self.composition.texture_view,
+                    &self.post_glow_texture,
                     device,
                     &self.state.ship_state,
                     &mut encoder,
