@@ -11,6 +11,7 @@ pub mod music_player;
 pub mod particle_system;
 pub mod shader_utils;
 pub mod ship;
+pub mod terrain_renderer;
 
 #[cfg(test)]
 mod tests {

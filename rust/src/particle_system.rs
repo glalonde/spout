@@ -39,6 +39,54 @@ pub struct ComputeLocals {
 }
 
 impl ComputeLocals {
+    fn fill_level_buffer(
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        texture: &wgpu::Texture,
+        texture_extent: &wgpu::Extent3d,
+        level_num: u32,
+    ) {
+        let width = texture_extent.width;
+        let height = texture_extent.height;
+        let im = image::ImageBuffer::<image::Luma<u8>, Vec<u8>>::from_fn(width, height, |x, y| {
+            let (index, extent) = match level_num % 2 {
+                0 => (x, width),
+                1 => (y, height),
+                _ => panic!(),
+            };
+            let parameter = index as f64 / extent as f64;
+            image::Luma([(parameter * 255.0).floor() as u8])
+        });
+        let data = im.into_raw();
+        let temp_buf = device
+            .create_buffer_mapped(
+                data.len(),
+                wgpu::BufferUsage::COPY_SRC
+                    | wgpu::BufferUsage::COPY_DST
+                    | wgpu::BufferUsage::MAP_READ,
+            )
+            .fill_from_slice(&data);
+        encoder.copy_buffer_to_texture(
+            wgpu::BufferCopyView {
+                buffer: &temp_buf,
+                offset: 0,
+                row_pitch: 1 * width,
+                image_height: height,
+            },
+            wgpu::TextureCopyView {
+                texture: &texture,
+                mip_level: 0,
+                array_layer: 0,
+                origin: wgpu::Origin3d {
+                    x: 0.0,
+                    y: 0.0,
+                    z: 0.0,
+                },
+            },
+            *texture_extent,
+        );
+    }
+
     fn make_density_texture(
         device: &wgpu::Device,
         texture_extent: &wgpu::Extent3d,
@@ -68,7 +116,7 @@ impl ComputeLocals {
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::R32Uint,
+            format: wgpu::TextureFormat::R8Uint,
             usage: wgpu::TextureUsage::COPY_SRC
                 | wgpu::TextureUsage::STORAGE
                 | wgpu::TextureUsage::OUTPUT_ATTACHMENT
@@ -79,7 +127,7 @@ impl ComputeLocals {
 
     pub fn init(
         device: &wgpu::Device,
-        _init_encoder: &mut wgpu::CommandEncoder,
+        init_encoder: &mut wgpu::CommandEncoder,
         params: &SystemParams,
         game_params: &super::game_params::GameParams,
     ) -> Self {
@@ -103,9 +151,23 @@ impl ComputeLocals {
         };
         let terrain_texture_a = ComputeLocals::make_terrain_texture(device, &texture_extent);
         let terrain_texture_a_view = terrain_texture_a.create_default_view();
+        ComputeLocals::fill_level_buffer(
+            device,
+            init_encoder,
+            &terrain_texture_a,
+            &texture_extent,
+            0,
+        );
 
         let terrain_texture_b = ComputeLocals::make_terrain_texture(device, &texture_extent);
         let terrain_texture_b_view = terrain_texture_b.create_default_view();
+        ComputeLocals::fill_level_buffer(
+            device,
+            init_encoder,
+            &terrain_texture_b,
+            &texture_extent,
+            1,
+        );
 
         let density_texture = ComputeLocals::make_density_texture(device, &texture_extent);
         let density_texture_view = density_texture.create_default_view();
@@ -346,7 +408,6 @@ impl ComputeLocals {
 pub struct ParticleRenderer {
     pub render_bind_group: wgpu::BindGroup,
     pub render_pipeline: wgpu::RenderPipeline,
-    pub output_texture_view: wgpu::TextureView,
 }
 
 impl ParticleRenderer {
@@ -370,21 +431,6 @@ impl ParticleRenderer {
             super::color_maps::get_color_map_from_flag(),
             init_encoder,
         );
-        let output_extents = wgpu::Extent3d {
-            width: compute_locals.system_params.width,
-            height: compute_locals.system_params.height,
-            depth: 1,
-        };
-        let output_texture = device.create_texture(&wgpu::TextureDescriptor {
-            size: output_extents,
-            array_layer_count: 1,
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Bgra8UnormSrgb,
-            usage: wgpu::TextureUsage::SAMPLED | wgpu::TextureUsage::OUTPUT_ATTACHMENT,
-        });
-
         // The render pipeline renders data into this texture
         let density_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             address_mode_u: wgpu::AddressMode::ClampToEdge,
@@ -509,17 +555,20 @@ impl ParticleRenderer {
         ParticleRenderer {
             render_bind_group,
             render_pipeline,
-            output_texture_view: output_texture.create_default_view(),
         }
     }
 
-    pub fn render(&self, encoder: &mut wgpu::CommandEncoder) {
+    pub fn render(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        output_texture_view: &wgpu::TextureView,
+    ) {
         // Render the density texture.
         let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
-                attachment: &self.output_texture_view,
+                attachment: output_texture_view,
                 resolve_target: None,
-                load_op: wgpu::LoadOp::Clear,
+                load_op: wgpu::LoadOp::Load,
                 store_op: wgpu::StoreOp::Store,
                 clear_color: wgpu::Color::BLACK,
             }],

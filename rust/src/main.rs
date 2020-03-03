@@ -46,6 +46,9 @@ struct Example {
     fps: spout::fps_estimator::FpsEstimator,
     state: GameState,
     compute_locals: spout::particle_system::ComputeLocals,
+    pre_glow_texture: wgpu::TextureView,
+    post_glow_texture: wgpu::TextureView,
+    terrain_renderer: spout::terrain_renderer::TerrainRenderer,
     particle_renderer: spout::particle_system::ParticleRenderer,
     glow_renderer: spout::glow_pass::GlowRenderer,
     ship_renderer: spout::ship::ShipRenderer,
@@ -121,21 +124,48 @@ impl framework::Example for Example {
             &system_params,
             &game_params,
         );
+        let pre_glow_texture = device.create_texture(&wgpu::TextureDescriptor {
+            size: wgpu::Extent3d {
+                width: game_params.viewport_width,
+                height: game_params.viewport_height,
+                depth: 1,
+            },
+            array_layer_count: 1,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Bgra8UnormSrgb,
+            usage: wgpu::TextureUsage::SAMPLED | wgpu::TextureUsage::OUTPUT_ATTACHMENT,
+        });
+        let pre_glow_texture_view = pre_glow_texture.create_default_view();
+        let post_glow_texture = device.create_texture(&wgpu::TextureDescriptor {
+            size: wgpu::Extent3d {
+                width: game_params.viewport_width,
+                height: game_params.viewport_height,
+                depth: 1,
+            },
+            array_layer_count: 1,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Bgra8UnormSrgb,
+            usage: wgpu::TextureUsage::SAMPLED | wgpu::TextureUsage::OUTPUT_ATTACHMENT,
+        });
+        let post_glow_texture_view = post_glow_texture.create_default_view();
+
+        let terrain_renderer =
+            spout::terrain_renderer::TerrainRenderer::init(device, &compute_locals);
+
         let particle_renderer = spout::particle_system::ParticleRenderer::init(
             device,
             &compute_locals,
             &mut init_encoder,
         );
-        let glow_renderer = spout::glow_pass::GlowRenderer::init(
-            device,
-            &particle_renderer.output_texture_view,
-            width,
-            height,
-        );
+        let glow_renderer = spout::glow_pass::GlowRenderer::init(device, &pre_glow_texture_view);
         let level_buffer = spout::level_buffer::LevelBuffer::init(
             sc_desc,
             device,
-            &glow_renderer.output_texture_view,
+            &post_glow_texture_view,
             width,
             height,
             &mut init_encoder,
@@ -156,6 +186,9 @@ impl framework::Example for Example {
                 paused: false,
             },
             compute_locals: compute_locals,
+            pre_glow_texture: pre_glow_texture_view,
+            post_glow_texture: post_glow_texture_view,
+            terrain_renderer,
             particle_renderer,
             glow_renderer,
             ship_renderer: spout::ship::ShipRenderer::init(
@@ -239,17 +272,37 @@ impl framework::Example for Example {
                 self.compute_locals.compute(&mut encoder);
             }
             {
+                // Clear the pre-glow pass
+                encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
+                        attachment: &self.pre_glow_texture,
+                        resolve_target: None,
+                        load_op: wgpu::LoadOp::Clear,
+                        store_op: wgpu::StoreOp::Store,
+                        clear_color: wgpu::Color::BLACK,
+                    }],
+                    depth_stencil_attachment: None,
+                });
+            }
+            {
+                // Render the terrain
+                self.terrain_renderer
+                    .render(&mut encoder, &self.pre_glow_texture);
+            }
+            {
                 // Render the density texture.
-                self.particle_renderer.render(&mut encoder);
+                self.particle_renderer
+                    .render(&mut encoder, &self.pre_glow_texture);
             }
             {
                 // Render the particle glow pass.
-                self.glow_renderer.render(&mut encoder);
+                self.glow_renderer
+                    .render(&mut encoder, &self.post_glow_texture);
             }
             {
                 // Render the ship.
                 self.ship_renderer.render(
-                    &self.composition.texture_view,
+                    &self.post_glow_texture,
                     device,
                     &self.state.ship_state,
                     &mut encoder,
