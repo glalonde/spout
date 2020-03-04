@@ -50,13 +50,13 @@ void IncrementCell(in uvec2 cell) {
 }
 
 // Returns true if bounce occurred.
-bool TryErodeTerrain(in uvec2 cell, in float speed) {
-  const float damage_rate = .001;
-  cell.y -= bottom_level_height;
-  int test_value = imageLoad(terrain_texture_bottom, ivec2(cell)).x;
+bool TryErodeTerrain(in ivec2 cell, in float speed) {
+  const float damage_rate = .0001;
+  cell.y -= int(bottom_level_height);
+  int test_value = imageLoad(terrain_texture_bottom, cell).x;
   if (test_value > 0) {
     int dmg_amt = int(damage_rate * speed);
-    int actual_value = imageAtomicAdd(terrain_texture_bottom, ivec2(cell), -dmg_amt);
+    int actual_value = imageAtomicAdd(terrain_texture_bottom, cell, -dmg_amt);
     return actual_value > 0;
   }
   return false;

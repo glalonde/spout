@@ -6,7 +6,7 @@
 - [x] ship motion
 - [ ] ship collision detection 
 - [x] text rendering
-- [ ] terrain collision capabilities
+- [x] terrain collision capabilities
 - [ ] resolution selection
 - [ ] window aspect ratio
 - [x] pausing 
@@ -37,7 +37,7 @@
 
 
 # Scrolling Subtasks
-- [ ] Create N buffers for the world space data: particle accumulation, terrain
+- [x] Create N buffers for the world space data: particle accumulation, terrain
 - [ ] Read the ship height in CPU and adjust the world space coordinates of the buffers to scroll
 - [ ] Set orthographic camera perspective
-- [ ] Render camera perspective and apply glow pass / visual effects
+- [x] Render camera perspective and apply glow pass / visual effects

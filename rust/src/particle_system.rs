@@ -55,7 +55,7 @@ impl ComputeLocals {
                     1 => (y, height),
                     _ => panic!(),
                 };
-                let parameter = index as f64 / extent as f64;
+                let parameter = (index as i32 + 100) as f64 / extent as f64;
                 image::Luma::<i32>([(parameter * 1000.0).floor() as i32])
             });
         let data = im.into_raw();
