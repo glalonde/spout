@@ -52,7 +52,7 @@ struct Example {
     particle_renderer: spout::particle_system::ParticleRenderer,
     glow_renderer: spout::glow_pass::GlowRenderer,
     ship_renderer: spout::ship::ShipRenderer,
-    level_buffer: spout::level_buffer::LevelBuffer,
+    viewport: spout::viewport::Viewport,
     composition: spout::compositor::Composition,
 }
 
@@ -162,7 +162,7 @@ impl framework::Example for Example {
             &mut init_encoder,
         );
         let glow_renderer = spout::glow_pass::GlowRenderer::init(device, &pre_glow_texture_view);
-        let level_buffer = spout::level_buffer::LevelBuffer::init(
+        let viewport = spout::viewport::Viewport::init(
             sc_desc,
             device,
             &post_glow_texture_view,
@@ -196,7 +196,7 @@ impl framework::Example for Example {
                 system_params.width,
                 system_params.height,
             ),
-            level_buffer,
+            viewport,
             composition: spout::compositor::Composition::init(
                 device,
                 system_params.width,
@@ -248,7 +248,7 @@ impl framework::Example for Example {
         info!("Resizing: ({}, {})", sc_desc.width, sc_desc.height);
         info!("Game aspect ratio: {}", viewport_aspect_ratio);
         info!("Window aspect ratio: {}", new_window_aspect_ratio);
-        self.level_buffer.resize(sc_desc, device, &mut encoder);
+        self.viewport.resize(sc_desc, device, &mut encoder);
         Some(encoder.finish())
     }
 
@@ -321,7 +321,7 @@ impl framework::Example for Example {
             );
         }
         {
-            self.level_buffer.render(&frame, &mut encoder);
+            self.viewport.render(&frame, &mut encoder);
         }
 
         encoder.finish()

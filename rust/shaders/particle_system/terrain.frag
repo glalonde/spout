@@ -8,10 +8,9 @@ layout(set = 0, binding = 1) uniform sampler in_terrain_sampler;
 
 void main() {
     int val = texture(isampler2D(in_terrain_texture_bottom, in_terrain_sampler), in_texture_coordinate).x;
-    float fval = val / 1000.0;
-    if (fval <= 0) {
+    if (val <= 0) {
         discard;
     } else {
-        out_color = mix(vec4(.1, .1, .1, 1.0), vec4(.7, .7, .7, 1.0), fval);
+        out_color = vec4(.196, .196, .196, 1.0);
     }
 }

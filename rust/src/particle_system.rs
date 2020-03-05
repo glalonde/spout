@@ -50,13 +50,15 @@ impl ComputeLocals {
         let height = texture_extent.height;
         let im =
             image::ImageBuffer::<image::Luma<i32>, Vec<i32>>::from_fn(width, height, |x, y| {
-                let (index, extent) = match level_num % 2 {
+                let (index, _) = match level_num % 2 {
                     0 => (x, width),
                     1 => (y, height),
                     _ => panic!(),
                 };
-                let parameter = (index as i32 + 100) as f64 / extent as f64;
-                image::Luma::<i32>([(parameter * 1000.0).floor() as i32])
+                match index % 5 {
+                    0 => image::Luma::<i32>([1000]),
+                    _ => image::Luma::<i32>([0]),
+                }
             });
         let data = im.into_raw();
         let temp_buf = device

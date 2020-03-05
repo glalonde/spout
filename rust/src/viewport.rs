@@ -1,11 +1,3 @@
-gflags::define! {
-    --test_texture_file: &str = "assets/coords.png"
-}
-// TODO:
-// orthographic projection
-// movable viewport
-// world space coordinates for the level canvas
-
 use zerocopy::{AsBytes, FromBytes};
 
 #[cfg_attr(rustfmt, rustfmt_skip)]
@@ -46,7 +38,7 @@ fn create_vertices() -> (Vec<Vertex>, Vec<u16>) {
 }
 
 // Keeps track of a level including terrain and particles.
-pub struct LevelBuffer {
+pub struct Viewport {
     vertex_buf: wgpu::Buffer,
     index_buf: wgpu::Buffer,
     index_count: usize,
@@ -55,8 +47,9 @@ pub struct LevelBuffer {
     pipeline: wgpu::RenderPipeline,
 }
 
-impl LevelBuffer {
-    fn generate_matrix(aspect_ratio: f32) -> cgmath::Matrix4<f32> {
+impl Viewport {
+    #[allow(dead_code)]
+    fn generate_perspective_matrix(aspect_ratio: f32) -> cgmath::Matrix4<f32> {
         let mx_projection = cgmath::perspective(cgmath::Deg(45f32), aspect_ratio, 1.0, 10.0);
         let mx_view = cgmath::Matrix4::look_at(
             cgmath::Point3::new(0.0f32, -2.0, 3.0),
@@ -65,6 +58,12 @@ impl LevelBuffer {
         );
         let mx_correction = OPENGL_TO_WGPU_MATRIX;
         mx_correction * mx_projection * mx_view
+    }
+
+    fn generate_orthographic_matrix() -> cgmath::Matrix4<f32> {
+        let mx_projection = cgmath::ortho(-1.1, 1.1, -1.1, 1.1, 0.0, 10.0);
+        let mx_correction = OPENGL_TO_WGPU_MATRIX;
+        mx_correction * mx_projection
     }
 
     pub fn init(
@@ -138,7 +137,7 @@ impl LevelBuffer {
             lod_max_clamp: 100.0,
             compare_function: wgpu::CompareFunction::Always,
         });
-        let mx_total = Self::generate_matrix(sc_desc.width as f32 / sc_desc.height as f32);
+        let mx_total = Self::generate_orthographic_matrix();
         let mx_ref: &[f32; 16] = mx_total.as_ref();
         let uniform_buf = device
             .create_buffer_mapped(16, wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST)
@@ -213,7 +212,7 @@ impl LevelBuffer {
             alpha_to_coverage_enabled: false,
         });
 
-        LevelBuffer {
+        Viewport {
             vertex_buf,
             index_buf,
             index_count: index_data.len(),
@@ -229,7 +228,7 @@ impl LevelBuffer {
         device: &wgpu::Device,
         encoder: &mut wgpu::CommandEncoder,
     ) {
-        let mx_total = Self::generate_matrix(sc_desc.width as f32 / sc_desc.height as f32);
+        let mx_total = Self::generate_orthographic_matrix();
         let mx_ref: &[f32; 16] = mx_total.as_ref();
         let temp_buf = device
             .create_buffer_mapped(16, wgpu::BufferUsage::COPY_SRC)

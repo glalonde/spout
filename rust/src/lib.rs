@@ -6,12 +6,12 @@ pub mod fps_estimator;
 pub mod game_params;
 pub mod glow_pass;
 pub mod int_grid;
-pub mod level_buffer;
 pub mod music_player;
 pub mod particle_system;
 pub mod shader_utils;
 pub mod ship;
 pub mod terrain_renderer;
+pub mod viewport;
 
 #[cfg(test)]
 mod tests {
