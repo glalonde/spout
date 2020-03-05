@@ -37,7 +37,8 @@ fn create_vertices() -> (Vec<Vertex>, Vec<u16>) {
     (vertex_data.to_vec(), index_data.to_vec())
 }
 
-// Keeps track of a level including terrain and particles.
+// This manages the host window to game viewport transform. Doesn't really have
+// to exist, but could make nice effects later.
 pub struct Viewport {
     vertex_buf: wgpu::Buffer,
     index_buf: wgpu::Buffer,
@@ -61,7 +62,7 @@ impl Viewport {
     }
 
     fn generate_orthographic_matrix() -> cgmath::Matrix4<f32> {
-        let mx_projection = cgmath::ortho(-1.1, 1.1, -1.1, 1.1, 0.0, 10.0);
+        let mx_projection = cgmath::ortho(-1.0, 1.0, -1.0, 1.0, 0.0, 10.0);
         let mx_correction = OPENGL_TO_WGPU_MATRIX;
         mx_correction * mx_projection
     }
@@ -224,7 +225,7 @@ impl Viewport {
 
     pub fn resize(
         &mut self,
-        sc_desc: &wgpu::SwapChainDescriptor,
+        _sc_desc: &wgpu::SwapChainDescriptor,
         device: &wgpu::Device,
         encoder: &mut wgpu::CommandEncoder,
     ) {

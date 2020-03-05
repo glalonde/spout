@@ -53,7 +53,7 @@ struct Example {
     glow_renderer: spout::glow_pass::GlowRenderer,
     ship_renderer: spout::ship::ShipRenderer,
     viewport: spout::viewport::Viewport,
-    composition: spout::compositor::Composition,
+    debug_overlay: spout::debug_overlay::DebugOverlay,
 }
 
 impl Example {
@@ -197,11 +197,7 @@ impl framework::Example for Example {
                 system_params.height,
             ),
             viewport,
-            composition: spout::compositor::Composition::init(
-                device,
-                system_params.width,
-                system_params.height,
-            ),
+            debug_overlay: spout::debug_overlay::DebugOverlay::init(device, sc_desc),
         };
         if MUSIC_STARTS_ON.flag {
             spout::music_player::MUSIC_PLAYER.lock().unwrap().play();
@@ -249,6 +245,7 @@ impl framework::Example for Example {
         info!("Game aspect ratio: {}", viewport_aspect_ratio);
         info!("Window aspect ratio: {}", new_window_aspect_ratio);
         self.viewport.resize(sc_desc, device, &mut encoder);
+        self.debug_overlay.resize(sc_desc);
         Some(encoder.finish())
     }
 
@@ -310,18 +307,11 @@ impl framework::Example for Example {
             }
         }
         {
-            // Render the composition texture.
-            self.composition.render(
-                &device,
-                &frame.view,
-                &mut encoder,
-                self.compute_locals.system_params.width,
-                self.compute_locals.system_params.height,
-                self.fps.fps(),
-            );
+            self.viewport.render(&frame, &mut encoder);
         }
         {
-            self.viewport.render(&frame, &mut encoder);
+            self.debug_overlay
+                .render(&device, &frame.view, &mut encoder, self.fps.fps());
         }
 
         encoder.finish()
