@@ -1,37 +1,34 @@
 use log::error;
 use wgpu_glyph::GlyphBrushBuilder;
+// Renders a text for the game menus/state/score, anything in the main game
+// viewport.
 
-// Renders a text overlay as one of the final stages in the rendering pipeline.
-
-pub struct DebugOverlay {
+pub struct TextRenderer {
     pub glyph_brush: wgpu_glyph::GlyphBrush<'static, ()>,
     width: u32,
     height: u32,
 }
 
-impl DebugOverlay {
-    pub fn init(device: &wgpu::Device, sc_desc: &wgpu::SwapChainDescriptor) -> Self {
-        DebugOverlay {
+impl TextRenderer {
+    // Width, height of the game viewport
+    pub fn init(device: &wgpu::Device, width: u32, height: u32) -> Self {
+        TextRenderer {
             glyph_brush: GlyphBrushBuilder::using_font_bytes(super::fonts::INCONSOLATA)
                 .texture_filter_method(wgpu::FilterMode::Nearest)
                 .build(device, wgpu::TextureFormat::Bgra8UnormSrgb),
-            width: sc_desc.width,
-            height: sc_desc.height,
+            width,
+            height,
         }
-    }
-    pub fn resize(&mut self, sc_desc: &wgpu::SwapChainDescriptor) {
-        self.width = sc_desc.width;
-        self.height = sc_desc.height;
     }
     pub fn render(
         &mut self,
         device: &wgpu::Device,
         texture_view: &wgpu::TextureView,
         encoder: &mut wgpu::CommandEncoder,
-        fps: f64,
+        text: &str,
     ) {
         let section = wgpu_glyph::Section {
-            text: &format!("FPS: {:0.2}s", fps),
+            text,
             screen_position: (00.0, 00.0),
             color: [1.0, 1.0, 1.0, 1.0],
             scale: wgpu_glyph::Scale { x: 20.0, y: 20.0 },

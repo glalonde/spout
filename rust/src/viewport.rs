@@ -26,10 +26,10 @@ fn vertex(pos: [i8; 3], tc: [i8; 2]) -> Vertex {
 fn create_vertices() -> (Vec<Vertex>, Vec<u16>) {
     let vertex_data = [
         // top (0, 0, 1)
-        vertex([-1, -1, 0], [0, 0]),
-        vertex([1, -1, 0], [1, 0]),
-        vertex([1, 1, 0], [1, 1]),
-        vertex([-1, 1, 0], [0, 1]),
+        vertex([-1, -1, 0], [0, 1]),
+        vertex([1, -1, 0], [1, 1]),
+        vertex([1, 1, 0], [1, 0]),
+        vertex([-1, 1, 0], [0, 0]),
     ];
     let index_data: &[u16] = &[
         0, 1, 2, 2, 3, 0, // top
@@ -84,8 +84,8 @@ impl Viewport {
         let fs_module =
             device.create_shader_module(&wgpu::read_spirv(std::io::Cursor::new(&fs[..])).unwrap());
 
-        //let texture_view =
-        //    super::shader_utils::load_png_to_texture(device, TEST_TEXTURE_FILE.flag,
+        // let input_texture_view =
+        //    super::shader_utils::load_png_to_texture(device, "assets/coords.png",
         // init_encoder);
 
         // Create the vertex and index buffers

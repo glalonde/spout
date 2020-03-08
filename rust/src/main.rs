@@ -48,12 +48,15 @@ struct Example {
     compute_locals: spout::particle_system::ComputeLocals,
     pre_glow_texture: wgpu::TextureView,
     post_glow_texture: wgpu::TextureView,
+    game_view_texture: wgpu::TextureView,
     terrain_renderer: spout::terrain_renderer::TerrainRenderer,
     particle_renderer: spout::particle_system::ParticleRenderer,
     glow_renderer: spout::glow_pass::GlowRenderer,
     ship_renderer: spout::ship::ShipRenderer,
     viewport: spout::viewport::Viewport,
     debug_overlay: spout::debug_overlay::DebugOverlay,
+    text_renderer: spout::text_renderer::TextRenderer,
+    game_viewport: spout::game_viewport::GameViewport,
 }
 
 impl Example {
@@ -95,6 +98,24 @@ impl Example {
         self.compute_locals
             .update_uniforms(device, encoder, dt, &self.game_params);
     }
+
+    fn make_texture(device: &wgpu::Device, width: u32, height: u32) -> wgpu::TextureView {
+        device
+            .create_texture(&wgpu::TextureDescriptor {
+                size: wgpu::Extent3d {
+                    width: width,
+                    height: height,
+                    depth: 1,
+                },
+                array_layer_count: 1,
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Bgra8UnormSrgb,
+                usage: wgpu::TextureUsage::SAMPLED | wgpu::TextureUsage::OUTPUT_ATTACHMENT,
+            })
+            .create_default_view()
+    }
 }
 
 impl framework::Example for Example {
@@ -124,34 +145,21 @@ impl framework::Example for Example {
             &system_params,
             &game_params,
         );
-        let pre_glow_texture = device.create_texture(&wgpu::TextureDescriptor {
-            size: wgpu::Extent3d {
-                width: game_params.viewport_width,
-                height: game_params.viewport_height,
-                depth: 1,
-            },
-            array_layer_count: 1,
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Bgra8UnormSrgb,
-            usage: wgpu::TextureUsage::SAMPLED | wgpu::TextureUsage::OUTPUT_ATTACHMENT,
-        });
-        let pre_glow_texture_view = pre_glow_texture.create_default_view();
-        let post_glow_texture = device.create_texture(&wgpu::TextureDescriptor {
-            size: wgpu::Extent3d {
-                width: game_params.viewport_width,
-                height: game_params.viewport_height,
-                depth: 1,
-            },
-            array_layer_count: 1,
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Bgra8UnormSrgb,
-            usage: wgpu::TextureUsage::SAMPLED | wgpu::TextureUsage::OUTPUT_ATTACHMENT,
-        });
-        let post_glow_texture_view = post_glow_texture.create_default_view();
+        let pre_glow_texture_view = Example::make_texture(
+            device,
+            game_params.viewport_width,
+            game_params.viewport_height,
+        );
+        let post_glow_texture_view = Example::make_texture(
+            device,
+            game_params.viewport_width,
+            game_params.viewport_height,
+        );
+        let game_view_texture_view = Example::make_texture(
+            device,
+            game_params.viewport_width,
+            game_params.viewport_height,
+        );
 
         let terrain_renderer =
             spout::terrain_renderer::TerrainRenderer::init(device, &compute_locals);
@@ -165,7 +173,7 @@ impl framework::Example for Example {
         let viewport = spout::viewport::Viewport::init(
             sc_desc,
             device,
-            &post_glow_texture_view,
+            &game_view_texture_view,
             width,
             height,
             &mut init_encoder,
@@ -175,6 +183,15 @@ impl framework::Example for Example {
             spout::int_grid::set_values_relative(system_params.width / 4, 0),
             spout::int_grid::set_values_relative(system_params.height / 4, 0),
         ];
+
+        let text_renderer = spout::text_renderer::TextRenderer::init(
+            device,
+            game_params.viewport_width,
+            game_params.viewport_height,
+        );
+
+        let game_viewport =
+            spout::game_viewport::GameViewport::init(device, &post_glow_texture_view);
 
         let this = Example {
             game_params,
@@ -188,6 +205,8 @@ impl framework::Example for Example {
             compute_locals: compute_locals,
             pre_glow_texture: pre_glow_texture_view,
             post_glow_texture: post_glow_texture_view,
+            game_view_texture: game_view_texture_view,
+
             terrain_renderer,
             particle_renderer,
             glow_renderer,
@@ -198,6 +217,8 @@ impl framework::Example for Example {
             ),
             viewport,
             debug_overlay: spout::debug_overlay::DebugOverlay::init(device, sc_desc),
+            text_renderer,
+            game_viewport,
         };
         if MUSIC_STARTS_ON.flag {
             spout::music_player::MUSIC_PLAYER.lock().unwrap().play();
@@ -268,6 +289,8 @@ impl framework::Example for Example {
                 // Update the particles state and density texture.
                 self.compute_locals.compute(&mut encoder);
             }
+        }
+        {
             {
                 // Clear the pre-glow pass
                 encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -305,6 +328,18 @@ impl framework::Example for Example {
                     &mut encoder,
                 );
             }
+        }
+
+        // Flip the frame vertically. Before this everything is blitted in "world
+        // coordinates".
+        {
+            self.game_viewport
+                .render(&mut encoder, &self.game_view_texture);
+        }
+        if self.state.paused {
+            // Display pause screen
+            self.text_renderer
+                .render(device, &self.game_view_texture, &mut encoder, "Paused")
         }
         {
             self.viewport.render(&frame, &mut encoder);
