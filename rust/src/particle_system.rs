@@ -4,6 +4,10 @@ gflags::define! {
     --emission_rate: f32 = 10000.0
 }
 
+gflags::define! {
+    --damage_rate: f32 = 0.00001
+}
+
 #[derive(Clone, Copy)]
 pub struct SystemParams {
     pub width: u32,
@@ -23,6 +27,7 @@ pub struct ComputeUniforms {
     // It is assumed with viewport width is the same as the level width.
     pub viewport_height: u32,
     pub viewport_bottom_height: u32,
+    pub damage_rate: f32,
 }
 
 pub struct ComputeLocals {
@@ -185,6 +190,7 @@ impl ComputeLocals {
             top_level_height: params.height * 2,
             viewport_height: game_params.viewport_height,
             viewport_bottom_height: 0,
+            damage_rate: DAMAGE_RATE.flag,
         };
         let uniform_buf = device
             .create_buffer_mapped(1, wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST)
@@ -358,6 +364,7 @@ impl ComputeLocals {
             top_level_height: game_params.level_height * 2,
             viewport_height: game_params.viewport_height,
             viewport_bottom_height: 0,
+            damage_rate: DAMAGE_RATE.flag,
         };
         self.set_uniforms(device, encoder, &compute_uniforms);
     }
