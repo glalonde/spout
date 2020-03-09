@@ -338,8 +338,24 @@ impl framework::Example for Example {
         }
         if self.state.paused {
             // Display pause screen
-            self.text_renderer
-                .render(device, &self.game_view_texture, &mut encoder, "Paused")
+            let width = self.game_params.viewport_width;
+            let height = self.game_params.viewport_height;
+            self.text_renderer.render_direct(
+                device,
+                &self.game_view_texture,
+                &mut encoder,
+                &wgpu_glyph::Section {
+                    text: "Paused",
+                    screen_position: (width as f32 / 2.0, height as f32 / 2.0),
+                    color: [1.0, 0.2, 0.2, 1.0],
+                    scale: wgpu_glyph::Scale { x: 20.0, y: 20.0 },
+                    bounds: (width as f32, height as f32),
+                    layout: wgpu_glyph::Layout::default()
+                        .h_align(wgpu_glyph::HorizontalAlign::Center)
+                        .v_align(wgpu_glyph::VerticalAlign::Center),
+                    ..wgpu_glyph::Section::default()
+                },
+            )
         }
         {
             self.viewport.render(&frame, &mut encoder);
