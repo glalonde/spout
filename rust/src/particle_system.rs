@@ -39,6 +39,8 @@ pub struct ComputeLocals {
     pub terrain_texture_a_view: wgpu::TextureView,
     pub terrain_texture_b_view: wgpu::TextureView,
     pub density_texture_view: wgpu::TextureView,
+    pub density_buffer: wgpu::Buffer,
+    pub density_buffer_size: wgpu::BufferAddress,
     pub uniform_buf: wgpu::Buffer,
     pub compute_pipeline: wgpu::ComputePipeline,
 }
@@ -114,6 +116,24 @@ impl ComputeLocals {
         })
     }
 
+    fn make_density_buffer(
+        device: &wgpu::Device,
+        width: usize,
+        height: usize,
+    ) -> (wgpu::Buffer, wgpu::BufferAddress) {
+        let size = (std::mem::size_of::<u32>() * width * height) as wgpu::BufferAddress;
+        (
+            device.create_buffer(&wgpu::BufferDescriptor {
+                size,
+                usage: wgpu::BufferUsage::STORAGE
+                    | wgpu::BufferUsage::COPY_DST
+                    | wgpu::BufferUsage::COPY_SRC
+                    | wgpu::BufferUsage::STORAGE_READ,
+            }),
+            size,
+        )
+    }
+
     fn make_terrain_texture(
         device: &wgpu::Device,
         texture_extent: &wgpu::Extent3d,
@@ -178,6 +198,11 @@ impl ComputeLocals {
         );
 
         let density_texture = ComputeLocals::make_density_texture(device, &texture_extent);
+        let (density_buffer, density_buffer_size) = ComputeLocals::make_density_buffer(
+            device,
+            params.width as usize,
+            params.height as usize,
+        );
         let density_texture_view = density_texture.create_default_view();
 
         let compute_uniform_size = std::mem::size_of::<ComputeUniforms>() as wgpu::BufferAddress;
@@ -228,8 +253,9 @@ impl ComputeLocals {
                     wgpu::BindGroupLayoutBinding {
                         binding: 3,
                         visibility: wgpu::ShaderStage::COMPUTE,
-                        ty: wgpu::BindingType::StorageTexture {
-                            dimension: wgpu::TextureViewDimension::D2,
+                        ty: wgpu::BindingType::StorageBuffer {
+                            dynamic: false,
+                            readonly: false,
                         },
                     },
                     // Uniform inputs
@@ -269,7 +295,10 @@ impl ComputeLocals {
                 // Particle density buffer
                 wgpu::Binding {
                     binding: 3,
-                    resource: wgpu::BindingResource::TextureView(&density_texture_view),
+                    resource: wgpu::BindingResource::Buffer {
+                        buffer: &density_buffer,
+                        range: 0..density_buffer_size,
+                    },
                 },
                 // Uniforms
                 wgpu::Binding {
@@ -305,7 +334,10 @@ impl ComputeLocals {
                 // Particle density buffer
                 wgpu::Binding {
                     binding: 3,
-                    resource: wgpu::BindingResource::TextureView(&density_texture_view),
+                    resource: wgpu::BindingResource::Buffer {
+                        buffer: &density_buffer,
+                        range: 0..density_buffer_size,
+                    },
                 },
                 // Uniforms
                 wgpu::Binding {
@@ -341,6 +373,8 @@ impl ComputeLocals {
             compute_bind_group_b,
             terrain_texture_a_view,
             terrain_texture_b_view,
+            density_buffer,
+            density_buffer_size,
             density_texture_view,
             uniform_buf,
             compute_pipeline,
@@ -420,6 +454,13 @@ pub struct ParticleRenderer {
     pub render_pipeline: wgpu::RenderPipeline,
 }
 
+#[repr(C)]
+#[derive(Clone, Copy, zerocopy::FromBytes, zerocopy::AsBytes)]
+pub struct FragmentUniforms {
+    pub width: u32,
+    pub height: u32,
+}
+
 impl ParticleRenderer {
     pub fn init(
         device: &wgpu::Device,
@@ -441,18 +482,15 @@ impl ParticleRenderer {
             super::color_maps::get_color_map_from_flag(),
             init_encoder,
         );
-        // The render pipeline renders data into this texture
-        let density_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            address_mode_u: wgpu::AddressMode::ClampToEdge,
-            address_mode_v: wgpu::AddressMode::ClampToEdge,
-            address_mode_w: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Nearest,
-            min_filter: wgpu::FilterMode::Nearest,
-            mipmap_filter: wgpu::FilterMode::Nearest,
-            lod_min_clamp: -100.0,
-            lod_max_clamp: 100.0,
-            compare_function: wgpu::CompareFunction::Always,
-        });
+
+        let fragment_uniform_size = std::mem::size_of::<FragmentUniforms>() as wgpu::BufferAddress;
+        let fragment_uniforms = FragmentUniforms {
+            width: compute_locals.system_params.width,
+            height: compute_locals.system_params.height,
+        };
+        let uniform_buf = device
+            .create_buffer_mapped(1, wgpu::BufferUsage::UNIFORM)
+            .fill_from_slice(&[fragment_uniforms]);
 
         // The render pipeline renders data into this texture
         let color_map_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
@@ -471,24 +509,18 @@ impl ParticleRenderer {
         let render_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 bindings: &[
-                    // Particle density texture.
+                    // Particle density buffer
                     wgpu::BindGroupLayoutBinding {
                         binding: 0,
                         visibility: wgpu::ShaderStage::FRAGMENT,
-                        ty: wgpu::BindingType::SampledTexture {
-                            multisampled: false,
-                            dimension: wgpu::TextureViewDimension::D2,
+                        ty: wgpu::BindingType::StorageBuffer {
+                            dynamic: false,
+                            readonly: true,
                         },
-                    },
-                    // Particle density texture sampler.
-                    wgpu::BindGroupLayoutBinding {
-                        binding: 1,
-                        visibility: wgpu::ShaderStage::FRAGMENT,
-                        ty: wgpu::BindingType::Sampler,
                     },
                     // Color map.
                     wgpu::BindGroupLayoutBinding {
-                        binding: 2,
+                        binding: 1,
                         visibility: wgpu::ShaderStage::FRAGMENT,
                         ty: wgpu::BindingType::SampledTexture {
                             multisampled: false,
@@ -497,9 +529,15 @@ impl ParticleRenderer {
                     },
                     // Color map sampler.
                     wgpu::BindGroupLayoutBinding {
-                        binding: 3,
+                        binding: 2,
                         visibility: wgpu::ShaderStage::FRAGMENT,
                         ty: wgpu::BindingType::Sampler,
+                    },
+                    // Uniform inputs
+                    wgpu::BindGroupLayoutBinding {
+                        binding: 3,
+                        visibility: wgpu::ShaderStage::FRAGMENT,
+                        ty: wgpu::BindingType::UniformBuffer { dynamic: false },
                     },
                 ],
             });
@@ -508,21 +546,25 @@ impl ParticleRenderer {
             bindings: &[
                 wgpu::Binding {
                     binding: 0,
-                    resource: wgpu::BindingResource::TextureView(
-                        &compute_locals.density_texture_view,
-                    ),
+                    resource: wgpu::BindingResource::Buffer {
+                        buffer: &compute_locals.density_buffer,
+                        range: 0..compute_locals.density_buffer_size,
+                    },
                 },
                 wgpu::Binding {
                     binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&density_sampler),
-                },
-                wgpu::Binding {
-                    binding: 2,
                     resource: wgpu::BindingResource::TextureView(&cm_texture.create_default_view()),
                 },
                 wgpu::Binding {
-                    binding: 3,
+                    binding: 2,
                     resource: wgpu::BindingResource::Sampler(&color_map_sampler),
+                },
+                wgpu::Binding {
+                    binding: 3,
+                    resource: wgpu::BindingResource::Buffer {
+                        buffer: &uniform_buf,
+                        range: 0..fragment_uniform_size,
+                    },
                 },
             ],
         });

@@ -10,7 +10,10 @@ layout(std430, binding = 0) buffer Particles {
 
 layout (binding = 1, r32i) uniform iimage2D terrain_texture_bottom;
 layout (binding = 2, r32i) uniform iimage2D terrain_texture_top;
-layout (binding = 3, r32ui) uniform uimage2D density_texture;
+// layout (binding = 3, r32ui) uniform uimage2D density_texture;
+layout( binding = 3) buffer DensityBuffer {
+    uint[] density_buffer;
+};
 layout(set = 0, binding = 4) uniform Params {
     float dt;
     uint level_width;
@@ -47,7 +50,10 @@ bool OnLevelBuffers(in uvec2 cell) {
 
 void IncrementCell(in uvec2 cell) {
   cell.y -= viewport_bottom_height;
-  imageAtomicAdd(density_texture, ivec2(cell), 1);
+  if (cell.x < 0 || cell.x >= level_width || cell.y < 0 || cell.y >= viewport_height) {
+    return;
+  }
+  atomicAdd(density_buffer[cell.y * level_width + cell.x], 1);
 }
 
 // Returns true if bounce occurred.
@@ -56,7 +62,7 @@ bool TryErodeTerrain(in ivec2 cell, in float speed) {
   int test_value = imageLoad(terrain_texture_bottom, cell).x;
   if (test_value > 0) {
     int dmg_amt = int(damage_rate * speed);
-    int actual_value = imageAtomicAdd(terrain_texture_bottom, cell, -dmg_amt);
+    int actual_value = 1;//imageAtomicAdd(terrain_texture_bottom, cell, -dmg_amt);
     return actual_value > 0;
   }
   return false;
