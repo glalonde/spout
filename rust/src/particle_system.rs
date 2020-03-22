@@ -38,11 +38,13 @@ pub struct ComputeLocals {
     pub compute_bind_group_b: wgpu::BindGroup,
     pub terrain_texture_a_view: wgpu::TextureView,
     pub terrain_texture_b_view: wgpu::TextureView,
-    pub density_texture_view: wgpu::TextureView,
     pub density_buffer: wgpu::Buffer,
     pub density_buffer_size: wgpu::BufferAddress,
     pub uniform_buf: wgpu::Buffer,
     pub compute_pipeline: wgpu::ComputePipeline,
+    pub clear_work_groups: usize,
+    pub clear_bind_group: wgpu::BindGroup,
+    pub clear_pipeline: wgpu::ComputePipeline,
 }
 
 impl ComputeLocals {
@@ -95,25 +97,6 @@ impl ComputeLocals {
             },
             *texture_extent,
         );
-    }
-
-    fn make_density_texture(
-        device: &wgpu::Device,
-        texture_extent: &wgpu::Extent3d,
-    ) -> wgpu::Texture {
-        device.create_texture(&wgpu::TextureDescriptor {
-            size: *texture_extent,
-            array_layer_count: 1,
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::R32Uint,
-            usage: wgpu::TextureUsage::COPY_SRC
-                | wgpu::TextureUsage::STORAGE
-                | wgpu::TextureUsage::OUTPUT_ATTACHMENT
-                | wgpu::TextureUsage::COPY_DST
-                | wgpu::TextureUsage::SAMPLED,
-        })
     }
 
     fn make_density_buffer(
@@ -197,13 +180,11 @@ impl ComputeLocals {
             1,
         );
 
-        let density_texture = ComputeLocals::make_density_texture(device, &texture_extent);
         let (density_buffer, density_buffer_size) = ComputeLocals::make_density_buffer(
             device,
             params.width as usize,
             params.height as usize,
         );
-        let density_texture_view = density_texture.create_default_view();
 
         let compute_uniform_size = std::mem::size_of::<ComputeUniforms>() as wgpu::BufferAddress;
         let compute_uniforms = ComputeUniforms {
@@ -364,6 +345,56 @@ impl ComputeLocals {
             },
         });
 
+        let (clear_work_groups, clear_bind_group, clear_pipeline) = {
+            let clear_bind_group_layout =
+                device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                    bindings: &[
+                        // Particle density buffer
+                        wgpu::BindGroupLayoutBinding {
+                            binding: 0,
+                            visibility: wgpu::ShaderStage::COMPUTE,
+                            ty: wgpu::BindingType::StorageBuffer {
+                                dynamic: false,
+                                readonly: false,
+                            },
+                        },
+                    ],
+                });
+            let clear_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                layout: &clear_bind_group_layout,
+                bindings: &[
+                    // Particle density buffer
+                    wgpu::Binding {
+                        binding: 0,
+                        resource: wgpu::BindingResource::Buffer {
+                            buffer: &density_buffer,
+                            range: 0..density_buffer_size,
+                        },
+                    },
+                ],
+            });
+
+            let clear_pipeline_layout =
+                device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                    bind_group_layouts: &[&clear_bind_group_layout],
+                });
+            let cs = super::include_shader!("particle_system/clear_ssbo.comp.spv");
+            let cs_module = device
+                .create_shader_module(&wgpu::read_spirv(std::io::Cursor::new(&cs[..])).unwrap());
+            let clear_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                layout: &clear_pipeline_layout,
+                compute_stage: wgpu::ProgrammableStageDescriptor {
+                    module: &cs_module,
+                    entry_point: "main",
+                },
+            });
+
+            let clear_group_size = 512;
+            let clear_work_groups =
+                ((params.width * params.height) as f64 / clear_group_size as f64).ceil() as usize;
+            (clear_work_groups, clear_bind_group, clear_pipeline)
+        };
+
         // Copy initial data to GPU
         ComputeLocals {
             system_params: *params,
@@ -375,9 +406,11 @@ impl ComputeLocals {
             terrain_texture_b_view,
             density_buffer,
             density_buffer_size,
-            density_texture_view,
             uniform_buf,
             compute_pipeline,
+            clear_work_groups,
+            clear_bind_group,
+            clear_pipeline,
         }
     }
 
@@ -433,17 +466,11 @@ impl ComputeLocals {
     }
 
     pub fn clear_density(&self, encoder: &mut wgpu::CommandEncoder) {
-        // Clear the density texture.
-        encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
-                attachment: &self.density_texture_view,
-                resolve_target: None,
-                load_op: wgpu::LoadOp::Clear,
-                store_op: wgpu::StoreOp::Store,
-                clear_color: wgpu::Color::BLACK,
-            }],
-            depth_stencil_attachment: None,
-        });
+        // Clear the density buffer.
+        let mut cpass = encoder.begin_compute_pass();
+        cpass.set_pipeline(&self.clear_pipeline);
+        cpass.set_bind_group(0, &self.clear_bind_group, &[]);
+        cpass.dispatch(self.clear_work_groups as u32, 1, 1);
     }
 }
 
