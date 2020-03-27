@@ -26,7 +26,8 @@ rand = "*"
 png = "0.15"
 scarlet = "*"
 wgpu_glyph = {git = "https://github.com/hecrj/wgpu_glyph" }
-sdl2 = { version = "0.33.0", features = ["mixer"]}
+rodio = "0.11"
+crossbeam-channel = "0.4"
 
 [build-dependencies]
 log = "*"

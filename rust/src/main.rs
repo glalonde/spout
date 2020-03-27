@@ -221,7 +221,7 @@ impl framework::Example for Example {
             game_viewport,
         };
         if MUSIC_STARTS_ON.flag {
-            spout::music_player::MUSIC_PLAYER.lock().unwrap().play();
+            let _ = spout::music_player::start_music_player_thread();
         }
         (this, Some(init_encoder.finish()))
     }

@@ -11,6 +11,7 @@ pub mod music_player;
 pub mod particle_system;
 pub mod shader_utils;
 pub mod ship;
+pub mod sound_queue;
 pub mod terrain_renderer;
 pub mod text_renderer;
 pub mod viewport;
