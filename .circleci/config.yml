@@ -1,8 +1,0 @@
-version: 2
-jobs:
-  build:
-    docker:
-      - image: glalonde/spout_sw_rendering
-    steps:
-      - checkout
-      - run: bazel build //...
