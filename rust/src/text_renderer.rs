@@ -14,6 +14,7 @@ impl TextRenderer {
     pub fn init(device: &wgpu::Device, width: u32, height: u32) -> Self {
         TextRenderer {
             glyph_brush: GlyphBrushBuilder::using_font_bytes(super::fonts::INCONSOLATA)
+                .unwrap()
                 .texture_filter_method(wgpu::FilterMode::Nearest)
                 .build(device, wgpu::TextureFormat::Bgra8UnormSrgb),
             width,

@@ -13,6 +13,7 @@ impl DebugOverlay {
     pub fn init(device: &wgpu::Device, sc_desc: &wgpu::SwapChainDescriptor) -> Self {
         DebugOverlay {
             glyph_brush: GlyphBrushBuilder::using_font_bytes(super::fonts::INCONSOLATA)
+                .unwrap()
                 .texture_filter_method(wgpu::FilterMode::Nearest)
                 .build(device, wgpu::TextureFormat::Bgra8UnormSrgb),
             width: sc_desc.width,
