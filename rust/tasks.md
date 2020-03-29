@@ -9,6 +9,8 @@
 - [x] terrain collision capabilities
 - [ ] resolution selection
 - [ ] window aspect ratio
+- [ ] set fullscreen 
+- [ ] show score 
 - [x] pausing 
 - [x] music
 ---

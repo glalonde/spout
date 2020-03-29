@@ -38,6 +38,7 @@ struct GameState {
     input_state: InputState,
     prev_input_state: InputState,
     ship_state: spout::ship::ShipState,
+    score: i32,
     paused: bool,
 }
 
@@ -83,6 +84,10 @@ impl Example {
         ship_state.update(dt, input_state.forward, rotation);
 
         // TODO update scrolling state here.
+        let ship_height = spout::int_grid::get_outer_grid(ship_state.position[1]) as i32
+            - spout::int_grid::half_outer_grid_size() as i32;
+        self.state.score = std::cmp::max(ship_height, self.state.score as i32);
+        info!("Score: {}", self.state.score);
 
         // Emit particles
         if input_state.forward {
@@ -200,6 +205,7 @@ impl framework::Example for Example {
                 input_state: InputState::default(),
                 prev_input_state: InputState::default(),
                 ship_state: spout::ship::ShipState::init_from_flags(ship_position),
+                score: 0,
                 paused: false,
             },
             compute_locals: compute_locals,

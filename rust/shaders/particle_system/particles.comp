@@ -58,13 +58,16 @@ void IncrementCell(in ivec2 cell) {
   atomicAdd(density_buffer[cell.y * level_width + cell.x], 1);
 }
 
+uint GetBufferOffset(in ivec2 cell) {
+  return cell.y * level_width + cell.x;
+}
+
 // Returns true if bounce occurred.
 bool TryErodeTerrain(in ivec2 cell, in float speed) {
   cell.y -= int(bottom_level_height);
-  int test_value = terrain_texture_bottom[cell.y * level_width + cell.x];
-  if (test_value > 0) {
+  if (terrain_texture_bottom[GetBufferOffset(cell)] > 0) {
     int dmg_amt = int(damage_rate * speed);
-    int actual_value = atomicAdd(terrain_texture_bottom[cell.y * level_width + cell.x], -dmg_amt);
+    int actual_value = atomicAdd(terrain_texture_bottom[GetBufferOffset(cell)], -dmg_amt);
     return actual_value > 0;
   }
   return false;
@@ -84,6 +87,12 @@ void main() {
   ivec2 step =
       ivec2(signed_delta.x >= 0 ? 1 : -1, signed_delta.y >= 0 ? 1 : -1);
   ivec2 current_cell = GetOuterGrid(p.position);
+
+  // If the particle starts outside the level buffers or inside a cell, then delete it.
+  if (!OnLevelBuffers(current_cell) || terrain_texture_bottom[GetBufferOffset(current_cell)] > 0) {
+    p.ttl = 0;
+    return;
+  }
   ivec2 end_cell = GetOuterGrid(end_pos);
   ivec2 delta_i = end_cell - current_cell;
 

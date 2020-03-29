@@ -1,4 +1,3 @@
 {
     "rust.features": [],
-    "rust-client.channel": "nightly"
 }

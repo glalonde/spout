@@ -106,25 +106,6 @@ impl ComputeLocals {
         )
     }
 
-    fn make_terrain_texture(
-        device: &wgpu::Device,
-        texture_extent: &wgpu::Extent3d,
-    ) -> wgpu::Texture {
-        device.create_texture(&wgpu::TextureDescriptor {
-            size: *texture_extent,
-            array_layer_count: 1,
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::R32Sint,
-            usage: wgpu::TextureUsage::COPY_SRC
-                | wgpu::TextureUsage::STORAGE
-                | wgpu::TextureUsage::OUTPUT_ATTACHMENT
-                | wgpu::TextureUsage::COPY_DST
-                | wgpu::TextureUsage::SAMPLED,
-        })
-    }
-
     fn make_terrain_buffer(
         device: &wgpu::Device,
         width: usize,
