@@ -7,10 +7,12 @@ layout(local_size_x = 512, local_size_y = 1, local_size_z = 1) in;
 layout(std430, binding = 0) buffer Particles {
   Particle particles[];
 };
-
-layout (binding = 1, r32i) uniform iimage2D terrain_texture_bottom;
-layout (binding = 2, r32i) uniform iimage2D terrain_texture_top;
-// layout (binding = 3, r32ui) uniform uimage2D density_texture;
+layout( binding = 1) buffer TerrainTextureBottom {
+    int[] terrain_texture_bottom;
+};
+layout( binding = 2) buffer TerrainTextureTop {
+    int[] terrain_texture_top;
+};
 layout( binding = 3) buffer DensityBuffer {
     uint[] density_buffer;
 };
@@ -32,24 +34,24 @@ float Norm(in ivec2 vel) {
   return sqrt(f_vel.x*f_vel.x + f_vel.y * f_vel.y);
 }
 
-bool OnBotLevelBuffer(in uint y) {
+bool OnBotLevelBuffer(in int y) {
   return y >= bottom_level_height && y < middle_level_height;
 }
 
-bool OnTopLevelBuffer(in uint y) {
+bool OnTopLevelBuffer(in int y) {
   return y >= middle_level_height && y < top_level_height;
 }
 
-bool OnLevelBuffersX(in uint x) {
+bool OnLevelBuffersX(in int x) {
   return x >= 0 && x < level_width;
 }
 
-bool OnLevelBuffers(in uvec2 cell) {
+bool OnLevelBuffers(in ivec2 cell) {
   return OnLevelBuffersX(cell.x) && (OnTopLevelBuffer(cell.y) || OnBotLevelBuffer(cell.y));
 }
 
-void IncrementCell(in uvec2 cell) {
-  cell.y -= viewport_bottom_height;
+void IncrementCell(in ivec2 cell) {
+  cell.y -= int(viewport_bottom_height);
   if (cell.x < 0 || cell.x >= level_width || cell.y < 0 || cell.y >= viewport_height) {
     return;
   }
@@ -59,10 +61,10 @@ void IncrementCell(in uvec2 cell) {
 // Returns true if bounce occurred.
 bool TryErodeTerrain(in ivec2 cell, in float speed) {
   cell.y -= int(bottom_level_height);
-  int test_value = imageLoad(terrain_texture_bottom, cell).x;
+  int test_value = terrain_texture_bottom[cell.y * level_width + cell.x];
   if (test_value > 0) {
     int dmg_amt = int(damage_rate * speed);
-    int actual_value = 1;//imageAtomicAdd(terrain_texture_bottom, cell, -dmg_amt);
+    int actual_value = atomicAdd(terrain_texture_bottom[cell.y * level_width + cell.x], -dmg_amt);
     return actual_value > 0;
   }
   return false;

@@ -5,6 +5,13 @@ pub struct TerrainRenderer {
     pub render_pipeline: wgpu::RenderPipeline,
 }
 
+#[repr(C)]
+#[derive(Clone, Copy, zerocopy::FromBytes, zerocopy::AsBytes)]
+struct FragmentUniforms {
+    pub width: u32,
+    pub height: u32,
+}
+
 impl TerrainRenderer {
     pub fn init(
         device: &wgpu::Device,
@@ -19,37 +26,33 @@ impl TerrainRenderer {
         let fs_module =
             device.create_shader_module(&wgpu::read_spirv(std::io::Cursor::new(&fs[..])).unwrap());
 
-        // The render pipeline renders data into this texture
-        let terrain_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            address_mode_u: wgpu::AddressMode::ClampToEdge,
-            address_mode_v: wgpu::AddressMode::ClampToEdge,
-            address_mode_w: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Nearest,
-            min_filter: wgpu::FilterMode::Nearest,
-            mipmap_filter: wgpu::FilterMode::Nearest,
-            lod_min_clamp: -100.0,
-            lod_max_clamp: 100.0,
-            compare_function: wgpu::CompareFunction::Always,
-        });
+        let fragment_uniform_size = std::mem::size_of::<FragmentUniforms>() as wgpu::BufferAddress;
+        let fragment_uniforms = FragmentUniforms {
+            width: compute_locals.system_params.width,
+            height: compute_locals.system_params.height,
+        };
+        let uniform_buf = device
+            .create_buffer_mapped(1, wgpu::BufferUsage::UNIFORM)
+            .fill_from_slice(&[fragment_uniforms]);
 
         // Create pipeline layout
         let render_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 bindings: &[
-                    // Particle density texture.
+                    // Terrain buffer
                     wgpu::BindGroupLayoutBinding {
                         binding: 0,
                         visibility: wgpu::ShaderStage::FRAGMENT,
-                        ty: wgpu::BindingType::SampledTexture {
-                            multisampled: false,
-                            dimension: wgpu::TextureViewDimension::D2,
+                        ty: wgpu::BindingType::StorageBuffer {
+                            dynamic: false,
+                            readonly: true,
                         },
                     },
-                    // Particle density texture sampler.
+                    // Uniform inputs
                     wgpu::BindGroupLayoutBinding {
                         binding: 1,
                         visibility: wgpu::ShaderStage::FRAGMENT,
-                        ty: wgpu::BindingType::Sampler,
+                        ty: wgpu::BindingType::UniformBuffer { dynamic: false },
                     },
                 ],
             });
@@ -59,13 +62,17 @@ impl TerrainRenderer {
             bindings: &[
                 wgpu::Binding {
                     binding: 0,
-                    resource: wgpu::BindingResource::TextureView(
-                        &compute_locals.terrain_texture_a_view,
-                    ),
+                    resource: wgpu::BindingResource::Buffer {
+                        buffer: &compute_locals.terrain_buffer_a,
+                        range: 0..compute_locals.terrain_buffer_a_size,
+                    },
                 },
                 wgpu::Binding {
                     binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&terrain_sampler),
+                    resource: wgpu::BindingResource::Buffer {
+                        buffer: &uniform_buf,
+                        range: 0..fragment_uniform_size,
+                    },
                 },
             ],
         });

@@ -36,8 +36,10 @@ pub struct ComputeLocals {
     pub compute_work_groups: usize,
     pub compute_bind_group_a: wgpu::BindGroup,
     pub compute_bind_group_b: wgpu::BindGroup,
-    pub terrain_texture_a_view: wgpu::TextureView,
-    pub terrain_texture_b_view: wgpu::TextureView,
+    pub terrain_buffer_a: wgpu::Buffer,
+    pub terrain_buffer_a_size: wgpu::BufferAddress,
+    pub terrain_buffer_b: wgpu::Buffer,
+    pub terrain_buffer_b_size: wgpu::BufferAddress,
     pub density_buffer: wgpu::Buffer,
     pub density_buffer_size: wgpu::BufferAddress,
     pub uniform_buf: wgpu::Buffer,
@@ -51,12 +53,11 @@ impl ComputeLocals {
     fn fill_level_buffer(
         device: &wgpu::Device,
         encoder: &mut wgpu::CommandEncoder,
-        texture: &wgpu::Texture,
-        texture_extent: &wgpu::Extent3d,
+        buffer: &wgpu::Buffer,
+        width: u32,
+        height: u32,
         level_num: u32,
     ) {
-        let width = texture_extent.width;
-        let height = texture_extent.height;
         let im =
             image::ImageBuffer::<image::Luma<i32>, Vec<i32>>::from_fn(width, height, |x, y| {
                 let (index, _) = match level_num % 2 {
@@ -78,24 +79,12 @@ impl ComputeLocals {
                     | wgpu::BufferUsage::MAP_READ,
             )
             .fill_from_slice(&data);
-        encoder.copy_buffer_to_texture(
-            wgpu::BufferCopyView {
-                buffer: &temp_buf,
-                offset: 0,
-                row_pitch: 4 * width,
-                image_height: height,
-            },
-            wgpu::TextureCopyView {
-                texture: &texture,
-                mip_level: 0,
-                array_layer: 0,
-                origin: wgpu::Origin3d {
-                    x: 0.0,
-                    y: 0.0,
-                    z: 0.0,
-                },
-            },
-            *texture_extent,
+        encoder.copy_buffer_to_buffer(
+            &temp_buf,
+            0,
+            &buffer,
+            0,
+            (width * height * std::mem::size_of::<i32>() as u32) as u64,
         );
     }
 
@@ -136,6 +125,24 @@ impl ComputeLocals {
         })
     }
 
+    fn make_terrain_buffer(
+        device: &wgpu::Device,
+        width: usize,
+        height: usize,
+    ) -> (wgpu::Buffer, wgpu::BufferAddress) {
+        let size = (std::mem::size_of::<i32>() * width * height) as wgpu::BufferAddress;
+        (
+            device.create_buffer(&wgpu::BufferDescriptor {
+                size,
+                usage: wgpu::BufferUsage::STORAGE
+                    | wgpu::BufferUsage::COPY_DST
+                    | wgpu::BufferUsage::COPY_SRC
+                    | wgpu::BufferUsage::STORAGE_READ,
+            }),
+            size,
+        )
+    }
+
     pub fn init(
         device: &wgpu::Device,
         init_encoder: &mut wgpu::CommandEncoder,
@@ -155,28 +162,32 @@ impl ComputeLocals {
         let particle_group_size = 512;
         let compute_work_groups =
             (num_particles as f64 / particle_group_size as f64).ceil() as usize;
-        let texture_extent = wgpu::Extent3d {
-            width: params.width,
-            height: params.height,
-            depth: 1,
-        };
-        let terrain_texture_a = ComputeLocals::make_terrain_texture(device, &texture_extent);
-        let terrain_texture_a_view = terrain_texture_a.create_default_view();
+
+        let (terrain_buffer_a, terrain_buffer_a_size) = ComputeLocals::make_terrain_buffer(
+            device,
+            params.width as usize,
+            params.height as usize,
+        );
         ComputeLocals::fill_level_buffer(
             device,
             init_encoder,
-            &terrain_texture_a,
-            &texture_extent,
+            &terrain_buffer_a,
+            params.width,
+            params.height,
             0,
         );
 
-        let terrain_texture_b = ComputeLocals::make_terrain_texture(device, &texture_extent);
-        let terrain_texture_b_view = terrain_texture_b.create_default_view();
+        let (terrain_buffer_b, terrain_buffer_b_size) = ComputeLocals::make_terrain_buffer(
+            device,
+            params.width as usize,
+            params.height as usize,
+        );
         ComputeLocals::fill_level_buffer(
             device,
             init_encoder,
-            &terrain_texture_b,
-            &texture_extent,
+            &terrain_buffer_b,
+            params.width,
+            params.height,
             1,
         );
 
@@ -218,16 +229,18 @@ impl ComputeLocals {
                     wgpu::BindGroupLayoutBinding {
                         binding: 1,
                         visibility: wgpu::ShaderStage::COMPUTE,
-                        ty: wgpu::BindingType::StorageTexture {
-                            dimension: wgpu::TextureViewDimension::D2,
+                        ty: wgpu::BindingType::StorageBuffer {
+                            dynamic: false,
+                            readonly: false,
                         },
                     },
                     // Top terrain buffer
                     wgpu::BindGroupLayoutBinding {
                         binding: 2,
                         visibility: wgpu::ShaderStage::COMPUTE,
-                        ty: wgpu::BindingType::StorageTexture {
-                            dimension: wgpu::TextureViewDimension::D2,
+                        ty: wgpu::BindingType::StorageBuffer {
+                            dynamic: false,
+                            readonly: false,
                         },
                     },
                     // Particle density buffer
@@ -263,15 +276,21 @@ impl ComputeLocals {
                         range: 0..particle_buffer_size,
                     },
                 },
-                // Bottom level buffer
+                // Bottom level buffer(A)
                 wgpu::Binding {
                     binding: 1,
-                    resource: wgpu::BindingResource::TextureView(&terrain_texture_a_view),
+                    resource: wgpu::BindingResource::Buffer {
+                        buffer: &terrain_buffer_a,
+                        range: 0..terrain_buffer_a_size,
+                    },
                 },
-                // Top level buffer
+                // Top level buffer(B)
                 wgpu::Binding {
                     binding: 2,
-                    resource: wgpu::BindingResource::TextureView(&terrain_texture_b_view),
+                    resource: wgpu::BindingResource::Buffer {
+                        buffer: &terrain_buffer_b,
+                        range: 0..terrain_buffer_b_size,
+                    },
                 },
                 // Particle density buffer
                 wgpu::Binding {
@@ -302,15 +321,21 @@ impl ComputeLocals {
                         range: 0..particle_buffer_size,
                     },
                 },
-                // Particle density buffer
+                // Bottom level buffer(B)
                 wgpu::Binding {
                     binding: 1,
-                    resource: wgpu::BindingResource::TextureView(&terrain_texture_b_view),
+                    resource: wgpu::BindingResource::Buffer {
+                        buffer: &terrain_buffer_b,
+                        range: 0..terrain_buffer_b_size,
+                    },
                 },
-                // Particle density buffer
+                // Top level buffer(A)
                 wgpu::Binding {
                     binding: 2,
-                    resource: wgpu::BindingResource::TextureView(&terrain_texture_a_view),
+                    resource: wgpu::BindingResource::Buffer {
+                        buffer: &terrain_buffer_a,
+                        range: 0..terrain_buffer_a_size,
+                    },
                 },
                 // Particle density buffer
                 wgpu::Binding {
@@ -402,8 +427,10 @@ impl ComputeLocals {
             compute_work_groups,
             compute_bind_group_a,
             compute_bind_group_b,
-            terrain_texture_a_view,
-            terrain_texture_b_view,
+            terrain_buffer_a,
+            terrain_buffer_a_size,
+            terrain_buffer_b,
+            terrain_buffer_b_size,
             density_buffer,
             density_buffer_size,
             uniform_buf,
@@ -483,7 +510,7 @@ pub struct ParticleRenderer {
 
 #[repr(C)]
 #[derive(Clone, Copy, zerocopy::FromBytes, zerocopy::AsBytes)]
-pub struct FragmentUniforms {
+struct FragmentUniforms {
     pub width: u32,
     pub height: u32,
 }
