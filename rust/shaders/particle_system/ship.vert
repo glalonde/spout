@@ -4,10 +4,10 @@
 out gl_PerVertex {
     vec4 gl_Position;
 };
-const int width = 320;
-const int height = 180;
 
 layout(std140, set = 0, binding = 0) uniform Params {
+    int width;
+    int height;
     uvec2 position;
     float angle;
 };

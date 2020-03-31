@@ -24,7 +24,7 @@ pub struct ComputeUniforms {
     pub bottom_level_height: u32,
     pub middle_level_height: u32,
     pub top_level_height: u32,
-    // It is assumed with viewport width is the same as the level width.
+    // It is assumed that viewport width is the same as the level width.
     pub viewport_height: u32,
     pub viewport_bottom_height: u32,
     pub damage_rate: f32,

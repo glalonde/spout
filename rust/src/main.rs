@@ -3,10 +3,10 @@ mod framework;
 use log::info;
 
 gflags::define! {
-    --width: u32 = 320
+    --width: u32 = 640
 }
 gflags::define! {
-    --height: u32 = 180
+    --height: u32 = 360
 }
 gflags::define! {
     --fps: u32 = 60
@@ -58,19 +58,23 @@ struct Example {
     debug_overlay: spout::debug_overlay::DebugOverlay,
     text_renderer: spout::text_renderer::TextRenderer,
     game_viewport: spout::game_viewport::GameViewport,
+    game_time: std::time::Duration,
 }
 
 impl Example {
     // Update pre-render cpu logic
     fn update_state(&mut self, device: &wgpu::Device, encoder: &mut wgpu::CommandEncoder) {
         let input_state = &self.state.input_state;
-        let dt = self.fps.tick() as f32;
+        let delta_t = self.fps.tick();
+        let dt = delta_t.as_secs_f32();
         if input_state.pause && !self.state.prev_input_state.pause {
             // new pause signal.
             self.state.paused = !self.state.paused;
         }
         if self.state.paused {
             return;
+        } else {
+            self.game_time += delta_t;
         }
 
         let ship_state = &mut self.state.ship_state;
@@ -87,7 +91,6 @@ impl Example {
         let ship_height = spout::int_grid::get_outer_grid(ship_state.position[1]) as i32
             - spout::int_grid::half_outer_grid_size() as i32;
         self.state.score = std::cmp::max(ship_height, self.state.score as i32);
-        info!("Score: {}", self.state.score);
 
         // Emit particles
         if input_state.forward {
@@ -225,6 +228,7 @@ impl framework::Example for Example {
             debug_overlay: spout::debug_overlay::DebugOverlay::init(device, sc_desc),
             text_renderer,
             game_viewport,
+            game_time: std::time::Duration::new(0, 0),
         };
         if MUSIC_STARTS_ON.flag {
             let _ = spout::music_player::start_music_player_thread();
@@ -331,6 +335,8 @@ impl framework::Example for Example {
                     &self.post_glow_texture,
                     device,
                     &self.state.ship_state,
+                    self.game_params.viewport_width,
+                    self.game_params.viewport_height,
                     &mut encoder,
                 );
             }
@@ -359,6 +365,28 @@ impl framework::Example for Example {
                     layout: wgpu_glyph::Layout::default()
                         .h_align(wgpu_glyph::HorizontalAlign::Center)
                         .v_align(wgpu_glyph::VerticalAlign::Center),
+                    ..wgpu_glyph::Section::default()
+                },
+            )
+        }
+        {
+            // Render the score
+            let dt = self.game_time.as_secs_f32();
+            let width = self.game_params.viewport_width as f32;
+            let height = self.game_params.viewport_height as f32;
+            self.text_renderer.render_direct(
+                device,
+                &self.game_view_texture,
+                &mut encoder,
+                &wgpu_glyph::Section {
+                    text: &format!("{}", self.state.score),
+                    screen_position: (width, 0.0),
+                    color: [0.2, 1.0, 0.2, 1.0],
+                    scale: wgpu_glyph::Scale { x: 28.0, y: 28.0 },
+                    bounds: (width as f32 / 2.0, height as f32 / 2.0),
+                    layout: wgpu_glyph::Layout::default_single_line()
+                        .h_align(wgpu_glyph::HorizontalAlign::Right)
+                        .v_align(wgpu_glyph::VerticalAlign::Top),
                     ..wgpu_glyph::Section::default()
                 },
             )

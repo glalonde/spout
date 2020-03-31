@@ -10,11 +10,11 @@ gflags::define! {
 }
 
 gflags::define! {
-    --ship_emit_velocity: f32 = 100.0
+    --emit_velocity: f32 = 100.0
 }
 
 gflags::define! {
-    --ship_emit_velocity_spread: f32 = 0.5
+    --emit_velocity_spread: f32 = 0.5
 }
 
 #[repr(i8)]
@@ -61,11 +61,11 @@ impl ShipState {
             acceleration: SHIP_ACCELERATION.flag,
             emit_params: super::emitter::EmitParams::default(),
         };
-        state.emit_params.speed_min = SHIP_EMIT_VELOCITY.flag
-            * (1.0 - SHIP_EMIT_VELOCITY_SPREAD.flag)
+        state.emit_params.speed_min = EMIT_VELOCITY.flag
+            * (1.0 - EMIT_VELOCITY_SPREAD.flag)
             * super::int_grid::cell_size() as f32;
-        state.emit_params.speed_max = SHIP_EMIT_VELOCITY.flag
-            * (1.0 + SHIP_EMIT_VELOCITY_SPREAD.flag)
+        state.emit_params.speed_max = EMIT_VELOCITY.flag
+            * (1.0 + EMIT_VELOCITY_SPREAD.flag)
             * super::int_grid::cell_size() as f32;
         state
     }
@@ -102,6 +102,8 @@ impl ShipState {
 #[repr(C)]
 #[derive(Clone, Copy, zerocopy::FromBytes, zerocopy::AsBytes)]
 pub struct RenderUniforms {
+    pub width: u32,
+    pub height: u32,
     pub position: [u32; 2],
     pub angle: f32,
 }
@@ -138,6 +140,8 @@ impl ShipRenderer {
 
         let compute_uniform_size = std::mem::size_of::<RenderUniforms>() as wgpu::BufferAddress;
         let compute_uniforms = RenderUniforms {
+            width,
+            height,
             position: [0, 0],
             angle: 0.0,
         };
@@ -229,10 +233,14 @@ impl ShipRenderer {
         texture_view: &wgpu::TextureView,
         device: &wgpu::Device,
         ship: &ShipState,
+        width: u32,
+        height: u32,
         encoder: &mut wgpu::CommandEncoder,
     ) {
         // Update the ship orientation uniforms.
         let values = RenderUniforms {
+            width,
+            height,
             position: ship.position,
             angle: ship.orientation,
         };

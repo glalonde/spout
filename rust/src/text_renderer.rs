@@ -13,9 +13,9 @@ impl TextRenderer {
     // Width, height of the game viewport
     pub fn init(device: &wgpu::Device, width: u32, height: u32) -> Self {
         TextRenderer {
-            glyph_brush: GlyphBrushBuilder::using_font_bytes(super::fonts::INCONSOLATA)
+            glyph_brush: GlyphBrushBuilder::using_font_bytes(super::fonts::VISITOR)
                 .unwrap()
-                .texture_filter_method(wgpu::FilterMode::Nearest)
+                .texture_filter_method(wgpu::FilterMode::Linear)
                 .build(device, wgpu::TextureFormat::Bgra8UnormSrgb),
             width,
             height,

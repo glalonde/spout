@@ -29,14 +29,15 @@ impl FpsEstimator {
         self.fps
     }
 
-    pub fn tick(&mut self) -> f64 {
+    pub fn tick(&mut self) -> std::time::Duration {
         FpsEstimator::high_resolution_sleep_until(
             &(self.iteration_start + self.iteration_duration),
         );
-        let dt = self.iteration_start.elapsed().as_secs_f64();
+        let delta_t = self.iteration_start.elapsed();
+        let dt = delta_t.as_secs_f64();
         self.iteration_start = std::time::Instant::now();
         self.fps = 1.0 / dt;
-        dt
+        delta_t
     }
 }
 
