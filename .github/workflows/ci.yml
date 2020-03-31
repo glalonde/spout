@@ -1,0 +1,23 @@
+name: CI
+
+on:
+  push:
+    branches-ignore: [ staging.tmp ]
+  pull_request:
+    branches-ignore: [ staging.tmp ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest 
+    steps:
+    - uses: actions/checkout@v2
+    - name: Install system deps
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y alsa alsa-tools libasound2-dev
+    - name: Cargo check
+      run: cargo check
+
+    - uses: actions/checkout@v2
+    - name: Cargo test
+      run: cargo test --no-run
