@@ -1,11 +1,2 @@
-*.class
-.bazel_output
-
-# Package Files #
-*.jar
-*.war
-*.ear
-*.DS_Store
-bazel-*
-*.swp
-*.o
+/target
+**/*.rs.bk
