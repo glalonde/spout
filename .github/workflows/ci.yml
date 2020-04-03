@@ -15,9 +15,17 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install -y alsa alsa-tools libasound2-dev
-    - name: Cargo check
-      run: cargo check
-
+    - name: Generate Cargo.lock and Cargo.version
+      run: |
+        cargo update
+        cargo --version > Cargo.version
+    - name: Cache cargo registry
+      uses: actions/cache@v1
+      with:
+        path: ~/.cargo/registry/cache
+        key: ${{ runner.os }}-${{ matrix.conf }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-${{ matrix.conf }}-cargo-registry-
     - uses: actions/checkout@v2
     - name: Cargo test
       run: cargo test --no-run
