@@ -180,7 +180,6 @@ where
 
             // Basic situation that will happen most of the time.
             if let Some(sample) = self.current.next() {
-                println!("here1");
                 return Some(sample);
             }
 
