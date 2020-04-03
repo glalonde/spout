@@ -29,6 +29,7 @@
 - [ ] wireframe ship rendering
 - [ ] highres glow
 - [ ] separated gaussian glow
+- [x] CI
 ---
 ## Medium
 - [ ] configs (load emitter params, etc from proto)
