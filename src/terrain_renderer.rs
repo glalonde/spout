@@ -1,7 +1,8 @@
 // Keep track of the rendering members and logic to turn the integer particle
 // density texture into a colormapped texture ready to be visualized.
 pub struct TerrainRenderer {
-    pub render_bind_group: wgpu::BindGroup,
+    pub render_bind_group_a: wgpu::BindGroup,
+    pub render_bind_group_b: wgpu::BindGroup,
     pub render_pipeline: wgpu::RenderPipeline,
 }
 
@@ -39,7 +40,7 @@ impl TerrainRenderer {
         let render_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 bindings: &[
-                    // Terrain buffer
+                    // Bottom terrain buffer
                     wgpu::BindGroupLayoutBinding {
                         binding: 0,
                         visibility: wgpu::ShaderStage::FRAGMENT,
@@ -48,16 +49,25 @@ impl TerrainRenderer {
                             readonly: true,
                         },
                     },
-                    // Uniform inputs
+                    // Top terrain buffer
                     wgpu::BindGroupLayoutBinding {
                         binding: 1,
+                        visibility: wgpu::ShaderStage::FRAGMENT,
+                        ty: wgpu::BindingType::StorageBuffer {
+                            dynamic: false,
+                            readonly: true,
+                        },
+                    },
+                    // Uniform inputs
+                    wgpu::BindGroupLayoutBinding {
+                        binding: 2,
                         visibility: wgpu::ShaderStage::FRAGMENT,
                         ty: wgpu::BindingType::UniformBuffer { dynamic: false },
                     },
                 ],
             });
         // TODO bind in second terrain texture when the fragment supports it.
-        let render_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        let render_bind_group_a = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &render_bind_group_layout,
             bindings: &[
                 wgpu::Binding {
@@ -69,6 +79,40 @@ impl TerrainRenderer {
                 },
                 wgpu::Binding {
                     binding: 1,
+                    resource: wgpu::BindingResource::Buffer {
+                        buffer: &compute_locals.terrain_buffer_b,
+                        range: 0..compute_locals.terrain_buffer_b_size,
+                    },
+                },
+                wgpu::Binding {
+                    binding: 2,
+                    resource: wgpu::BindingResource::Buffer {
+                        buffer: &uniform_buf,
+                        range: 0..fragment_uniform_size,
+                    },
+                },
+            ],
+        });
+
+        let render_bind_group_b = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &render_bind_group_layout,
+            bindings: &[
+                wgpu::Binding {
+                    binding: 0,
+                    resource: wgpu::BindingResource::Buffer {
+                        buffer: &compute_locals.terrain_buffer_b,
+                        range: 0..compute_locals.terrain_buffer_b_size,
+                    },
+                },
+                wgpu::Binding {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Buffer {
+                        buffer: &compute_locals.terrain_buffer_a,
+                        range: 0..compute_locals.terrain_buffer_a_size,
+                    },
+                },
+                wgpu::Binding {
+                    binding: 2,
                     resource: wgpu::BindingResource::Buffer {
                         buffer: &uniform_buf,
                         range: 0..fragment_uniform_size,
@@ -113,7 +157,8 @@ impl TerrainRenderer {
             alpha_to_coverage_enabled: false,
         });
         TerrainRenderer {
-            render_bind_group,
+            render_bind_group_a,
+            render_bind_group_b,
             render_pipeline,
         }
     }
@@ -135,7 +180,7 @@ impl TerrainRenderer {
             depth_stencil_attachment: None,
         });
         rpass.set_pipeline(&self.render_pipeline);
-        rpass.set_bind_group(0, &self.render_bind_group, &[]);
+        rpass.set_bind_group(0, &self.render_bind_group_a, &[]);
         rpass.draw(0..4 as u32, 0..1);
     }
 }

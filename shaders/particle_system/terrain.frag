@@ -6,7 +6,11 @@ layout(location = 0) out vec4 out_color;
 layout(set = 0, binding = 0) buffer TerrainBufferButtom {
     int[] terrain_buffer_bottom;
 };
-layout(set = 0, binding = 1) uniform Params {
+
+layout(set = 0, binding = 1) buffer TerrainBufferTop {
+    int[] terrain_buffer_top;
+};
+layout(set = 0, binding = 2) uniform Params {
     uint width;
     uint height;
 };
