@@ -2,30 +2,27 @@ name: CI
 
 on:
   push:
-    branches-ignore: [ staging.tmp ]
+    branches-ignore: [staging.tmp]
   pull_request:
-    branches-ignore: [ staging.tmp ]
+    branches-ignore: [staging.tmp]
 
 jobs:
   build:
-    runs-on: ubuntu-latest 
+    runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v2
-    - name: Install system deps
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y alsa alsa-tools libasound2-dev
-    - name: Generate Cargo.lock and Cargo.version
-      run: |
-        cargo update
-        cargo --version > Cargo.version
-    - name: Cache cargo registry
-      uses: actions/cache@v1
-      with:
-        path: ~/.cargo/registry/cache
-        key: ${{ runner.os }}-${{ matrix.conf }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
-        restore-keys: |
-          ${{ runner.os }}-${{ matrix.conf }}-cargo-registry-
-    - uses: actions/checkout@v2
-    - name: Cargo test
-      run: cargo test --no-run
+      - uses: actions/checkout@v2
+      - name: Install system deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y alsa alsa-tools libasound2-dev
+      - name: Fixup the owner of ~/.cargo/
+        run: sudo chown -R $(whoami):$(id -ng) ~/.cargo/
+      - name: Cache cargo registry
+        uses: actions/cache@v1
+        with:
+          path: ~/.cargo/registry/cache
+          key: ${{ runner.os }}-${{ matrix.conf }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.conf }}-cargo-registry-
+      - name: Cargo test
+        run: cargo test

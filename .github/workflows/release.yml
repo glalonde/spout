@@ -16,6 +16,9 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y alsa alsa-tools libasound2-dev
+      - name: Fixup the owner of ~/.cargo/
+        if: matrix.platform == 'ubuntu-latest'
+        run: sudo chown -R $(whoami):$(id -ng) ~/.cargo/
       - name: Generate Cargo.lock and Cargo.version
         run: |
           cargo update
