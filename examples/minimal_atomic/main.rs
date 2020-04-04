@@ -25,7 +25,7 @@ fn run() {
         limits: wgpu::Limits::default(),
     });
 
-    let cs = spout::include_shader!("atomics_minimal.comp.spv");
+    let cs = spout::shader_utils::Shaders::get("atomics_minimal.comp.spv").unwrap();
     let cs_module =
         device.create_shader_module(&wgpu::read_spirv(std::io::Cursor::new(&cs[..])).unwrap());
 

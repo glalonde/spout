@@ -28,6 +28,7 @@ scarlet = "*"
 wgpu_glyph = "0.7"
 rodio = "0.11"
 crossbeam-channel = "0.4"
+rust-embed = { version = "5.5", features = ["interpolate-folder-path"] }
 
 [build-dependencies]
 log = "*"

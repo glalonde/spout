@@ -22,7 +22,6 @@ mod tests {
 
     #[test]
     fn internal() {
-        shader_utils::list_shaders();
-        let _test_bytes = include_shader!("collatz.comp.spv");
+        let _test_bytes = shader_utils::Shaders::get("collatz.comp.spv").unwrap();
     }
 }

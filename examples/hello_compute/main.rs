@@ -28,7 +28,7 @@ fn main() {
         limits: wgpu::Limits::default(),
     });
 
-    let cs = spout::include_shader!("collatz.comp.spv");
+    let cs = spout::shader_utils::Shaders::get("collatz.comp.spv").unwrap();
     let cs_module =
         device.create_shader_module(&wgpu::read_spirv(std::io::Cursor::new(&cs[..])).unwrap());
 

@@ -1,5 +1,3 @@
-use super::include_shader;
-
 use log::trace;
 use zerocopy::AsBytes;
 
@@ -213,7 +211,7 @@ impl Emitter {
                 bind_group_layouts: &[&compute_bind_group_layout],
             });
 
-        let cs = include_shader!("particle_system/emitter.comp.spv");
+        let cs = super::shader_utils::Shaders::get("particle_system/emitter.comp.spv").unwrap();
         let cs_module =
             device.create_shader_module(&wgpu::read_spirv(std::io::Cursor::new(&cs[..])).unwrap());
         let compute_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {

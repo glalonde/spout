@@ -32,7 +32,7 @@ jobs:
             ${{ runner.os }}-${{ matrix.conf }}-cargo-registry-
       - name: Build project
         run: |
-          cargo build --release
+          cargo build --release --verbose
       - name: Create Release
         id: create_release
         uses: actions/create-release@v1

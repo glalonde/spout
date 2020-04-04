@@ -153,6 +153,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "base64"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b41b7ea54a0c9d92199de89e20e58d49f02f8e699814ef3fdf266f6f748d15c7"
+
+[[package]]
 name = "bindgen"
 version = "0.53.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -177,6 +183,17 @@ name = "bitflags"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf1de2fe8c75bc145a2f577add951f8134889b4795d47466a54a5c846d691693"
+
+[[package]]
+name = "blake2b_simd"
+version = "0.5.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d8fb2d74254a3a0b5cac33ac9f8ed0e44aa50378d9dbb2e5d83bd21ed1dc2c8a"
+dependencies = [
+ "arrayref",
+ "arrayvec",
+ "constant_time_eq",
+]
 
 [[package]]
 name = "block"
@@ -334,6 +351,12 @@ name = "colorful"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0bca1619ff57dd7a56b58a8e25ef4199f123e78e503fe1653410350a1b98ae65"
+
+[[package]]
+name = "constant_time_eq"
+version = "0.1.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "245097e9a4535ee1e3e3931fcfcd55a796a44c643e8596ff6566d68f09b87bbc"
 
 [[package]]
 name = "copyless"
@@ -544,6 +567,28 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "03b072242a8cbaf9c145665af9d250c59af3b958f83ed6824e13533cf76d5b90"
 dependencies = [
  "generic-array 0.9.0",
+]
+
+[[package]]
+name = "dirs"
+version = "2.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "13aea89a5c93364a98e9b37b2fa237effbb694d5cfe01c5b70941f7eb087d5e3"
+dependencies = [
+ "cfg-if",
+ "dirs-sys",
+]
+
+[[package]]
+name = "dirs-sys"
+version = "0.3.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "afa0b23de8fd801745c471deffa6e12d248f962c9fd4b4c33787b055599bde7b"
+dependencies = [
+ "cfg-if",
+ "libc",
+ "redox_users",
+ "winapi 0.3.8",
 ]
 
 [[package]]
@@ -2064,6 +2109,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "redox_users"
+version = "0.3.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "09b23093265f8d200fa7b4c2c76297f47e681c655f6f1285a8780d6a022f7431"
+dependencies = [
+ "getrandom",
+ "redox_syscall",
+ "rust-argon2",
+]
+
+[[package]]
 name = "ref-cast"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2178,6 +2234,51 @@ checksum = "04ada202c9685e1d72a7420c578e92b358dbf807d3dfabb676a3dab9cc3bb12f"
 dependencies = [
  "matrixmultiply 0.1.15",
  "num 0.1.42",
+]
+
+[[package]]
+name = "rust-argon2"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2bc8af4bda8e1ff4932523b94d3dd20ee30a87232323eda55903ffd71d2fb017"
+dependencies = [
+ "base64",
+ "blake2b_simd",
+ "constant_time_eq",
+ "crossbeam-utils",
+]
+
+[[package]]
+name = "rust-embed"
+version = "5.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3a17890cbd0fae97c2006fa1ecec9554946443c319f4dd8cd8d3b92031725161"
+dependencies = [
+ "rust-embed-impl",
+ "rust-embed-utils",
+ "walkdir",
+]
+
+[[package]]
+name = "rust-embed-impl"
+version = "5.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "60cacc306d294556771c6e92737ba7e6be0264144bc46dd713a14ef384b0d6b8"
+dependencies = [
+ "quote 1.0.3",
+ "rust-embed-utils",
+ "shellexpand",
+ "syn 1.0.17",
+ "walkdir",
+]
+
+[[package]]
+name = "rust-embed-utils"
+version = "5.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "97655158074ccb2d2cfb1ccb4c956ef0f4054e43a2c1e71146d4991e6961e105"
+dependencies = [
+ "walkdir",
 ]
 
 [[package]]
@@ -2359,6 +2460,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "shellexpand"
+version = "2.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9a2b22262a9aaf9464d356f656fea420634f78c881c5eebd5ef5e66d8b9bc603"
+dependencies = [
+ "dirs",
+]
+
+[[package]]
 name = "shlex"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2460,6 +2570,7 @@ dependencies = [
  "png 0.15.3",
  "rand 0.7.3",
  "rodio",
+ "rust-embed",
  "scarlet",
  "scrub_log",
  "shaderc",

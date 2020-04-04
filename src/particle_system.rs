@@ -340,7 +340,7 @@ impl ComputeLocals {
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 bind_group_layouts: &[&compute_bind_group_layout],
             });
-        let cs = super::include_shader!("particle_system/particles.comp.spv");
+        let cs = super::shader_utils::Shaders::get("particle_system/particles.comp.spv").unwrap();
         let cs_module =
             device.create_shader_module(&wgpu::read_spirv(std::io::Cursor::new(&cs[..])).unwrap());
         let compute_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
@@ -384,7 +384,8 @@ impl ComputeLocals {
                 device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                     bind_group_layouts: &[&clear_bind_group_layout],
                 });
-            let cs = super::include_shader!("particle_system/clear_ssbo.comp.spv");
+            let cs =
+                super::shader_utils::Shaders::get("particle_system/clear_ssbo.comp.spv").unwrap();
             let cs_module = device
                 .create_shader_module(&wgpu::read_spirv(std::io::Cursor::new(&cs[..])).unwrap());
             let clear_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
@@ -503,11 +504,11 @@ impl ParticleRenderer {
         init_encoder: &mut wgpu::CommandEncoder,
     ) -> Self {
         // Sets up the quad canvas.
-        let vs = super::include_shader!("particle_system/quad.vert.spv");
+        let vs = super::shader_utils::Shaders::get("particle_system/quad.vert.spv").unwrap();
         let vs_module =
             device.create_shader_module(&wgpu::read_spirv(std::io::Cursor::new(&vs[..])).unwrap());
         // Renders the data texture onto the canvas.
-        let fs = super::include_shader!("particle_system/particles.frag.spv");
+        let fs = super::shader_utils::Shaders::get("particle_system/particles.frag.spv").unwrap();
         let fs_module =
             device.create_shader_module(&wgpu::read_spirv(std::io::Cursor::new(&fs[..])).unwrap());
 

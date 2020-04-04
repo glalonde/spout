@@ -6,6 +6,13 @@ Work on making a new version of a game called Spout, which I first encountered a
 
 Live streaming some of the programming ony my youtube channel: https://www.youtube.com/channel/UCC_zhLitvZ0EXdZ7rhAMTOw
 
+Linux x86_64 binaries are available on the releases page. Just set the executable bit and try it out.
+```
+wget https://github.com/glalonde/spout/releases/download/v0.3/spout
+chmod +x ./spout
+./spout
+```
+
 ---
 
 Rust Version

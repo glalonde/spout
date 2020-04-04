@@ -43,8 +43,11 @@ fn get_include_source(
     .map_err(|e| e.to_string())
 }
 
+// TO VIEW OUTPUT FROM THE BUILD SCRIPT RUN:
+// `cargo build -vv`
 fn main() {
-    scrub_log::init().unwrap();
+    //
+    scrub_log::init_with_filter_string("info").unwrap();
     // Tell the build script to only run again if we change our source shaders.
     // Unfortunately, if a single shader changes, it recompiles everything.
     for entry in walkdir::WalkDir::new(SHADER_PATH)

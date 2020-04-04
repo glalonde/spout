@@ -78,7 +78,7 @@ fn run() {
     // specify the 512 programmatically.
     let particle_group_size = 512;
     let num_work_groups = (NUM_PARTICLES.flag as f64 / particle_group_size as f64).ceil() as u32;
-    let cs = spout::include_shader!("atomics.comp.spv");
+    let cs = spout::shader_utils::Shaders::get("atomics.comp.spv").unwrap();
     let cs_module =
         device.create_shader_module(&wgpu::read_spirv(std::io::Cursor::new(&cs[..])).unwrap());
 
