@@ -34,12 +34,6 @@ pub struct ComputeLocals {
     pub system_params: SystemParams,
     pub emitter: super::emitter::Emitter,
     pub compute_work_groups: usize,
-    pub compute_bind_group_a: wgpu::BindGroup,
-    pub compute_bind_group_b: wgpu::BindGroup,
-    pub terrain_buffer_a: wgpu::Buffer,
-    pub terrain_buffer_a_size: wgpu::BufferAddress,
-    pub terrain_buffer_b: wgpu::Buffer,
-    pub terrain_buffer_b_size: wgpu::BufferAddress,
     pub density_buffer: wgpu::Buffer,
     pub density_buffer_size: wgpu::BufferAddress,
     pub uniform_buf: wgpu::Buffer,
@@ -144,34 +138,6 @@ impl ComputeLocals {
         let compute_work_groups =
             (num_particles as f64 / particle_group_size as f64).ceil() as usize;
 
-        let (terrain_buffer_a, terrain_buffer_a_size) = ComputeLocals::make_terrain_buffer(
-            device,
-            params.width as usize,
-            params.height as usize,
-        );
-        ComputeLocals::fill_level_buffer(
-            device,
-            init_encoder,
-            &terrain_buffer_a,
-            params.width,
-            params.height,
-            0,
-        );
-
-        let (terrain_buffer_b, terrain_buffer_b_size) = ComputeLocals::make_terrain_buffer(
-            device,
-            params.width as usize,
-            params.height as usize,
-        );
-        ComputeLocals::fill_level_buffer(
-            device,
-            init_encoder,
-            &terrain_buffer_b,
-            params.width,
-            params.height,
-            1,
-        );
-
         let (density_buffer, density_buffer_size) = ComputeLocals::make_density_buffer(
             device,
             params.width as usize,
@@ -246,96 +212,6 @@ impl ComputeLocals {
             * std::mem::size_of::<super::emitter::Particle>() as u32)
             as wgpu::BufferAddress;
 
-        let compute_bind_group_a = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &compute_bind_group_layout,
-            bindings: &[
-                // Particle storage buffer
-                wgpu::Binding {
-                    binding: 0,
-                    resource: wgpu::BindingResource::Buffer {
-                        buffer: &emitter.particle_buffer,
-                        range: 0..particle_buffer_size,
-                    },
-                },
-                // Bottom level buffer(A)
-                wgpu::Binding {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Buffer {
-                        buffer: &terrain_buffer_a,
-                        range: 0..terrain_buffer_a_size,
-                    },
-                },
-                // Top level buffer(B)
-                wgpu::Binding {
-                    binding: 2,
-                    resource: wgpu::BindingResource::Buffer {
-                        buffer: &terrain_buffer_b,
-                        range: 0..terrain_buffer_b_size,
-                    },
-                },
-                // Particle density buffer
-                wgpu::Binding {
-                    binding: 3,
-                    resource: wgpu::BindingResource::Buffer {
-                        buffer: &density_buffer,
-                        range: 0..density_buffer_size,
-                    },
-                },
-                // Uniforms
-                wgpu::Binding {
-                    binding: 4,
-                    resource: wgpu::BindingResource::Buffer {
-                        buffer: &uniform_buf,
-                        range: 0..compute_uniform_size,
-                    },
-                },
-            ],
-        });
-        let compute_bind_group_b = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &compute_bind_group_layout,
-            bindings: &[
-                // Particle storage buffer
-                wgpu::Binding {
-                    binding: 0,
-                    resource: wgpu::BindingResource::Buffer {
-                        buffer: &emitter.particle_buffer,
-                        range: 0..particle_buffer_size,
-                    },
-                },
-                // Bottom level buffer(B)
-                wgpu::Binding {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Buffer {
-                        buffer: &terrain_buffer_b,
-                        range: 0..terrain_buffer_b_size,
-                    },
-                },
-                // Top level buffer(A)
-                wgpu::Binding {
-                    binding: 2,
-                    resource: wgpu::BindingResource::Buffer {
-                        buffer: &terrain_buffer_a,
-                        range: 0..terrain_buffer_a_size,
-                    },
-                },
-                // Particle density buffer
-                wgpu::Binding {
-                    binding: 3,
-                    resource: wgpu::BindingResource::Buffer {
-                        buffer: &density_buffer,
-                        range: 0..density_buffer_size,
-                    },
-                },
-                // Uniforms
-                wgpu::Binding {
-                    binding: 4,
-                    resource: wgpu::BindingResource::Buffer {
-                        buffer: &uniform_buf,
-                        range: 0..compute_uniform_size,
-                    },
-                },
-            ],
-        });
         let compute_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 bind_group_layouts: &[&compute_bind_group_layout],
@@ -407,12 +283,6 @@ impl ComputeLocals {
             system_params: *params,
             emitter,
             compute_work_groups,
-            compute_bind_group_a,
-            compute_bind_group_b,
-            terrain_buffer_a,
-            terrain_buffer_a_size,
-            terrain_buffer_b,
-            terrain_buffer_b_size,
             density_buffer,
             density_buffer_size,
             uniform_buf,
@@ -423,14 +293,14 @@ impl ComputeLocals {
         }
     }
 
-    pub fn update_uniforms(
+    pub fn update_state(
         &mut self,
         device: &wgpu::Device,
         encoder: &mut wgpu::CommandEncoder,
-        dt: f32,
         game_params: &super::game_params::GameParams,
+        dt: f32,
+        ship_height: i32,
     ) {
-        // Update simulation
         let compute_uniforms = ComputeUniforms {
             dt,
             level_width: game_params.level_width,
@@ -465,7 +335,59 @@ impl ComputeLocals {
         );
     }
 
-    pub fn compute(&self, encoder: &mut wgpu::CommandEncoder) {
+    pub fn compute(
+        &self,
+        level_manager: &super::level_manager::LevelManager,
+        encoder: &mut wgpu::CommandEncoder,
+    ) {
+        let (bottom_buffer, bottom_buffer_size) = level_manager.bottom_buffer();
+        let (top_buffer, top_buffer_size) = level_manager.top_buffer();
+        let compute_bind_group_a = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &compute_bind_group_layout,
+            bindings: &[
+                // Particle storage buffer
+                wgpu::Binding {
+                    binding: 0,
+                    resource: wgpu::BindingResource::Buffer {
+                        buffer: &emitter.particle_buffer,
+                        range: 0..particle_buffer_size,
+                    },
+                },
+                // Bottom level buffer(A)
+                wgpu::Binding {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Buffer {
+                        buffer: bottom_buffer,
+                        range: 0..bottom_buffer_size,
+                    },
+                },
+                // Top level buffer(B)
+                wgpu::Binding {
+                    binding: 2,
+                    resource: wgpu::BindingResource::Buffer {
+                        buffer: &top_buffer,
+                        range: 0..top_buffer_size,
+                    },
+                },
+                // Particle density buffer
+                wgpu::Binding {
+                    binding: 3,
+                    resource: wgpu::BindingResource::Buffer {
+                        buffer: &self.density_buffer,
+                        range: 0..self.density_buffer_size,
+                    },
+                },
+                // Uniforms
+                wgpu::Binding {
+                    binding: 4,
+                    resource: wgpu::BindingResource::Buffer {
+                        buffer: &uniform_buf,
+                        range: 0..compute_uniform_size,
+                    },
+                },
+            ],
+        });
+
         // Update the particles state and density texture.
         // TODO also allow bind group b
         let mut cpass = encoder.begin_compute_pass();

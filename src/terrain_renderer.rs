@@ -1,22 +1,72 @@
+use zerocopy::AsBytes;
+
 // Keep track of the rendering members and logic to turn the integer particle
 // density texture into a colormapped texture ready to be visualized.
 pub struct TerrainRenderer {
     pub render_bind_group_a: wgpu::BindGroup,
     pub render_bind_group_b: wgpu::BindGroup,
     pub render_pipeline: wgpu::RenderPipeline,
+    pub uniform_buf: wgpu::Buffer,
+    pub buffer_config_a: bool,
 }
 
 #[repr(C)]
 #[derive(Clone, Copy, zerocopy::FromBytes, zerocopy::AsBytes)]
 struct FragmentUniforms {
-    pub width: u32,
-    pub height: u32,
+    pub viewport_width: u32,
+    pub viewport_height: u32,
+
+    pub height_of_viewport: i32,
+    pub height_of_bottom_buffer: i32,
+    pub height_of_top_buffer: i32,
 }
 
 impl TerrainRenderer {
+    pub fn update_render_state(
+        &mut self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        game_params: &super::game_params::GameParams,
+        height_of_viewport: i32,
+        height_of_bottom_buffer: i32,
+        height_of_top_buffer: i32,
+        buffer_config_a: bool,
+    ) {
+        self.buffer_config_a = buffer_config_a;
+        let uniforms = FragmentUniforms {
+            viewport_width: game_params.level_width,
+            viewport_height: game_params.viewport_height,
+            height_of_viewport,
+            height_of_bottom_buffer,
+            height_of_top_buffer,
+        };
+        self.set_uniforms(device, encoder, &uniforms);
+    }
+
+    fn set_uniforms(
+        &mut self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        values: &FragmentUniforms,
+    ) {
+        let bytes: &[u8] = values.as_bytes();
+        let uniform_buf_size = std::mem::size_of::<FragmentUniforms>();
+        let temp_buf = device
+            .create_buffer_mapped(uniform_buf_size, wgpu::BufferUsage::COPY_SRC)
+            .fill_from_slice(bytes);
+        encoder.copy_buffer_to_buffer(
+            &temp_buf,
+            0,
+            &self.uniform_buf,
+            0,
+            uniform_buf_size as wgpu::BufferAddress,
+        );
+    }
+
     pub fn init(
         device: &wgpu::Device,
         compute_locals: &super::particle_system::ComputeLocals,
+        game_params: &super::game_params::GameParams,
     ) -> Self {
         // Sets up the quad canvas.
         let vs = super::shader_utils::Shaders::get("particle_system/quad.vert.spv").unwrap();
@@ -29,8 +79,11 @@ impl TerrainRenderer {
 
         let fragment_uniform_size = std::mem::size_of::<FragmentUniforms>() as wgpu::BufferAddress;
         let fragment_uniforms = FragmentUniforms {
-            width: compute_locals.system_params.width,
-            height: compute_locals.system_params.height,
+            viewport_width: compute_locals.system_params.width,
+            viewport_height: compute_locals.system_params.height,
+            height_of_viewport: 0,
+            height_of_bottom_buffer: 0,
+            height_of_top_buffer: 0,
         };
         let uniform_buf = device
             .create_buffer_mapped(1, wgpu::BufferUsage::UNIFORM)
@@ -160,6 +213,8 @@ impl TerrainRenderer {
             render_bind_group_a,
             render_bind_group_b,
             render_pipeline,
+            uniform_buf,
+            buffer_config_a: true,
         }
     }
 
@@ -180,7 +235,11 @@ impl TerrainRenderer {
             depth_stencil_attachment: None,
         });
         rpass.set_pipeline(&self.render_pipeline);
-        rpass.set_bind_group(0, &self.render_bind_group_a, &[]);
+        if self.buffer_config_a {
+            rpass.set_bind_group(0, &self.render_bind_group_a, &[]);
+        } else {
+            rpass.set_bind_group(0, &self.render_bind_group_b, &[]);
+        }
         rpass.draw(0..4 as u32, 0..1);
     }
 }

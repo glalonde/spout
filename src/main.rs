@@ -39,6 +39,7 @@ struct GameState {
     prev_input_state: InputState,
     ship_state: spout::ship::ShipState,
     score: i32,
+    viewport_bottom_height: i32,
     paused: bool,
 }
 
@@ -46,6 +47,7 @@ struct Example {
     game_params: spout::game_params::GameParams,
     fps: spout::fps_estimator::FpsEstimator,
     state: GameState,
+    level_manager: spout::level_manager::LevelManager,
     compute_locals: spout::particle_system::ComputeLocals,
     pre_glow_texture: wgpu::TextureView,
     post_glow_texture: wgpu::TextureView,
@@ -91,6 +93,9 @@ impl Example {
         let ship_height = spout::int_grid::get_outer_grid(ship_state.position[1]) as i32
             - spout::int_grid::half_outer_grid_size() as i32;
         self.state.score = std::cmp::max(ship_height, self.state.score as i32);
+        let viewport_bottom_height =
+            self.state.score - (self.game_params.viewport_height / 2) as i32;
+        self.level_manager.sync_height(viewport_bottom_height);
 
         // Emit particles
         if input_state.forward {
@@ -105,6 +110,7 @@ impl Example {
         // Update simulation
         self.compute_locals
             .update_uniforms(device, encoder, dt, &self.game_params);
+        // self.terrain_renderer.u
     }
 
     fn make_texture(device: &wgpu::Device, width: u32, height: u32) -> wgpu::TextureView {
