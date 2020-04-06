@@ -62,13 +62,36 @@ uint GetBufferOffset(in ivec2 cell) {
   return cell.y * level_width + cell.x;
 }
 
+int GetCell(in ivec2 cell) {
+  cell.y -= int(bottom_level_height);
+  if (cell.y < level_height) {
+    // Bottom buffer
+    return terrain_texture_bottom[GetBufferOffset(cell)];
+  } else {
+    // Top buffer
+    cell.y -= int(level_height);
+    return terrain_texture_top[GetBufferOffset(cell)];
+  }
+}
+
 // Returns true if bounce occurred.
 bool TryErodeTerrain(in ivec2 cell, in float speed) {
   cell.y -= int(bottom_level_height);
-  if (terrain_texture_bottom[GetBufferOffset(cell)] > 0) {
-    int dmg_amt = int(damage_rate * speed);
-    int actual_value = atomicAdd(terrain_texture_bottom[GetBufferOffset(cell)], -dmg_amt);
-    return actual_value > 0;
+  if (cell.y < level_height) {
+    // Bottom buffer
+    if (terrain_texture_bottom[GetBufferOffset(cell)] > 0) {
+      int dmg_amt = int(damage_rate * speed);
+      int actual_value = atomicAdd(terrain_texture_bottom[GetBufferOffset(cell)], -dmg_amt);
+      return actual_value > 0;
+    }
+  } else {
+    // Top buffer
+    cell.y -= int(level_height);
+    if (terrain_texture_top[GetBufferOffset(cell)] > 0) {
+      int dmg_amt = int(damage_rate * speed);
+      int actual_value = atomicAdd(terrain_texture_top[GetBufferOffset(cell)], -dmg_amt);
+      return actual_value > 0;
+    }
   }
   return false;
 }
@@ -89,7 +112,7 @@ void main() {
   ivec2 current_cell = GetOuterGrid(p.position);
 
   // If the particle starts outside the level buffers or inside a cell, then delete it.
-  if (!OnLevelBuffers(current_cell) || terrain_texture_bottom[GetBufferOffset(current_cell)] > 0) {
+  if (!OnLevelBuffers(current_cell) || GetCell(current_cell) > 0) {
     p.ttl = 0;
     return;
   }
