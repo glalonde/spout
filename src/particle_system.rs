@@ -34,60 +34,17 @@ pub struct ComputeLocals {
     pub system_params: SystemParams,
     pub emitter: super::emitter::Emitter,
     pub compute_work_groups: usize,
-    pub compute_bind_group_a: wgpu::BindGroup,
-    pub compute_bind_group_b: wgpu::BindGroup,
-    pub terrain_buffer_a: wgpu::Buffer,
-    pub terrain_buffer_a_size: wgpu::BufferAddress,
-    pub terrain_buffer_b: wgpu::Buffer,
-    pub terrain_buffer_b_size: wgpu::BufferAddress,
     pub density_buffer: wgpu::Buffer,
     pub density_buffer_size: wgpu::BufferAddress,
     pub uniform_buf: wgpu::Buffer,
     pub compute_pipeline: wgpu::ComputePipeline,
+    pub compute_bind_groups: std::vec::Vec<wgpu::BindGroup>,
     pub clear_work_groups: usize,
     pub clear_bind_group: wgpu::BindGroup,
     pub clear_pipeline: wgpu::ComputePipeline,
 }
 
 impl ComputeLocals {
-    fn fill_level_buffer(
-        device: &wgpu::Device,
-        encoder: &mut wgpu::CommandEncoder,
-        buffer: &wgpu::Buffer,
-        width: u32,
-        height: u32,
-        level_num: u32,
-    ) {
-        let im =
-            image::ImageBuffer::<image::Luma<i32>, Vec<i32>>::from_fn(width, height, |x, y| {
-                let (index, _) = match level_num % 2 {
-                    0 => (x, width),
-                    1 => (y, height),
-                    _ => panic!(),
-                };
-                match index % 5 {
-                    0 => image::Luma::<i32>([1000]),
-                    _ => image::Luma::<i32>([0]),
-                }
-            });
-        let data = im.into_raw();
-        let temp_buf = device
-            .create_buffer_mapped(
-                data.len(),
-                wgpu::BufferUsage::COPY_SRC
-                    | wgpu::BufferUsage::COPY_DST
-                    | wgpu::BufferUsage::MAP_READ,
-            )
-            .fill_from_slice(&data);
-        encoder.copy_buffer_to_buffer(
-            &temp_buf,
-            0,
-            &buffer,
-            0,
-            (width * height * std::mem::size_of::<i32>() as u32) as u64,
-        );
-    }
-
     fn make_density_buffer(
         device: &wgpu::Device,
         width: usize,
@@ -106,29 +63,12 @@ impl ComputeLocals {
         )
     }
 
-    fn make_terrain_buffer(
-        device: &wgpu::Device,
-        width: usize,
-        height: usize,
-    ) -> (wgpu::Buffer, wgpu::BufferAddress) {
-        let size = (std::mem::size_of::<i32>() * width * height) as wgpu::BufferAddress;
-        (
-            device.create_buffer(&wgpu::BufferDescriptor {
-                size,
-                usage: wgpu::BufferUsage::STORAGE
-                    | wgpu::BufferUsage::COPY_DST
-                    | wgpu::BufferUsage::COPY_SRC
-                    | wgpu::BufferUsage::STORAGE_READ,
-            }),
-            size,
-        )
-    }
-
     pub fn init(
         device: &wgpu::Device,
-        init_encoder: &mut wgpu::CommandEncoder,
         params: &SystemParams,
         game_params: &super::game_params::GameParams,
+        level_manager: &super::level_manager::LevelManager,
+        init_encoder: &mut wgpu::CommandEncoder,
     ) -> Self {
         // This sets up the compute stage, which is responsible for updating the
         // particle system and most of the game logic. The output is updated game state
@@ -143,34 +83,6 @@ impl ComputeLocals {
         let particle_group_size = 512;
         let compute_work_groups =
             (num_particles as f64 / particle_group_size as f64).ceil() as usize;
-
-        let (terrain_buffer_a, terrain_buffer_a_size) = ComputeLocals::make_terrain_buffer(
-            device,
-            params.width as usize,
-            params.height as usize,
-        );
-        ComputeLocals::fill_level_buffer(
-            device,
-            init_encoder,
-            &terrain_buffer_a,
-            params.width,
-            params.height,
-            0,
-        );
-
-        let (terrain_buffer_b, terrain_buffer_b_size) = ComputeLocals::make_terrain_buffer(
-            device,
-            params.width as usize,
-            params.height as usize,
-        );
-        ComputeLocals::fill_level_buffer(
-            device,
-            init_encoder,
-            &terrain_buffer_b,
-            params.width,
-            params.height,
-            1,
-        );
 
         let (density_buffer, density_buffer_size) = ComputeLocals::make_density_buffer(
             device,
@@ -242,104 +154,63 @@ impl ComputeLocals {
                 ],
             });
 
-        let particle_buffer_size = (num_particles
-            * std::mem::size_of::<super::emitter::Particle>() as u32)
-            as wgpu::BufferAddress;
-
-        let compute_bind_group_a = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &compute_bind_group_layout,
-            bindings: &[
-                // Particle storage buffer
-                wgpu::Binding {
-                    binding: 0,
-                    resource: wgpu::BindingResource::Buffer {
-                        buffer: &emitter.particle_buffer,
-                        range: 0..particle_buffer_size,
-                    },
-                },
-                // Bottom level buffer(A)
-                wgpu::Binding {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Buffer {
-                        buffer: &terrain_buffer_a,
-                        range: 0..terrain_buffer_a_size,
-                    },
-                },
-                // Top level buffer(B)
-                wgpu::Binding {
-                    binding: 2,
-                    resource: wgpu::BindingResource::Buffer {
-                        buffer: &terrain_buffer_b,
-                        range: 0..terrain_buffer_b_size,
-                    },
-                },
-                // Particle density buffer
-                wgpu::Binding {
-                    binding: 3,
-                    resource: wgpu::BindingResource::Buffer {
-                        buffer: &density_buffer,
-                        range: 0..density_buffer_size,
-                    },
-                },
-                // Uniforms
-                wgpu::Binding {
-                    binding: 4,
-                    resource: wgpu::BindingResource::Buffer {
-                        buffer: &uniform_buf,
-                        range: 0..compute_uniform_size,
-                    },
-                },
-            ],
-        });
-        let compute_bind_group_b = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &compute_bind_group_layout,
-            bindings: &[
-                // Particle storage buffer
-                wgpu::Binding {
-                    binding: 0,
-                    resource: wgpu::BindingResource::Buffer {
-                        buffer: &emitter.particle_buffer,
-                        range: 0..particle_buffer_size,
-                    },
-                },
-                // Bottom level buffer(B)
-                wgpu::Binding {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Buffer {
-                        buffer: &terrain_buffer_b,
-                        range: 0..terrain_buffer_b_size,
-                    },
-                },
-                // Top level buffer(A)
-                wgpu::Binding {
-                    binding: 2,
-                    resource: wgpu::BindingResource::Buffer {
-                        buffer: &terrain_buffer_a,
-                        range: 0..terrain_buffer_a_size,
-                    },
-                },
-                // Particle density buffer
-                wgpu::Binding {
-                    binding: 3,
-                    resource: wgpu::BindingResource::Buffer {
-                        buffer: &density_buffer,
-                        range: 0..density_buffer_size,
-                    },
-                },
-                // Uniforms
-                wgpu::Binding {
-                    binding: 4,
-                    resource: wgpu::BindingResource::Buffer {
-                        buffer: &uniform_buf,
-                        range: 0..compute_uniform_size,
-                    },
-                },
-            ],
-        });
         let compute_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 bind_group_layouts: &[&compute_bind_group_layout],
             });
+
+        let particle_buffer_size = (num_particles
+            * std::mem::size_of::<super::emitter::Particle>() as u32)
+            as wgpu::BufferAddress;
+
+        let mut compute_bind_groups = vec![];
+        let terrain_buffer_size = level_manager.terrain_buffer_size();
+        for config in level_manager.buffer_configurations() {
+            compute_bind_groups.push(device.create_bind_group(&wgpu::BindGroupDescriptor {
+                layout: &compute_bind_group_layout,
+                bindings: &[
+                    // Particle storage buffer
+                    wgpu::Binding {
+                        binding: 0,
+                        resource: wgpu::BindingResource::Buffer {
+                            buffer: &emitter.particle_buffer,
+                            range: 0..particle_buffer_size,
+                        },
+                    },
+                    wgpu::Binding {
+                        binding: 1,
+                        resource: wgpu::BindingResource::Buffer {
+                            buffer: &level_manager.terrain_buffers()[config[0]],
+                            range: 0..terrain_buffer_size as wgpu::BufferAddress,
+                        },
+                    },
+                    wgpu::Binding {
+                        binding: 2,
+                        resource: wgpu::BindingResource::Buffer {
+                            buffer: &level_manager.terrain_buffers()[config[1]],
+                            range: 0..terrain_buffer_size as wgpu::BufferAddress,
+                        },
+                    },
+                    // Particle density buffer
+                    wgpu::Binding {
+                        binding: 3,
+                        resource: wgpu::BindingResource::Buffer {
+                            buffer: &density_buffer,
+                            range: 0..density_buffer_size,
+                        },
+                    },
+                    // Uniforms
+                    wgpu::Binding {
+                        binding: 4,
+                        resource: wgpu::BindingResource::Buffer {
+                            buffer: &uniform_buf,
+                            range: 0..compute_uniform_size,
+                        },
+                    },
+                ],
+            }));
+        }
+
         let cs = super::shader_utils::Shaders::get("particle_system/particles.comp.spv").unwrap();
         let cs_module =
             device.create_shader_module(&wgpu::read_spirv(std::io::Cursor::new(&cs[..])).unwrap());
@@ -407,39 +278,34 @@ impl ComputeLocals {
             system_params: *params,
             emitter,
             compute_work_groups,
-            compute_bind_group_a,
-            compute_bind_group_b,
-            terrain_buffer_a,
-            terrain_buffer_a_size,
-            terrain_buffer_b,
-            terrain_buffer_b_size,
             density_buffer,
             density_buffer_size,
             uniform_buf,
             compute_pipeline,
+            compute_bind_groups,
             clear_work_groups,
             clear_bind_group,
             clear_pipeline,
         }
     }
 
-    pub fn update_uniforms(
+    pub fn update_state(
         &mut self,
         device: &wgpu::Device,
-        encoder: &mut wgpu::CommandEncoder,
-        dt: f32,
         game_params: &super::game_params::GameParams,
+        level_manager: &super::level_manager::LevelManager,
+        dt: f32,
+        encoder: &mut wgpu::CommandEncoder,
     ) {
-        // Update simulation
         let compute_uniforms = ComputeUniforms {
             dt,
             level_width: game_params.level_width,
             level_height: game_params.level_height,
-            bottom_level_height: 0,
-            middle_level_height: game_params.level_height,
-            top_level_height: game_params.level_height * 2,
+            bottom_level_height: level_manager.buffer_height(0) as u32,
+            middle_level_height: level_manager.buffer_height(1) as u32,
+            top_level_height: level_manager.buffer_height(1) as u32 + game_params.level_height,
             viewport_height: game_params.viewport_height,
-            viewport_bottom_height: 0,
+            viewport_bottom_height: level_manager.height_of_viewport() as u32,
             damage_rate: DAMAGE_RATE.flag,
         };
         self.set_uniforms(device, encoder, &compute_uniforms);
@@ -465,12 +331,18 @@ impl ComputeLocals {
         );
     }
 
-    pub fn compute(&self, encoder: &mut wgpu::CommandEncoder) {
-        // Update the particles state and density texture.
-        // TODO also allow bind group b
+    pub fn compute(
+        &self,
+        level_manager: &super::level_manager::LevelManager,
+        encoder: &mut wgpu::CommandEncoder,
+    ) {
         let mut cpass = encoder.begin_compute_pass();
         cpass.set_pipeline(&self.compute_pipeline);
-        cpass.set_bind_group(0, &self.compute_bind_group_a, &[]);
+        cpass.set_bind_group(
+            0,
+            &self.compute_bind_groups[level_manager.buffer_config_index()],
+            &[],
+        );
         cpass.dispatch(self.compute_work_groups as u32, 1, 1);
     }
 

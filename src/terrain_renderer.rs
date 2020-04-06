@@ -1,22 +1,68 @@
+use zerocopy::AsBytes;
+
 // Keep track of the rendering members and logic to turn the integer particle
 // density texture into a colormapped texture ready to be visualized.
 pub struct TerrainRenderer {
-    pub render_bind_group_a: wgpu::BindGroup,
-    pub render_bind_group_b: wgpu::BindGroup,
+    pub render_bind_groups: std::vec::Vec<wgpu::BindGroup>,
     pub render_pipeline: wgpu::RenderPipeline,
+    pub uniform_buf: wgpu::Buffer,
 }
 
 #[repr(C)]
 #[derive(Clone, Copy, zerocopy::FromBytes, zerocopy::AsBytes)]
 struct FragmentUniforms {
-    pub width: u32,
-    pub height: u32,
+    pub viewport_width: u32,
+    pub viewport_height: u32,
+
+    pub height_of_viewport: i32,
+    pub height_of_bottom_buffer: i32,
+    pub height_of_top_buffer: i32,
 }
 
 impl TerrainRenderer {
+    pub fn update_render_state(
+        &mut self,
+        device: &wgpu::Device,
+        game_params: &super::game_params::GameParams,
+        level_manager: &super::level_manager::LevelManager,
+        encoder: &mut wgpu::CommandEncoder,
+    ) {
+        let uniforms = FragmentUniforms {
+            viewport_width: game_params.level_width,
+            viewport_height: game_params.viewport_height,
+            height_of_viewport: level_manager.height_of_viewport(),
+            height_of_bottom_buffer: level_manager.buffer_height(0),
+            height_of_top_buffer: level_manager.buffer_height(1),
+        };
+        self.set_uniforms(device, encoder, &uniforms);
+    }
+
+    fn set_uniforms(
+        &mut self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        values: &FragmentUniforms,
+    ) {
+        let bytes: &[u8] = values.as_bytes();
+        let uniform_buf_size = std::mem::size_of::<FragmentUniforms>();
+        // TODO Can we keep a persistent staging buffer around?
+        let temp_buf = device
+            .create_buffer_mapped(uniform_buf_size, wgpu::BufferUsage::COPY_SRC)
+            .fill_from_slice(bytes);
+        encoder.copy_buffer_to_buffer(
+            &temp_buf,
+            0,
+            &self.uniform_buf,
+            0,
+            uniform_buf_size as wgpu::BufferAddress,
+        );
+    }
+
     pub fn init(
         device: &wgpu::Device,
         compute_locals: &super::particle_system::ComputeLocals,
+        game_params: &super::game_params::GameParams,
+        level_manager: &super::level_manager::LevelManager,
     ) -> Self {
         // Sets up the quad canvas.
         let vs = super::shader_utils::Shaders::get("particle_system/quad.vert.spv").unwrap();
@@ -29,11 +75,14 @@ impl TerrainRenderer {
 
         let fragment_uniform_size = std::mem::size_of::<FragmentUniforms>() as wgpu::BufferAddress;
         let fragment_uniforms = FragmentUniforms {
-            width: compute_locals.system_params.width,
-            height: compute_locals.system_params.height,
+            viewport_width: compute_locals.system_params.width,
+            viewport_height: compute_locals.system_params.height,
+            height_of_viewport: 0,
+            height_of_bottom_buffer: 0,
+            height_of_top_buffer: 0,
         };
         let uniform_buf = device
-            .create_buffer_mapped(1, wgpu::BufferUsage::UNIFORM)
+            .create_buffer_mapped(1, wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST)
             .fill_from_slice(&[fragment_uniforms]);
 
         // Create pipeline layout
@@ -66,60 +115,38 @@ impl TerrainRenderer {
                     },
                 ],
             });
-        // TODO bind in second terrain texture when the fragment supports it.
-        let render_bind_group_a = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &render_bind_group_layout,
-            bindings: &[
-                wgpu::Binding {
-                    binding: 0,
-                    resource: wgpu::BindingResource::Buffer {
-                        buffer: &compute_locals.terrain_buffer_a,
-                        range: 0..compute_locals.terrain_buffer_a_size,
-                    },
-                },
-                wgpu::Binding {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Buffer {
-                        buffer: &compute_locals.terrain_buffer_b,
-                        range: 0..compute_locals.terrain_buffer_b_size,
-                    },
-                },
-                wgpu::Binding {
-                    binding: 2,
-                    resource: wgpu::BindingResource::Buffer {
-                        buffer: &uniform_buf,
-                        range: 0..fragment_uniform_size,
-                    },
-                },
-            ],
-        });
 
-        let render_bind_group_b = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &render_bind_group_layout,
-            bindings: &[
-                wgpu::Binding {
-                    binding: 0,
-                    resource: wgpu::BindingResource::Buffer {
-                        buffer: &compute_locals.terrain_buffer_b,
-                        range: 0..compute_locals.terrain_buffer_b_size,
+        let mut render_bind_groups = vec![];
+        let terrain_buffer_size = level_manager.terrain_buffer_size();
+        for config in level_manager.buffer_configurations() {
+            render_bind_groups.push(device.create_bind_group(&wgpu::BindGroupDescriptor {
+                layout: &render_bind_group_layout,
+                bindings: &[
+                    wgpu::Binding {
+                        binding: 0,
+                        resource: wgpu::BindingResource::Buffer {
+                            buffer: &level_manager.terrain_buffers()[config[0]],
+                            range: 0..terrain_buffer_size as wgpu::BufferAddress,
+                        },
                     },
-                },
-                wgpu::Binding {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Buffer {
-                        buffer: &compute_locals.terrain_buffer_a,
-                        range: 0..compute_locals.terrain_buffer_a_size,
+                    wgpu::Binding {
+                        binding: 1,
+                        resource: wgpu::BindingResource::Buffer {
+                            buffer: &level_manager.terrain_buffers()[config[1]],
+                            range: 0..terrain_buffer_size as wgpu::BufferAddress,
+                        },
                     },
-                },
-                wgpu::Binding {
-                    binding: 2,
-                    resource: wgpu::BindingResource::Buffer {
-                        buffer: &uniform_buf,
-                        range: 0..fragment_uniform_size,
+                    wgpu::Binding {
+                        binding: 2,
+                        resource: wgpu::BindingResource::Buffer {
+                            buffer: &uniform_buf,
+                            range: 0..fragment_uniform_size,
+                        },
                     },
-                },
-            ],
-        });
+                ],
+            }));
+        }
+
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 bind_group_layouts: &[&render_bind_group_layout],
@@ -157,16 +184,17 @@ impl TerrainRenderer {
             alpha_to_coverage_enabled: false,
         });
         TerrainRenderer {
-            render_bind_group_a,
-            render_bind_group_b,
+            render_bind_groups,
             render_pipeline,
+            uniform_buf,
         }
     }
 
     pub fn render(
         &self,
-        encoder: &mut wgpu::CommandEncoder,
+        level_manager: &super::level_manager::LevelManager,
         output_texture_view: &wgpu::TextureView,
+        encoder: &mut wgpu::CommandEncoder,
     ) {
         // Render the density texture.
         let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -180,7 +208,11 @@ impl TerrainRenderer {
             depth_stencil_attachment: None,
         });
         rpass.set_pipeline(&self.render_pipeline);
-        rpass.set_bind_group(0, &self.render_bind_group_a, &[]);
+        rpass.set_bind_group(
+            0,
+            &self.render_bind_groups[level_manager.buffer_config_index()],
+            &[],
+        );
         rpass.draw(0..4 as u32, 0..1);
     }
 }
