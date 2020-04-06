@@ -39,7 +39,6 @@ struct GameState {
     prev_input_state: InputState,
     ship_state: spout::ship::ShipState,
     score: i32,
-    viewport_bottom_height: i32,
     paused: bool,
 }
 
@@ -95,7 +94,21 @@ impl Example {
         self.state.score = std::cmp::max(ship_height, self.state.score as i32);
         let viewport_bottom_height =
             self.state.score - (self.game_params.viewport_height / 2) as i32;
-        self.level_manager.sync_height(viewport_bottom_height);
+        self.level_manager
+            .sync_height(device, std::cmp::max(0, viewport_bottom_height), encoder);
+        self.terrain_renderer.update_render_state(
+            device,
+            &self.game_params,
+            &self.level_manager,
+            encoder,
+        );
+        self.compute_locals.update_state(
+            device,
+            &self.game_params,
+            &self.level_manager,
+            dt,
+            encoder,
+        );
 
         // Emit particles
         if input_state.forward {
@@ -106,11 +119,6 @@ impl Example {
                 &ship_state.emit_params,
             );
         }
-
-        // Update simulation
-        self.compute_locals
-            .update_uniforms(device, encoder, dt, &self.game_params);
-        // self.terrain_renderer.u
     }
 
     fn make_texture(device: &wgpu::Device, width: u32, height: u32) -> wgpu::TextureView {
@@ -152,12 +160,15 @@ impl framework::Example for Example {
             height,
             max_particle_life: 5.0,
         };
+        let level_manager =
+            spout::level_manager::LevelManager::init(device, &game_params, 0, &mut init_encoder);
 
         let compute_locals = spout::particle_system::ComputeLocals::init(
             device,
-            &mut init_encoder,
             &system_params,
             &game_params,
+            &level_manager,
+            &mut init_encoder,
         );
         let pre_glow_texture_view = Example::make_texture(
             device,
@@ -175,8 +186,12 @@ impl framework::Example for Example {
             game_params.viewport_height,
         );
 
-        let terrain_renderer =
-            spout::terrain_renderer::TerrainRenderer::init(device, &compute_locals);
+        let terrain_renderer = spout::terrain_renderer::TerrainRenderer::init(
+            device,
+            &compute_locals,
+            &game_params,
+            &level_manager,
+        );
 
         let particle_renderer = spout::particle_system::ParticleRenderer::init(
             device,
@@ -217,6 +232,7 @@ impl framework::Example for Example {
                 score: 0,
                 paused: false,
             },
+            level_manager,
             compute_locals: compute_locals,
             pre_glow_texture: pre_glow_texture_view,
             post_glow_texture: post_glow_texture_view,
@@ -303,7 +319,8 @@ impl framework::Example for Example {
             }
             {
                 // Update the particles state and density texture.
-                self.compute_locals.compute(&mut encoder);
+                self.compute_locals
+                    .compute(&self.level_manager, &mut encoder);
             }
         }
         {
@@ -322,8 +339,11 @@ impl framework::Example for Example {
             }
             {
                 // Render the terrain
-                self.terrain_renderer
-                    .render(&mut encoder, &self.pre_glow_texture);
+                self.terrain_renderer.render(
+                    &self.level_manager,
+                    &self.pre_glow_texture,
+                    &mut encoder,
+                );
             }
             {
                 // Render the density texture.
