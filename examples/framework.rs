@@ -26,7 +26,7 @@ pub trait Example: 'static + Sized {
     ) -> wgpu::CommandBuffer;
 }
 
-pub fn run<E: Example>(title: &str) {
+async fn run_async<E: Example>(title: &str) {
     use winit::{
         event,
         event_loop::{ControlFlow, EventLoop},
@@ -83,25 +83,31 @@ pub fn run<E: Example>(title: &str) {
 
     window.set_cursor_visible(false);
 
-    let adapter = wgpu::Adapter::request(&wgpu::RequestAdapterOptions {
-        power_preference: wgpu::PowerPreference::Default,
-        backends: wgpu::BackendBit::PRIMARY,
-    })
+    let adapter = wgpu::Adapter::request(
+        &wgpu::RequestAdapterOptions {
+            power_preference: wgpu::PowerPreference::Default,
+            compatible_surface: Some(&surface),
+        },
+        wgpu::BackendBit::PRIMARY,
+    )
+    .await
     .unwrap();
 
-    let (device, mut queue) = adapter.request_device(&wgpu::DeviceDescriptor {
-        extensions: wgpu::Extensions {
-            anisotropic_filtering: false,
-        },
-        limits: wgpu::Limits::default(),
-    });
+    let (device, queue) = adapter
+        .request_device(&wgpu::DeviceDescriptor {
+            extensions: wgpu::Extensions {
+                anisotropic_filtering: false,
+            },
+            limits: wgpu::Limits::default(),
+        })
+        .await;
 
     let mut sc_desc = wgpu::SwapChainDescriptor {
         usage: wgpu::TextureUsage::OUTPUT_ATTACHMENT,
         format: wgpu::TextureFormat::Bgra8UnormSrgb,
         width: size.width,
         height: size.height,
-        present_mode: wgpu::PresentMode::Vsync,
+        present_mode: wgpu::PresentMode::Immediate,
     };
     let mut swap_chain = device.create_swap_chain(&surface, &sc_desc);
 
@@ -161,13 +167,19 @@ pub fn run<E: Example>(title: &str) {
             },
             event::Event::MainEventsCleared => window.request_redraw(),
             event::Event::RedrawRequested(_) => {
-                let frame = swap_chain.get_next_texture();
+                let frame = swap_chain
+                    .get_next_texture()
+                    .expect("Timeout when acquiring next swap chain texture");
                 let command_buf = example.render(&frame, &device);
                 queue.submit(&[command_buf]);
             }
             _ => (),
         }
     });
+}
+
+pub fn run<E: Example>(title: &str) {
+    futures::executor::block_on(run_async::<E>(title));
 }
 
 // This allows treating the framework as a standalone example,

@@ -46,9 +46,7 @@ impl TerrainRenderer {
         let bytes: &[u8] = values.as_bytes();
         let uniform_buf_size = std::mem::size_of::<FragmentUniforms>();
         // TODO Can we keep a persistent staging buffer around?
-        let temp_buf = device
-            .create_buffer_mapped(uniform_buf_size, wgpu::BufferUsage::COPY_SRC)
-            .fill_from_slice(bytes);
+        let temp_buf = device.create_buffer_with_data(bytes, wgpu::BufferUsage::COPY_SRC);
         encoder.copy_buffer_to_buffer(
             &temp_buf,
             0,
@@ -81,16 +79,17 @@ impl TerrainRenderer {
             height_of_bottom_buffer: 0,
             height_of_top_buffer: 0,
         };
-        let uniform_buf = device
-            .create_buffer_mapped(1, wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST)
-            .fill_from_slice(&[fragment_uniforms]);
+        let uniform_buf = device.create_buffer_with_data(
+            &fragment_uniforms.as_bytes(),
+            wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
+        );
 
         // Create pipeline layout
         let render_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 bindings: &[
                     // Bottom terrain buffer
-                    wgpu::BindGroupLayoutBinding {
+                    wgpu::BindGroupLayoutEntry {
                         binding: 0,
                         visibility: wgpu::ShaderStage::FRAGMENT,
                         ty: wgpu::BindingType::StorageBuffer {
@@ -99,7 +98,7 @@ impl TerrainRenderer {
                         },
                     },
                     // Top terrain buffer
-                    wgpu::BindGroupLayoutBinding {
+                    wgpu::BindGroupLayoutEntry {
                         binding: 1,
                         visibility: wgpu::ShaderStage::FRAGMENT,
                         ty: wgpu::BindingType::StorageBuffer {
@@ -108,12 +107,13 @@ impl TerrainRenderer {
                         },
                     },
                     // Uniform inputs
-                    wgpu::BindGroupLayoutBinding {
+                    wgpu::BindGroupLayoutEntry {
                         binding: 2,
                         visibility: wgpu::ShaderStage::FRAGMENT,
                         ty: wgpu::BindingType::UniformBuffer { dynamic: false },
                     },
                 ],
+                label: None,
             });
 
         let mut render_bind_groups = vec![];
@@ -144,6 +144,7 @@ impl TerrainRenderer {
                         },
                     },
                 ],
+                label: None,
             }));
         }
 
@@ -177,8 +178,10 @@ impl TerrainRenderer {
                 write_mask: wgpu::ColorWrite::ALL,
             }],
             depth_stencil_state: None,
-            index_format: wgpu::IndexFormat::Uint16,
-            vertex_buffers: &[],
+            vertex_state: wgpu::VertexStateDescriptor {
+                index_format: wgpu::IndexFormat::Uint16,
+                vertex_buffers: &[],
+            },
             sample_count: 1,
             sample_mask: !0,
             alpha_to_coverage_enabled: false,

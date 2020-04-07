@@ -135,6 +135,7 @@ impl Example {
                 dimension: wgpu::TextureDimension::D2,
                 format: wgpu::TextureFormat::Bgra8UnormSrgb,
                 usage: wgpu::TextureUsage::SAMPLED | wgpu::TextureUsage::OUTPUT_ATTACHMENT,
+                label: None,
             })
             .create_default_view()
     }
@@ -146,7 +147,7 @@ impl framework::Example for Example {
         device: &wgpu::Device,
     ) -> (Self, Option<wgpu::CommandBuffer>) {
         let mut init_encoder =
-            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { todo: 0 });
+            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
         let game_params = spout::game_params::GameParams {
             viewport_width: WIDTH.flag,
             viewport_height: HEIGHT.flag,
@@ -290,7 +291,7 @@ impl framework::Example for Example {
         device: &wgpu::Device,
     ) -> Option<wgpu::CommandBuffer> {
         let mut encoder =
-            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { todo: 0 });
+            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
         let viewport_aspect_ratio =
             self.game_params.viewport_width as f64 / self.game_params.viewport_height as f64;
         let new_window_aspect_ratio = sc_desc.width as f64 / sc_desc.height as f64;
@@ -308,7 +309,7 @@ impl framework::Example for Example {
         device: &wgpu::Device,
     ) -> wgpu::CommandBuffer {
         let mut encoder =
-            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { todo: 0 });
+            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
         self.update_state(device, &mut encoder);
         self.state.prev_input_state = self.state.input_state;
 

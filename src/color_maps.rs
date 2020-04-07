@@ -74,29 +74,24 @@ pub fn create_color_map(
         usage: wgpu::TextureUsage::SAMPLED
             | wgpu::TextureUsage::COPY_DST
             | wgpu::TextureUsage::COPY_SRC,
+        label: None,
     });
-    let temp_buf = device
-        .create_buffer_mapped(
-            data.len(),
-            wgpu::BufferUsage::COPY_SRC | wgpu::BufferUsage::COPY_DST | wgpu::BufferUsage::MAP_READ,
-        )
-        .fill_from_slice(&data);
+    let temp_buf = device.create_buffer_with_data(
+        &data,
+        wgpu::BufferUsage::COPY_SRC | wgpu::BufferUsage::COPY_DST | wgpu::BufferUsage::MAP_READ,
+    );
     encoder.copy_buffer_to_texture(
         wgpu::BufferCopyView {
             buffer: &temp_buf,
             offset: 0,
-            row_pitch: 4 * size,
-            image_height: 1,
+            bytes_per_row: 4 * size,
+            rows_per_image: 1,
         },
         wgpu::TextureCopyView {
             texture: &texture,
             mip_level: 0,
             array_layer: 0,
-            origin: wgpu::Origin3d {
-                x: 0.0,
-                y: 0.0,
-                z: 0.0,
-            },
+            origin: wgpu::Origin3d::ZERO,
         },
         texture_extent,
     );

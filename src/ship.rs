@@ -135,6 +135,7 @@ impl ShipRenderer {
                 | wgpu::TextureUsage::OUTPUT_ATTACHMENT
                 | wgpu::TextureUsage::COPY_DST
                 | wgpu::TextureUsage::SAMPLED,
+            label: None,
         });
         let ship_texture_view = ship_texture.create_default_view();
 
@@ -145,9 +146,10 @@ impl ShipRenderer {
             position: [0, 0],
             angle: 0.0,
         };
-        let uniform_buf = device
-            .create_buffer_mapped(1, wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST)
-            .fill_from_slice(&[compute_uniforms]);
+        let uniform_buf = device.create_buffer_with_data(
+            &compute_uniforms.as_bytes(),
+            wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
+        );
 
         // Sets up the quad canvas.
         let vs = super::shader_utils::Shaders::get("particle_system/ship.vert.spv").unwrap();
@@ -162,12 +164,13 @@ impl ShipRenderer {
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 bindings: &[
                     // Uniform inputs
-                    wgpu::BindGroupLayoutBinding {
+                    wgpu::BindGroupLayoutEntry {
                         binding: 0,
                         visibility: wgpu::ShaderStage::VERTEX,
                         ty: wgpu::BindingType::UniformBuffer { dynamic: false },
                     },
                 ],
+                label: None,
             });
         let render_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &render_bind_group_layout,
@@ -181,6 +184,7 @@ impl ShipRenderer {
                     },
                 },
             ],
+            label: None,
         });
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -211,9 +215,11 @@ impl ShipRenderer {
                 alpha_blend: wgpu::BlendDescriptor::REPLACE,
                 write_mask: wgpu::ColorWrite::ALL,
             }],
+            vertex_state: wgpu::VertexStateDescriptor {
+                index_format: wgpu::IndexFormat::Uint16,
+                vertex_buffers: &[],
+            },
             depth_stencil_state: None,
-            index_format: wgpu::IndexFormat::Uint16,
-            vertex_buffers: &[],
             sample_count: 1,
             sample_mask: !0,
             alpha_to_coverage_enabled: false,
@@ -246,9 +252,7 @@ impl ShipRenderer {
         };
         let bytes: &[u8] = values.as_bytes();
         let uniform_buf_size = std::mem::size_of::<RenderUniforms>();
-        let temp_buf = device
-            .create_buffer_mapped(uniform_buf_size, wgpu::BufferUsage::COPY_SRC)
-            .fill_from_slice(bytes);
+        let temp_buf = device.create_buffer_with_data(bytes, wgpu::BufferUsage::COPY_SRC);
         encoder.copy_buffer_to_buffer(
             &temp_buf,
             0,
