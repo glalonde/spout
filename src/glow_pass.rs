@@ -8,7 +8,7 @@ pub struct GlowRenderer {
 impl GlowRenderer {
     pub fn init(device: &wgpu::Device, input_texture: &wgpu::TextureView) -> Self {
         // Sets up the quad canvas.
-        let vs = super::shader_utils::Shaders::get("particle_system/quad.vert.spv").unwrap();
+        let vs = super::shader_utils::Shaders::get("particle_system/flip_quad.vert.spv").unwrap();
         let vs_module =
             device.create_shader_module(&wgpu::read_spirv(std::io::Cursor::new(&vs[..])).unwrap());
         // Renders the data texture onto the canvas.

@@ -41,12 +41,9 @@ async fn run_async<E: Example>(title: &str) {
     let event_loop = EventLoop::new();
     log::info!("Initializing the window...");
 
-    #[cfg(not(feature = "gl"))]
     let (window, size, surface) = {
-        use winit::platform::unix::WindowBuilderExtUnix;
         let window = winit::window::WindowBuilder::new()
             .with_title(title)
-            .with_x11_window_type(vec![winit::platform::unix::XWindowType::Splash])
             .with_decorations(false)
             .with_inner_size(winit::dpi::Size::from(winit::dpi::LogicalSize::new(
                 640 * 2,
@@ -57,28 +54,6 @@ async fn run_async<E: Example>(title: &str) {
         let size = window.inner_size();
         let surface = wgpu::Surface::create(&window);
         (window, size, surface)
-    };
-
-    #[cfg(feature = "gl")]
-    let (window, instance, size, surface) = {
-        let wb = winit::WindowBuilder::new();
-        let cb = wgpu::glutin::ContextBuilder::new().with_vsync(true);
-        let context = cb.build_windowed(wb, &event_loop).unwrap();
-        context.window().set_title(title);
-
-        let hidpi_factor = context.window().hidpi_factor();
-        let size = context
-            .window()
-            .get_inner_size()
-            .unwrap()
-            .to_physical(hidpi_factor);
-
-        let (context, window) = unsafe { context.make_current().unwrap().split() };
-
-        let instance = wgpu::Instance::new(context);
-        let surface = instance.get_surface();
-
-        (window, instance, size, surface)
     };
 
     window.set_cursor_visible(false);

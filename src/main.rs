@@ -362,6 +362,7 @@ impl framework::Example for Example {
                     &self.post_glow_texture,
                     device,
                     &self.state.ship_state,
+                    &self.level_manager,
                     self.game_params.viewport_width,
                     self.game_params.viewport_height,
                     &mut encoder,

@@ -17,6 +17,15 @@ gflags::define! {
     --emit_velocity_spread: f32 = 0.5
 }
 
+#[cfg_attr(rustfmt, rustfmt_skip)]
+#[allow(unused)]
+pub const OPENGL_TO_WGPU_MATRIX: cgmath::Matrix4<f32> = cgmath::Matrix4::new(
+    1.0, 0.0, 0.0, 0.0,
+    0.0, 1.0, 0.0, 0.0,
+    0.0, 0.0, 0.5, 0.0,
+    0.0, 0.0, 0.5, 1.0,
+);
+
 #[repr(i8)]
 #[derive(Copy, Clone)]
 pub enum RotationDirection {
@@ -234,11 +243,20 @@ impl ShipRenderer {
         }
     }
 
+    fn generate_orthographic_matrix(
+        level_manager: &super::level_manager::LevelManager,
+    ) -> cgmath::Matrix4<f32> {
+        let mx_projection = cgmath::ortho(-1.0, 1.0, -1.0, 1.0, 0.0, 1.0);
+        let mx_correction = OPENGL_TO_WGPU_MATRIX;
+        mx_correction * mx_projection
+    }
+
     pub fn render(
         &self,
         texture_view: &wgpu::TextureView,
         device: &wgpu::Device,
         ship: &ShipState,
+        level_manager: &super::level_manager::LevelManager,
         width: u32,
         height: u32,
         encoder: &mut wgpu::CommandEncoder,
@@ -246,7 +264,7 @@ impl ShipRenderer {
         // Update the ship orientation uniforms.
         let values = RenderUniforms {
             width,
-            height,
+            height: height - level_manager.viewport_height,
             position: ship.position,
             angle: ship.orientation,
         };
