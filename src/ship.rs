@@ -1,4 +1,4 @@
-use log::trace;
+use log::{info, trace};
 use zerocopy::AsBytes;
 
 gflags::define! {
@@ -111,8 +111,7 @@ impl ShipState {
 #[repr(C)]
 #[derive(Clone, Copy, zerocopy::FromBytes, zerocopy::AsBytes)]
 pub struct RenderUniforms {
-    pub width: u32,
-    pub height: u32,
+    pub projection_matrix: [[f32; 4]; 4],
     pub position: [u32; 2],
     pub angle: f32,
 }
@@ -150,8 +149,7 @@ impl ShipRenderer {
 
         let compute_uniform_size = std::mem::size_of::<RenderUniforms>() as wgpu::BufferAddress;
         let compute_uniforms = RenderUniforms {
-            width,
-            height,
+            projection_matrix: [[0.0; 4]; 4],
             position: [0, 0],
             angle: 0.0,
         };
@@ -246,7 +244,15 @@ impl ShipRenderer {
     fn generate_orthographic_matrix(
         level_manager: &super::level_manager::LevelManager,
     ) -> cgmath::Matrix4<f32> {
-        let mx_projection = cgmath::ortho(-1.0, 1.0, -1.0, 1.0, 0.0, 1.0);
+        let viewport_bottom = level_manager.height_of_viewport as f32;
+        let mx_projection = cgmath::ortho(
+            0.0,
+            level_manager.level_width as f32,
+            viewport_bottom,
+            viewport_bottom + level_manager.viewport_height as f32,
+            0.0,
+            1.0,
+        );
         let mx_correction = OPENGL_TO_WGPU_MATRIX;
         mx_correction * mx_projection
     }
@@ -257,17 +263,19 @@ impl ShipRenderer {
         device: &wgpu::Device,
         ship: &ShipState,
         level_manager: &super::level_manager::LevelManager,
-        width: u32,
-        height: u32,
         encoder: &mut wgpu::CommandEncoder,
     ) {
+        let view_projection = Self::generate_orthographic_matrix(level_manager);
         // Update the ship orientation uniforms.
         let values = RenderUniforms {
-            width,
-            height: height - level_manager.viewport_height,
+            projection_matrix: cgmath::conv::array4x4(view_projection),
             position: ship.position,
             angle: ship.orientation,
         };
+        info!(
+            "Ship: {:?}, viewport {:?}",
+            ship.position, level_manager.height_of_viewport
+        );
         let bytes: &[u8] = values.as_bytes();
         let uniform_buf_size = std::mem::size_of::<RenderUniforms>();
         let temp_buf = device.create_buffer_with_data(bytes, wgpu::BufferUsage::COPY_SRC);

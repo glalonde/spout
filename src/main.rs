@@ -363,8 +363,6 @@ impl framework::Example for Example {
                     device,
                     &self.state.ship_state,
                     &self.level_manager,
-                    self.game_params.viewport_width,
-                    self.game_params.viewport_height,
                     &mut encoder,
                 );
             }
@@ -399,7 +397,6 @@ impl framework::Example for Example {
         }
         {
             // Render the score
-            let dt = self.game_time.as_secs_f32();
             let width = self.game_params.viewport_width as f32;
             let height = self.game_params.viewport_height as f32;
             self.text_renderer.render_direct(
