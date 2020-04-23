@@ -13,7 +13,7 @@ gflags = "0.3"
 winit = { version = "0.20.0-alpha4", features = ["web-sys"] }
 scrub_log = "0.2"
 log = "0.4"
-wgpu = "0.4"
+wgpu = "0.5"
 walkdir = "2.2.9"
 lazy_static = "*"
 zerocopy = "0.2"
@@ -21,7 +21,8 @@ cgmath = "0.17"
 rand = "0.7"
 png = "0.15"
 scarlet = "1.1.0"
-wgpu_glyph = "0.7"
+wgpu_glyph = { git = "https://github.com/hecrj/wgpu_glyph", branch = "update-wgpu" }
+futures = "0.3"
 rodio = "0.11"
 crossbeam-channel = "0.4"
 rust-embed = { version = "5.5", features = ["interpolate-folder-path"] }

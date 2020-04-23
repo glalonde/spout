@@ -1,4 +1,5 @@
 use log::info;
+use zerocopy::AsBytes;
 
 #[derive(rust_embed::RustEmbed)]
 #[folder = "$OUT_DIR/shaders"]
@@ -24,26 +25,21 @@ pub fn create_default_texture(
         dimension: wgpu::TextureDimension::D2,
         format: wgpu::TextureFormat::Rgba8UnormSrgb,
         usage: wgpu::TextureUsage::SAMPLED | wgpu::TextureUsage::COPY_DST,
+        label: None,
     });
-    let temp_buf = device
-        .create_buffer_mapped(data.len(), wgpu::BufferUsage::COPY_SRC)
-        .fill_from_slice(&data);
+    let temp_buf = device.create_buffer_with_data(data.as_bytes(), wgpu::BufferUsage::COPY_SRC);
     encoder.copy_buffer_to_texture(
         wgpu::BufferCopyView {
             buffer: &temp_buf,
             offset: 0,
-            row_pitch: 4 * width,
-            image_height: height,
+            bytes_per_row: 4 * width,
+            rows_per_image: height,
         },
         wgpu::TextureCopyView {
             texture: &texture,
             mip_level: 0,
             array_layer: 0,
-            origin: wgpu::Origin3d {
-                x: 0.0,
-                y: 0.0,
-                z: 0.0,
-            },
+            origin: wgpu::Origin3d::ZERO,
         },
         texture_extent,
     );

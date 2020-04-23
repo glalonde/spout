@@ -1,4 +1,3 @@
-use log::info;
 use std::time::Duration;
 
 use rodio::source::Empty;

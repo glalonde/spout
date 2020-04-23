@@ -58,6 +58,7 @@ impl ComputeLocals {
                     | wgpu::BufferUsage::COPY_DST
                     | wgpu::BufferUsage::COPY_SRC
                     | wgpu::BufferUsage::STORAGE_READ,
+                label: None,
             }),
             size,
         )
@@ -102,15 +103,16 @@ impl ComputeLocals {
             viewport_bottom_height: 0,
             damage_rate: DAMAGE_RATE.flag,
         };
-        let uniform_buf = device
-            .create_buffer_mapped(1, wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST)
-            .fill_from_slice(&[compute_uniforms]);
+        let uniform_buf = device.create_buffer_with_data(
+            &compute_uniforms.as_bytes(),
+            wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
+        );
 
         let compute_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 bindings: &[
                     // Particle storage buffer
-                    wgpu::BindGroupLayoutBinding {
+                    wgpu::BindGroupLayoutEntry {
                         binding: 0,
                         visibility: wgpu::ShaderStage::COMPUTE,
                         ty: wgpu::BindingType::StorageBuffer {
@@ -119,7 +121,7 @@ impl ComputeLocals {
                         },
                     },
                     // Bottom terrain buffer
-                    wgpu::BindGroupLayoutBinding {
+                    wgpu::BindGroupLayoutEntry {
                         binding: 1,
                         visibility: wgpu::ShaderStage::COMPUTE,
                         ty: wgpu::BindingType::StorageBuffer {
@@ -128,7 +130,7 @@ impl ComputeLocals {
                         },
                     },
                     // Top terrain buffer
-                    wgpu::BindGroupLayoutBinding {
+                    wgpu::BindGroupLayoutEntry {
                         binding: 2,
                         visibility: wgpu::ShaderStage::COMPUTE,
                         ty: wgpu::BindingType::StorageBuffer {
@@ -137,7 +139,7 @@ impl ComputeLocals {
                         },
                     },
                     // Particle density buffer
-                    wgpu::BindGroupLayoutBinding {
+                    wgpu::BindGroupLayoutEntry {
                         binding: 3,
                         visibility: wgpu::ShaderStage::COMPUTE,
                         ty: wgpu::BindingType::StorageBuffer {
@@ -146,12 +148,13 @@ impl ComputeLocals {
                         },
                     },
                     // Uniform inputs
-                    wgpu::BindGroupLayoutBinding {
+                    wgpu::BindGroupLayoutEntry {
                         binding: 4,
                         visibility: wgpu::ShaderStage::COMPUTE,
                         ty: wgpu::BindingType::UniformBuffer { dynamic: false },
                     },
                 ],
+                label: None,
             });
 
         let compute_pipeline_layout =
@@ -208,6 +211,7 @@ impl ComputeLocals {
                         },
                     },
                 ],
+                label: None,
             }));
         }
 
@@ -227,7 +231,7 @@ impl ComputeLocals {
                 device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                     bindings: &[
                         // Particle density buffer
-                        wgpu::BindGroupLayoutBinding {
+                        wgpu::BindGroupLayoutEntry {
                             binding: 0,
                             visibility: wgpu::ShaderStage::COMPUTE,
                             ty: wgpu::BindingType::StorageBuffer {
@@ -236,6 +240,7 @@ impl ComputeLocals {
                             },
                         },
                     ],
+                    label: None,
                 });
             let clear_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
                 layout: &clear_bind_group_layout,
@@ -249,6 +254,7 @@ impl ComputeLocals {
                         },
                     },
                 ],
+                label: None,
             });
 
             let clear_pipeline_layout =
@@ -319,9 +325,7 @@ impl ComputeLocals {
     ) {
         let bytes: &[u8] = values.as_bytes();
         let uniform_buf_size = std::mem::size_of::<ComputeUniforms>();
-        let temp_buf = device
-            .create_buffer_mapped(uniform_buf_size, wgpu::BufferUsage::COPY_SRC)
-            .fill_from_slice(bytes);
+        let temp_buf = device.create_buffer_with_data(bytes, wgpu::BufferUsage::COPY_SRC);
         encoder.copy_buffer_to_buffer(
             &temp_buf,
             0,
@@ -397,8 +401,7 @@ impl ParticleRenderer {
             height: compute_locals.system_params.height,
         };
         let uniform_buf = device
-            .create_buffer_mapped(1, wgpu::BufferUsage::UNIFORM)
-            .fill_from_slice(&[fragment_uniforms]);
+            .create_buffer_with_data(&fragment_uniforms.as_bytes(), wgpu::BufferUsage::UNIFORM);
 
         // The render pipeline renders data into this texture
         let color_map_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
@@ -410,7 +413,7 @@ impl ParticleRenderer {
             mipmap_filter: wgpu::FilterMode::Linear,
             lod_min_clamp: -100.0,
             lod_max_clamp: 100.0,
-            compare_function: wgpu::CompareFunction::Always,
+            compare: wgpu::CompareFunction::Always,
         });
 
         // Create pipeline layout
@@ -418,7 +421,7 @@ impl ParticleRenderer {
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 bindings: &[
                     // Particle density buffer
-                    wgpu::BindGroupLayoutBinding {
+                    wgpu::BindGroupLayoutEntry {
                         binding: 0,
                         visibility: wgpu::ShaderStage::FRAGMENT,
                         ty: wgpu::BindingType::StorageBuffer {
@@ -427,27 +430,29 @@ impl ParticleRenderer {
                         },
                     },
                     // Color map.
-                    wgpu::BindGroupLayoutBinding {
+                    wgpu::BindGroupLayoutEntry {
                         binding: 1,
                         visibility: wgpu::ShaderStage::FRAGMENT,
                         ty: wgpu::BindingType::SampledTexture {
+                            component_type: wgpu::TextureComponentType::Float,
                             multisampled: false,
                             dimension: wgpu::TextureViewDimension::D1,
                         },
                     },
                     // Color map sampler.
-                    wgpu::BindGroupLayoutBinding {
+                    wgpu::BindGroupLayoutEntry {
                         binding: 2,
                         visibility: wgpu::ShaderStage::FRAGMENT,
-                        ty: wgpu::BindingType::Sampler,
+                        ty: wgpu::BindingType::Sampler { comparison: false },
                     },
                     // Uniform inputs
-                    wgpu::BindGroupLayoutBinding {
+                    wgpu::BindGroupLayoutEntry {
                         binding: 3,
                         visibility: wgpu::ShaderStage::FRAGMENT,
                         ty: wgpu::BindingType::UniformBuffer { dynamic: false },
                     },
                 ],
+                label: None,
             });
         let render_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &render_bind_group_layout,
@@ -475,6 +480,7 @@ impl ParticleRenderer {
                     },
                 },
             ],
+            label: None,
         });
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -505,9 +511,11 @@ impl ParticleRenderer {
                 alpha_blend: wgpu::BlendDescriptor::REPLACE,
                 write_mask: wgpu::ColorWrite::ALL,
             }],
+            vertex_state: wgpu::VertexStateDescriptor {
+                index_format: wgpu::IndexFormat::Uint16,
+                vertex_buffers: &[],
+            },
             depth_stencil_state: None,
-            index_format: wgpu::IndexFormat::Uint16,
-            vertex_buffers: &[],
             sample_count: 1,
             sample_mask: !0,
             alpha_to_coverage_enabled: false,

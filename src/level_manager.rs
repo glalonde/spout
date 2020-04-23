@@ -1,4 +1,5 @@
 use log::info;
+use zerocopy::AsBytes;
 
 pub struct LevelManager {
     // Static params
@@ -100,13 +101,8 @@ impl LevelManager {
         height_of_viewport: i32,
         encoder: &mut wgpu::CommandEncoder,
     ) {
-        info!("SYNC HEIGHT: {}", height_of_viewport);
         let current_bottom_level = height_of_viewport / (self.level_height as i32);
         let current_top_level = current_bottom_level + 1;
-        info!(
-            "Current bottom: {}, current top: {}",
-            current_bottom_level, current_top_level
-        );
 
         self.make_levels_through(current_top_level);
 
@@ -164,6 +160,7 @@ impl LevelManager {
                 | wgpu::BufferUsage::COPY_DST
                 | wgpu::BufferUsage::COPY_SRC
                 | wgpu::BufferUsage::STORAGE_READ,
+            label: None,
         })
     }
 
@@ -173,16 +170,13 @@ impl LevelManager {
         new_level_assignment: &std::vec::Vec<i32>,
         encoder: &mut wgpu::CommandEncoder,
     ) {
-        info!("WHY AM I NOT MAKING IT HERE");
         // Find which buffer(s) has a new level, and load it.
         assert_eq!(self.buffer_levels.len(), new_level_assignment.len());
         let it = self.buffer_levels.iter().zip(new_level_assignment.iter());
 
         for (buffer_index, (old, new)) in it.enumerate() {
-            info!("checking buffer: {},  {} -> {}", buffer_index, old, new);
             if old != new {
                 // Drop the old level, and load in a new level
-                info!("Updating buffer: {} -> {}", old, new);
                 self.copy_level_to_buffer(device, *new, buffer_index, encoder);
             }
         }
@@ -199,14 +193,10 @@ impl LevelManager {
             panic!("Need a positive level num. Requested: {}", level_num);
         }
         let level_data = &self.levels[level_num as usize];
-        let temp_buf = device
-            .create_buffer_mapped(
-                level_data.len(),
-                wgpu::BufferUsage::COPY_SRC
-                    | wgpu::BufferUsage::COPY_DST
-                    | wgpu::BufferUsage::MAP_READ,
-            )
-            .fill_from_slice(&level_data);
+        let temp_buf = device.create_buffer_with_data(
+            level_data.as_bytes(),
+            wgpu::BufferUsage::COPY_SRC | wgpu::BufferUsage::COPY_DST | wgpu::BufferUsage::MAP_READ,
+        );
         encoder.copy_buffer_to_buffer(
             &temp_buf,
             0,

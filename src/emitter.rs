@@ -129,6 +129,7 @@ impl Emitter {
             device.create_buffer(&wgpu::BufferDescriptor {
                 size: buf_size,
                 usage: wgpu::BufferUsage::STORAGE,
+                label: Some("Particle storage"),
             }),
         )
     }
@@ -143,9 +144,10 @@ impl Emitter {
         };
         (
             std::mem::size_of::<EmitterUniforms>() as wgpu::BufferAddress,
-            device
-                .create_buffer_mapped(1, wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST)
-                .fill_from_slice(&[emitter_uniforms]),
+            device.create_buffer_with_data(
+                &emitter_uniforms.as_bytes(),
+                wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
+            ),
         )
     }
 
@@ -168,7 +170,7 @@ impl Emitter {
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 bindings: &[
                     // Particle storage buffer
-                    wgpu::BindGroupLayoutBinding {
+                    wgpu::BindGroupLayoutEntry {
                         binding: 0,
                         visibility: wgpu::ShaderStage::COMPUTE,
                         ty: wgpu::BindingType::StorageBuffer {
@@ -177,12 +179,13 @@ impl Emitter {
                         },
                     },
                     // Uniform inputs
-                    wgpu::BindGroupLayoutBinding {
+                    wgpu::BindGroupLayoutEntry {
                         binding: 1,
                         visibility: wgpu::ShaderStage::COMPUTE,
                         ty: wgpu::BindingType::UniformBuffer { dynamic: false },
                     },
                 ],
+                label: Some("Particle update layout"),
             });
 
         let compute_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -205,6 +208,7 @@ impl Emitter {
                     },
                 },
             ],
+            label: Some("Particle update binding"),
         });
         let compute_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -260,11 +264,9 @@ impl Emitter {
         uniform_buffer: &wgpu::Buffer,
         values: &EmitterUniforms,
     ) {
-        let bytes: &[u8] = values.as_bytes();
         let uniform_buf_size = std::mem::size_of::<EmitterUniforms>();
-        let temp_buf = device
-            .create_buffer_mapped(uniform_buf_size, wgpu::BufferUsage::COPY_SRC)
-            .fill_from_slice(bytes);
+        let temp_buf =
+            device.create_buffer_with_data(&values.as_bytes(), wgpu::BufferUsage::COPY_SRC);
         encoder.copy_buffer_to_buffer(
             &temp_buf,
             0,

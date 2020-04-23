@@ -1,4 +1,4 @@
-use log::trace;
+use log::{info, trace};
 use zerocopy::AsBytes;
 
 gflags::define! {
@@ -16,6 +16,15 @@ gflags::define! {
 gflags::define! {
     --emit_velocity_spread: f32 = 0.5
 }
+
+#[cfg_attr(rustfmt, rustfmt_skip)]
+#[allow(unused)]
+pub const OPENGL_TO_WGPU_MATRIX: cgmath::Matrix4<f32> = cgmath::Matrix4::new(
+    1.0, 0.0, 0.0, 0.0,
+    0.0, 1.0, 0.0, 0.0,
+    0.0, 0.0, 0.5, 0.0,
+    0.0, 0.0, 0.5, 1.0,
+);
 
 #[repr(i8)]
 #[derive(Copy, Clone)]
@@ -102,8 +111,7 @@ impl ShipState {
 #[repr(C)]
 #[derive(Clone, Copy, zerocopy::FromBytes, zerocopy::AsBytes)]
 pub struct RenderUniforms {
-    pub width: u32,
-    pub height: u32,
+    pub projection_matrix: [[f32; 4]; 4],
     pub position: [u32; 2],
     pub angle: f32,
 }
@@ -135,19 +143,20 @@ impl ShipRenderer {
                 | wgpu::TextureUsage::OUTPUT_ATTACHMENT
                 | wgpu::TextureUsage::COPY_DST
                 | wgpu::TextureUsage::SAMPLED,
+            label: None,
         });
         let ship_texture_view = ship_texture.create_default_view();
 
         let compute_uniform_size = std::mem::size_of::<RenderUniforms>() as wgpu::BufferAddress;
         let compute_uniforms = RenderUniforms {
-            width,
-            height,
+            projection_matrix: [[0.0; 4]; 4],
             position: [0, 0],
             angle: 0.0,
         };
-        let uniform_buf = device
-            .create_buffer_mapped(1, wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST)
-            .fill_from_slice(&[compute_uniforms]);
+        let uniform_buf = device.create_buffer_with_data(
+            &compute_uniforms.as_bytes(),
+            wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
+        );
 
         // Sets up the quad canvas.
         let vs = super::shader_utils::Shaders::get("particle_system/ship.vert.spv").unwrap();
@@ -162,12 +171,13 @@ impl ShipRenderer {
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 bindings: &[
                     // Uniform inputs
-                    wgpu::BindGroupLayoutBinding {
+                    wgpu::BindGroupLayoutEntry {
                         binding: 0,
                         visibility: wgpu::ShaderStage::VERTEX,
                         ty: wgpu::BindingType::UniformBuffer { dynamic: false },
                     },
                 ],
+                label: None,
             });
         let render_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &render_bind_group_layout,
@@ -181,6 +191,7 @@ impl ShipRenderer {
                     },
                 },
             ],
+            label: None,
         });
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -211,9 +222,11 @@ impl ShipRenderer {
                 alpha_blend: wgpu::BlendDescriptor::REPLACE,
                 write_mask: wgpu::ColorWrite::ALL,
             }],
+            vertex_state: wgpu::VertexStateDescriptor {
+                index_format: wgpu::IndexFormat::Uint16,
+                vertex_buffers: &[],
+            },
             depth_stencil_state: None,
-            index_format: wgpu::IndexFormat::Uint16,
-            vertex_buffers: &[],
             sample_count: 1,
             sample_mask: !0,
             alpha_to_coverage_enabled: false,
@@ -228,27 +241,44 @@ impl ShipRenderer {
         }
     }
 
+    fn generate_orthographic_matrix(
+        level_manager: &super::level_manager::LevelManager,
+    ) -> cgmath::Matrix4<f32> {
+        let viewport_bottom = level_manager.height_of_viewport as f32;
+        let mx_projection = cgmath::ortho(
+            0.0,
+            level_manager.level_width as f32,
+            viewport_bottom,
+            viewport_bottom + level_manager.viewport_height as f32,
+            0.0,
+            1.0,
+        );
+        let mx_correction = OPENGL_TO_WGPU_MATRIX;
+        mx_correction * mx_projection
+    }
+
     pub fn render(
         &self,
         texture_view: &wgpu::TextureView,
         device: &wgpu::Device,
         ship: &ShipState,
-        width: u32,
-        height: u32,
+        level_manager: &super::level_manager::LevelManager,
         encoder: &mut wgpu::CommandEncoder,
     ) {
+        let view_projection = Self::generate_orthographic_matrix(level_manager);
         // Update the ship orientation uniforms.
         let values = RenderUniforms {
-            width,
-            height,
+            projection_matrix: cgmath::conv::array4x4(view_projection),
             position: ship.position,
             angle: ship.orientation,
         };
+        info!(
+            "Ship: {:?}, viewport {:?}",
+            ship.position, level_manager.height_of_viewport
+        );
         let bytes: &[u8] = values.as_bytes();
         let uniform_buf_size = std::mem::size_of::<RenderUniforms>();
-        let temp_buf = device
-            .create_buffer_mapped(uniform_buf_size, wgpu::BufferUsage::COPY_SRC)
-            .fill_from_slice(bytes);
+        let temp_buf = device.create_buffer_with_data(bytes, wgpu::BufferUsage::COPY_SRC);
         encoder.copy_buffer_to_buffer(
             &temp_buf,
             0,

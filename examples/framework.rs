@@ -26,7 +26,7 @@ pub trait Example: 'static + Sized {
     ) -> wgpu::CommandBuffer;
 }
 
-pub fn run<E: Example>(title: &str) {
+async fn run_async<E: Example>(title: &str) {
     use winit::{
         event,
         event_loop::{ControlFlow, EventLoop},
@@ -41,12 +41,9 @@ pub fn run<E: Example>(title: &str) {
     let event_loop = EventLoop::new();
     log::info!("Initializing the window...");
 
-    #[cfg(not(feature = "gl"))]
     let (window, size, surface) = {
-        use winit::platform::unix::WindowBuilderExtUnix;
         let window = winit::window::WindowBuilder::new()
             .with_title(title)
-            .with_x11_window_type(vec![winit::platform::unix::XWindowType::Splash])
             .with_decorations(false)
             .with_inner_size(winit::dpi::Size::from(winit::dpi::LogicalSize::new(
                 640 * 2,
@@ -59,49 +56,33 @@ pub fn run<E: Example>(title: &str) {
         (window, size, surface)
     };
 
-    #[cfg(feature = "gl")]
-    let (window, instance, size, surface) = {
-        let wb = winit::WindowBuilder::new();
-        let cb = wgpu::glutin::ContextBuilder::new().with_vsync(true);
-        let context = cb.build_windowed(wb, &event_loop).unwrap();
-        context.window().set_title(title);
-
-        let hidpi_factor = context.window().hidpi_factor();
-        let size = context
-            .window()
-            .get_inner_size()
-            .unwrap()
-            .to_physical(hidpi_factor);
-
-        let (context, window) = unsafe { context.make_current().unwrap().split() };
-
-        let instance = wgpu::Instance::new(context);
-        let surface = instance.get_surface();
-
-        (window, instance, size, surface)
-    };
-
     window.set_cursor_visible(false);
 
-    let adapter = wgpu::Adapter::request(&wgpu::RequestAdapterOptions {
-        power_preference: wgpu::PowerPreference::Default,
-        backends: wgpu::BackendBit::PRIMARY,
-    })
+    let adapter = wgpu::Adapter::request(
+        &wgpu::RequestAdapterOptions {
+            power_preference: wgpu::PowerPreference::Default,
+            compatible_surface: Some(&surface),
+        },
+        wgpu::BackendBit::PRIMARY,
+    )
+    .await
     .unwrap();
 
-    let (device, mut queue) = adapter.request_device(&wgpu::DeviceDescriptor {
-        extensions: wgpu::Extensions {
-            anisotropic_filtering: false,
-        },
-        limits: wgpu::Limits::default(),
-    });
+    let (device, queue) = adapter
+        .request_device(&wgpu::DeviceDescriptor {
+            extensions: wgpu::Extensions {
+                anisotropic_filtering: false,
+            },
+            limits: wgpu::Limits::default(),
+        })
+        .await;
 
     let mut sc_desc = wgpu::SwapChainDescriptor {
         usage: wgpu::TextureUsage::OUTPUT_ATTACHMENT,
         format: wgpu::TextureFormat::Bgra8UnormSrgb,
         width: size.width,
         height: size.height,
-        present_mode: wgpu::PresentMode::Vsync,
+        present_mode: wgpu::PresentMode::Immediate,
     };
     let mut swap_chain = device.create_swap_chain(&surface, &sc_desc);
 
@@ -161,13 +142,19 @@ pub fn run<E: Example>(title: &str) {
             },
             event::Event::MainEventsCleared => window.request_redraw(),
             event::Event::RedrawRequested(_) => {
-                let frame = swap_chain.get_next_texture();
+                let frame = swap_chain
+                    .get_next_texture()
+                    .expect("Timeout when acquiring next swap chain texture");
                 let command_buf = example.render(&frame, &device);
                 queue.submit(&[command_buf]);
             }
             _ => (),
         }
     });
+}
+
+pub fn run<E: Example>(title: &str) {
+    futures::executor::block_on(run_async::<E>(title));
 }
 
 // This allows treating the framework as a standalone example,
