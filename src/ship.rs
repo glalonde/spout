@@ -272,10 +272,6 @@ impl ShipRenderer {
             position: ship.position,
             angle: ship.orientation,
         };
-        info!(
-            "Ship: {:?}, viewport {:?}",
-            ship.position, level_manager.height_of_viewport
-        );
         let bytes: &[u8] = values.as_bytes();
         let uniform_buf_size = std::mem::size_of::<RenderUniforms>();
         let temp_buf = device.create_buffer_with_data(bytes, wgpu::BufferUsage::COPY_SRC);

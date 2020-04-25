@@ -1,5 +1,6 @@
 use gflags;
 use log::info;
+use std::convert::TryInto;
 
 gflags::define! {
     --width: u32 = 10
@@ -8,22 +9,28 @@ gflags::define! {
     --height: u32 = 1
 }
 
-fn run() {
+async fn run() {
     let width = WIDTH.flag;
     let height = HEIGHT.flag;
 
-    let adapter = wgpu::Adapter::request(&wgpu::RequestAdapterOptions {
-        power_preference: wgpu::PowerPreference::Default,
-        backends: wgpu::BackendBit::PRIMARY,
-    })
+    let adapter = wgpu::Adapter::request(
+        &wgpu::RequestAdapterOptions {
+            power_preference: wgpu::PowerPreference::Default,
+            compatible_surface: None,
+        },
+        wgpu::BackendBit::PRIMARY,
+    )
+    .await
     .unwrap();
 
-    let (device, mut queue) = adapter.request_device(&wgpu::DeviceDescriptor {
-        extensions: wgpu::Extensions {
-            anisotropic_filtering: false,
-        },
-        limits: wgpu::Limits::default(),
-    });
+    let (device, mut queue) = adapter
+        .request_device(&wgpu::DeviceDescriptor {
+            extensions: wgpu::Extensions {
+                anisotropic_filtering: false,
+            },
+            limits: wgpu::Limits::default(),
+        })
+        .await;
 
     let cs = spout::shader_utils::Shaders::get("atomics_minimal.comp.spv").unwrap();
     let cs_module =
@@ -45,6 +52,7 @@ fn run() {
         usage: wgpu::TextureUsage::COPY_SRC
             | wgpu::TextureUsage::STORAGE
             | wgpu::TextureUsage::OUTPUT_ATTACHMENT,
+        label: None,
     });
     let texture_view = texture.create_default_view();
 
@@ -52,17 +60,22 @@ fn run() {
     let output_buffer = device.create_buffer(&wgpu::BufferDescriptor {
         size: (width * height) as u64 * std::mem::size_of::<u32>() as u64,
         usage: wgpu::BufferUsage::MAP_READ | wgpu::BufferUsage::COPY_DST,
+        label: None,
     });
 
     info!("Creating bind group layout");
     let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-        bindings: &[wgpu::BindGroupLayoutBinding {
+        bindings: &[wgpu::BindGroupLayoutEntry {
             binding: 0,
             visibility: wgpu::ShaderStage::COMPUTE,
             ty: wgpu::BindingType::StorageTexture {
+                component_type: wgpu::TextureComponentType::Float,
+                format: wgpu::TextureFormat::R32Uint,
                 dimension: wgpu::TextureViewDimension::D2,
+                readonly: false,
             },
         }],
+        label: None,
     });
 
     info!("Creating bind group");
@@ -72,6 +85,7 @@ fn run() {
             binding: 0,
             resource: wgpu::BindingResource::TextureView(&texture_view),
         }],
+        label: None,
     });
 
     info!("Creating pipeline layout");
@@ -90,7 +104,7 @@ fn run() {
     // Clear the texture.
     {
         let mut encoder =
-            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { todo: 0 });
+            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
         encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
                 attachment: &texture_view,
@@ -112,14 +126,14 @@ fn run() {
     // Compute shader
     {
         let mut encoder =
-            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { todo: 0 });
+            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
         add_compute_pass(&mut encoder);
         queue.submit(&[encoder.finish()]);
     }
     // Retrieve texture
     {
         let mut encoder =
-            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { todo: 0 });
+            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
         encoder.copy_texture_to_buffer(
             wgpu::TextureCopyView {
                 texture: &texture,
@@ -130,29 +144,41 @@ fn run() {
             wgpu::BufferCopyView {
                 buffer: &output_buffer,
                 offset: 0,
-                row_pitch: std::mem::size_of::<u32>() as u32 * width as u32,
-                image_height: width as u32,
+                bytes_per_row: std::mem::size_of::<u32>() as u32 * width as u32,
+                rows_per_image: width as u32,
             },
             texture_extent,
         );
         queue.submit(&[encoder.finish()]);
     }
 
-    output_buffer.map_read_async(
-        0,
-        (width * height) as u64 * std::mem::size_of::<u32>() as u64,
-        move |result: wgpu::BufferMapAsyncResult<&[u32]>| {
-            if let Ok(mapping) = result {
-                for v in mapping.data {
-                    info!("val: {}, {:#034b}", v, v);
-                }
-            }
-        },
-    );
+    // Note that we're not calling `.await` here.
+    let output_size = (width * height) as u64 * std::mem::size_of::<u32>() as u64;
+    let buffer_future = output_buffer.map_read(0, output_size);
+
+    // Poll the device in a blocking manner so that our future resolves.
+    // In an actual application, `device.poll(...)` should
+    // be called in an event loop or on another thread.
+    device.poll(wgpu::Maintain::Wait);
+
+    if let Ok(mapping) = buffer_future.await {
+        let vals: Vec<u32> = mapping
+            .as_slice()
+            .chunks_exact(4)
+            .map(|b| u32::from_ne_bytes(b.try_into().unwrap()))
+            .collect();
+        info!("Done computing: outputsize: {}", vals.len());
+
+        for v in vals {
+            info!("val: {}, {:#034b}", v, v);
+        }
+    } else {
+        panic!("failed to run compute on gpu!")
+    }
 }
 
 fn main() {
-    scrub_log::init().unwrap();
+    scrub_log::init_with_filter_string("info").unwrap();
     gflags::parse();
-    run();
+    futures::executor::block_on(run());
 }

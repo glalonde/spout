@@ -30,7 +30,6 @@ impl LevelManager {
     pub fn buffer_config_index(&self) -> usize {
         self.buffer_config_index
     }
-
     pub fn terrain_buffer_size(&self) -> usize {
         self.terrain_buffer_size
     }
@@ -101,6 +100,7 @@ impl LevelManager {
         height_of_viewport: i32,
         encoder: &mut wgpu::CommandEncoder,
     ) {
+        info!("Sync height");
         let current_bottom_level = height_of_viewport / (self.level_height as i32);
         let current_top_level = current_bottom_level + 1;
 
@@ -109,11 +109,16 @@ impl LevelManager {
         // Update the assignment of levels to buffers.
         let new_buffer_config_index = (current_bottom_level % 2) as usize;
         if new_buffer_config_index != self.buffer_config_index {
+            info!("New Buffer config: {}", new_buffer_config_index);
             // New configuration: We're rearranging the buffers. Need to update all of the state.
             let mut new_buffer_levels = self.buffer_levels.clone();
+
+            // Update the buffer index to level mapping:
             for i in 0..self.buffer_levels.len() {
-                new_buffer_levels[i] =
-                    ((i + new_buffer_config_index) % self.buffer_levels.len()) as i32;
+                let level_number = current_bottom_level
+                    + ((i + new_buffer_config_index) % self.buffer_levels.len()) as i32;
+                info!("Buffer index {} has level {}", i, level_number);
+                new_buffer_levels[i] = level_number;
             }
             self.sync_buffers(device, &new_buffer_levels, encoder);
             self.buffer_config_index = new_buffer_config_index;
