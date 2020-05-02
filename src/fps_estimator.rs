@@ -46,6 +46,7 @@ mod tests {
 
     // Get some stats about std::thread::sleep
     #[test]
+    #[ignore] // Takes a few seconds, run on demand.
     fn sleep_test() {
         let target: f64 = 1.0 / 60.0;
         let mut max_err: f64 = 0.0;
