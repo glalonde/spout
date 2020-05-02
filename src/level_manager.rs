@@ -100,7 +100,6 @@ impl LevelManager {
         height_of_viewport: i32,
         encoder: &mut wgpu::CommandEncoder,
     ) {
-        info!("Sync height");
         let current_bottom_level = height_of_viewport / (self.level_height as i32);
         let current_top_level = current_bottom_level + 1;
 

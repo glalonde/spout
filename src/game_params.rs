@@ -7,6 +7,29 @@ pub struct GameParams {
     pub viewport_height: u32,
     pub level_width: u32,
     pub level_height: u32,
+    pub fps: f64,
+    pub music_starts_on: bool,
+}
+
+impl std::str::FromStr for GameParams {
+    type Err = toml::de::Error;
+    fn from_str(serialized: &str) -> Result<Self, Self::Err> {
+        let params = toml::from_str(serialized)?;
+        Ok(params)
+    }
+}
+
+impl Default for GameParams {
+    fn default() -> Self {
+        GameParams {
+            viewport_width: 640,
+            viewport_height: 320,
+            level_width: 640,
+            level_height: 960,
+            fps: 60.0,
+            music_starts_on: false,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -16,10 +39,12 @@ mod tests {
     #[test]
     fn smoke() {
         let params = GameParams {
-            viewport_width: 1,
-            viewport_height: 2,
-            level_width: 3,
-            level_height: 4,
+            viewport_width: 640,
+            viewport_height: 320,
+            level_width: 640,
+            level_height: 320 * 3,
+            fps: 60.0,
+            music_starts_on: false,
         };
         let serialized = toml::to_string(&params).unwrap();
         println!("serialized = {}", serialized);

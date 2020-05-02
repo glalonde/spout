@@ -1,18 +1,9 @@
 #[path = "../examples/framework.rs"]
 mod framework;
-use log::info;
+use log::{error, info};
 
 gflags::define! {
-    --width: u32 = 640
-}
-gflags::define! {
-    --height: u32 = 360
-}
-gflags::define! {
-    --fps: u32 = 60
-}
-gflags::define! {
-    --music_starts_on: bool = false
+    --config: &str = "game_config.toml"
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -139,6 +130,21 @@ impl Example {
             })
             .create_default_view()
     }
+
+    fn read_config_from_file(path: &str) -> anyhow::Result<spout::game_params::GameParams> {
+        let params = std::fs::read_to_string(path)?.parse()?;
+        Ok(params)
+    }
+
+    fn get_game_config() -> spout::game_params::GameParams {
+        match Example::read_config_from_file(CONFIG.flag) {
+            Ok(params) => params,
+            Err(e) => {
+                error!("Failed to parse config file({}): {:?}", CONFIG.flag, e);
+                spout::game_params::GameParams::default()
+            }
+        }
+    }
 }
 
 impl framework::Example for Example {
@@ -148,14 +154,10 @@ impl framework::Example for Example {
     ) -> (Self, Option<wgpu::CommandBuffer>) {
         let mut init_encoder =
             device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-        let game_params = spout::game_params::GameParams {
-            viewport_width: WIDTH.flag,
-            viewport_height: HEIGHT.flag,
-            level_width: WIDTH.flag,
-            level_height: HEIGHT.flag * 3,
-        };
-        let width = WIDTH.flag;
-        let height = HEIGHT.flag;
+        let game_params = Example::get_game_config();
+
+        let width = game_params.viewport_width;
+        let height = game_params.viewport_height;
         let system_params = spout::particle_system::SystemParams {
             width,
             height,
@@ -222,10 +224,10 @@ impl framework::Example for Example {
 
         let game_viewport =
             spout::game_viewport::GameViewport::init(device, &post_glow_texture_view);
-
+        let fps_controller = spout::fps_estimator::FpsEstimator::new(game_params.fps);
         let this = Example {
             game_params,
-            fps: spout::fps_estimator::FpsEstimator::new(FPS.flag as f64),
+            fps: fps_controller,
             state: GameState {
                 input_state: InputState::default(),
                 prev_input_state: InputState::default(),
@@ -253,7 +255,7 @@ impl framework::Example for Example {
             game_viewport,
             game_time: std::time::Duration::new(0, 0),
         };
-        if MUSIC_STARTS_ON.flag {
+        if this.game_params.music_starts_on {
             let _ = spout::music_player::start_music_player_thread();
         }
         (this, Some(init_encoder.finish()))
@@ -430,4 +432,16 @@ impl framework::Example for Example {
 
 fn main() {
     framework::run::<Example>("Particle System");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn read_config() {
+        let serialized = std::fs::read_to_string(CONFIG.flag).unwrap();
+        let deserialized_config: spout::game_params::GameParams =
+            toml::from_str(&serialized).unwrap();
+        println!("deserialized = {:?}", deserialized_config);
+    }
 }
