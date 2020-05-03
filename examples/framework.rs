@@ -91,6 +91,7 @@ async fn run_async<E: Example>(title: &str) {
     if let Some(command_buf) = init_command_buf {
         queue.submit(&[command_buf]);
     }
+    let mut last_frame_start = std::time::Instant::now();
 
     log::info!("Entering render loop...");
     event_loop.run(move |event, _, control_flow| {
@@ -145,8 +146,21 @@ async fn run_async<E: Example>(title: &str) {
                 let frame = swap_chain
                     .get_next_texture()
                     .expect("Timeout when acquiring next swap chain texture");
+                let cpu_time_start = std::time::Instant::now();
                 let command_buf = example.render(&frame, &device);
+                let cpu_time = cpu_time_start.elapsed();
+                let gpu_time_start = std::time::Instant::now();
                 queue.submit(&[command_buf]);
+                device.poll(wgpu::Maintain::Wait);
+                let gpu_time = gpu_time_start.elapsed();
+                let frame_time = last_frame_start.elapsed();
+                last_frame_start = std::time::Instant::now();
+                log::info!(
+                    "Frame time: {:?}, GPU time: {:?}, CPU time: {:?}",
+                    frame_time,
+                    gpu_time,
+                    cpu_time
+                );
             }
             _ => (),
         }

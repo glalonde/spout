@@ -31,18 +31,24 @@ impl DebugOverlay {
         encoder: &mut wgpu::CommandEncoder,
         fps: f64,
     ) {
+        let width = 640;
+        let height = 320;
+        let debug_start = std::time::Instant::now();
         let section = wgpu_glyph::Section {
             text: &format!("FPS: {:0.2}s", fps),
             screen_position: (00.0, 00.0),
             color: [1.0, 1.0, 1.0, 1.0],
             scale: wgpu_glyph::Scale { x: 20.0, y: 20.0 },
-            bounds: (self.width as f32, self.height as f32),
+            bounds: (width as f32, height as f32),
             ..wgpu_glyph::Section::default()
         };
+        log::info!("d1: {:?}", debug_start.elapsed());
         self.glyph_brush.queue(section);
-        let result =
-            self.glyph_brush
-                .draw_queued(&device, encoder, texture_view, self.width, self.height);
+        log::info!("d2: {:?}", debug_start.elapsed());
+        let result = self
+            .glyph_brush
+            .draw_queued(&device, encoder, texture_view, width, height);
+        log::info!("d3: {:?}", debug_start.elapsed());
         if !result.is_ok() {
             error!("Failed to draw glyph: {}", result.unwrap_err());
         }

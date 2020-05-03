@@ -55,7 +55,7 @@ struct Example {
 
 impl Example {
     // Update pre-render cpu logic
-    fn update_state(&mut self, device: &wgpu::Device, encoder: &mut wgpu::CommandEncoder) {
+    fn update_state(&mut self, device: &wgpu::Device, encoder: &mut wgpu::CommandEncoder) -> f32 {
         let input_state = &self.state.input_state;
         let delta_t = self.fps.tick();
         let dt = delta_t.as_secs_f32();
@@ -64,7 +64,7 @@ impl Example {
             self.state.paused = !self.state.paused;
         }
         if self.state.paused {
-            return;
+            return 0.0;
         } else {
             self.game_time += delta_t;
         }
@@ -110,6 +110,7 @@ impl Example {
                 &ship_state.emit_params,
             );
         }
+        dt
     }
 
     fn make_texture(device: &wgpu::Device, width: u32, height: u32) -> wgpu::TextureView {
@@ -312,7 +313,7 @@ impl framework::Example for Example {
     ) -> wgpu::CommandBuffer {
         let mut encoder =
             device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-        self.update_state(device, &mut encoder);
+        let _dt = self.update_state(device, &mut encoder);
         self.state.prev_input_state = self.state.input_state;
 
         if !self.state.paused {
@@ -421,10 +422,15 @@ impl framework::Example for Example {
         {
             self.viewport.render(&frame, &mut encoder);
         }
+        /*
+        For unknown reasons, displaying the frame time on the GPU takes a ridiculous amount of time. Some synchronization weirdness no doubt.
         {
+            let fps_time = std::time::Instant::now();
             self.debug_overlay
-                .render(&device, &frame.view, &mut encoder, self.fps.fps());
+                .render(&device, &frame.view, &mut encoder, 1.0 / dt as f64);
+            info!("OVERLAY TIME: {:?}", fps_time.elapsed());
         }
+        */
 
         encoder.finish()
     }

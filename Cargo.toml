@@ -4,6 +4,9 @@ version = "0.1.0"
 authors = ["Geoffrey Lalonde <lalondegeoffrey@gmail.com>"]
 edition = "2018"
 
+[profile.release]
+debug = true
+
 [features]
 default = []
 
@@ -21,7 +24,7 @@ cgmath = "0.17"
 rand = "0.7"
 png = "0.15"
 scarlet = "1.1.0"
-wgpu_glyph = { git = "https://github.com/hecrj/wgpu_glyph", branch = "update-wgpu" }
+wgpu_glyph = "0.8.0"
 futures = "0.3"
 rodio = "0.11"
 crossbeam-channel = "0.4"

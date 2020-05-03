@@ -1,8 +1,8 @@
+use log::info;
 #[derive(Debug)]
 pub struct FpsEstimator {
     iteration_start: std::time::Instant,
-    iteration_duration: std::time::Duration,
-    fps: f64,
+    pub iteration_duration: std::time::Duration,
 }
 
 static NATIVE_SLEEP_ACCURACY: std::time::Duration = std::time::Duration::from_micros(500);
@@ -12,7 +12,6 @@ impl FpsEstimator {
         FpsEstimator {
             iteration_start: std::time::Instant::now(),
             iteration_duration: std::time::Duration::from_secs_f64(1.0 / fps),
-            fps: 0.0,
         }
     }
 
@@ -22,21 +21,18 @@ impl FpsEstimator {
         if now < system_sleep_until {
             std::thread::sleep(system_sleep_until.duration_since(now));
         }
-        while *done > std::time::Instant::now() {}
-    }
-
-    pub fn fps(&self) -> f64 {
-        self.fps
     }
 
     pub fn tick(&mut self) -> std::time::Duration {
-        FpsEstimator::high_resolution_sleep_until(
-            &(self.iteration_start + self.iteration_duration),
-        );
+        let sleep_until = self.iteration_start + self.iteration_duration;
+        // FpsEstimator::high_resolution_sleep_until(&sleep_until);
+        let now = std::time::Instant::now();
+        if now > sleep_until {
+            let overslept_by = now - sleep_until;
+            info!("Over time budget by: {:?}", overslept_by);
+        }
         let delta_t = self.iteration_start.elapsed();
-        let dt = delta_t.as_secs_f64();
         self.iteration_start = std::time::Instant::now();
-        self.fps = 1.0 / dt;
         delta_t
     }
 }

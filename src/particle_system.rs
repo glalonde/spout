@@ -36,6 +36,7 @@ pub struct ComputeLocals {
     pub compute_work_groups: usize,
     pub density_buffer: wgpu::Buffer,
     pub density_buffer_size: wgpu::BufferAddress,
+    pub staging_buffer: wgpu::Buffer,
     pub uniform_buf: wgpu::Buffer,
     pub compute_pipeline: wgpu::ComputePipeline,
     pub compute_bind_groups: std::vec::Vec<wgpu::BindGroup>,
@@ -90,6 +91,12 @@ impl ComputeLocals {
             params.width as usize,
             params.height as usize,
         );
+
+        let staging_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            size: density_buffer_size,
+            usage: wgpu::BufferUsage::MAP_READ | wgpu::BufferUsage::COPY_DST,
+            label: None,
+        });
 
         let compute_uniform_size = std::mem::size_of::<ComputeUniforms>() as wgpu::BufferAddress;
         let compute_uniforms = ComputeUniforms {
@@ -286,6 +293,7 @@ impl ComputeLocals {
             compute_work_groups,
             density_buffer,
             density_buffer_size,
+            staging_buffer,
             uniform_buf,
             compute_pipeline,
             compute_bind_groups,
@@ -340,14 +348,27 @@ impl ComputeLocals {
         level_manager: &super::level_manager::LevelManager,
         encoder: &mut wgpu::CommandEncoder,
     ) {
-        let mut cpass = encoder.begin_compute_pass();
-        cpass.set_pipeline(&self.compute_pipeline);
-        cpass.set_bind_group(
-            0,
-            &self.compute_bind_groups[level_manager.buffer_config_index()],
-            &[],
-        );
-        cpass.dispatch(self.compute_work_groups as u32, 1, 1);
+        {
+            // Add the heavy computation
+            let mut cpass = encoder.begin_compute_pass();
+            cpass.set_pipeline(&self.compute_pipeline);
+            cpass.set_bind_group(
+                0,
+                &self.compute_bind_groups[level_manager.buffer_config_index()],
+                &[],
+            );
+            cpass.dispatch(self.compute_work_groups as u32, 1, 1);
+        }
+        {
+            // Copy the results to the staging buffer so we can tell when this computation is over.
+            encoder.copy_buffer_to_buffer(
+                &self.density_buffer,
+                0,
+                &self.staging_buffer,
+                0,
+                self.density_buffer_size,
+            );
+        }
     }
 
     pub fn clear_density(&self, encoder: &mut wgpu::CommandEncoder) {
