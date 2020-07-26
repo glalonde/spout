@@ -25,7 +25,7 @@ impl FpsEstimator {
 
     pub fn tick(&mut self) -> std::time::Duration {
         let sleep_until = self.iteration_start + self.iteration_duration;
-        // FpsEstimator::high_resolution_sleep_until(&sleep_until);
+        FpsEstimator::high_resolution_sleep_until(&sleep_until);
         let now = std::time::Instant::now();
         if now > sleep_until {
             let overslept_by = now - sleep_until;

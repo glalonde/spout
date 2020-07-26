@@ -10,7 +10,7 @@ gflags::define! {
 }
 
 gflags::define! {
-    --emit_velocity: f32 = 100.0
+    --emit_velocity: f32 = 500.0
 }
 
 gflags::define! {
@@ -274,6 +274,7 @@ impl ShipRenderer {
         };
         let bytes: &[u8] = values.as_bytes();
         let uniform_buf_size = std::mem::size_of::<RenderUniforms>();
+        let create_buffer_start = std::time::Instant::now();
         let temp_buf = device.create_buffer_with_data(bytes, wgpu::BufferUsage::COPY_SRC);
         encoder.copy_buffer_to_buffer(
             &temp_buf,
@@ -281,6 +282,10 @@ impl ShipRenderer {
             &self.uniform_buf,
             0,
             uniform_buf_size as wgpu::BufferAddress,
+        );
+        info!(
+            "Ship render buffer time: {:?}",
+            create_buffer_start.elapsed()
         );
 
         // Render the ship to a texture.

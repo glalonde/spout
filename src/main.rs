@@ -313,7 +313,7 @@ impl framework::Example for Example {
     ) -> wgpu::CommandBuffer {
         let mut encoder =
             device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-        let _dt = self.update_state(device, &mut encoder);
+        let dt = self.update_state(device, &mut encoder);
         self.state.prev_input_state = self.state.input_state;
 
         if !self.state.paused {
@@ -396,7 +396,7 @@ impl framework::Example for Example {
                         .v_align(wgpu_glyph::VerticalAlign::Center),
                     ..wgpu_glyph::Section::default()
                 },
-            )
+            );
         }
         {
             // Render the score
@@ -417,20 +417,16 @@ impl framework::Example for Example {
                         .v_align(wgpu_glyph::VerticalAlign::Top),
                     ..wgpu_glyph::Section::default()
                 },
-            )
+            );
         }
         {
             self.viewport.render(&frame, &mut encoder);
         }
-        /*
-        For unknown reasons, displaying the frame time on the GPU takes a ridiculous amount of time. Some synchronization weirdness no doubt.
         {
             let fps_time = std::time::Instant::now();
             self.debug_overlay
                 .render(&device, &frame.view, &mut encoder, 1.0 / dt as f64);
-            info!("OVERLAY TIME: {:?}", fps_time.elapsed());
         }
-        */
 
         encoder.finish()
     }
