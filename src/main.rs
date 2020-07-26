@@ -423,7 +423,6 @@ impl framework::Example for Example {
             self.viewport.render(&frame, &mut encoder);
         }
         {
-            let fps_time = std::time::Instant::now();
             self.debug_overlay
                 .render(&device, &frame.view, &mut encoder, 1.0 / dt as f64);
         }

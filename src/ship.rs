@@ -82,13 +82,27 @@ impl ShipState {
     pub fn update(&mut self, dt: f32, accelerate: bool, rotation: RotationDirection) {
         // Update position.
         self.emit_params.position_start = [self.position[0], self.position[1]];
-        self.position[0] = self.position[0].wrapping_add((dt * self.velocity[0] as f32) as u32);
-        self.position[1] = self.position[1].wrapping_add((dt * self.velocity[1] as f32) as u32);
+        // Apparently it is important to cast through i32 before going to u32.
+        // So this goes, -5.1 -> -5 -> INT_MAX - 4
+        self.position[0] =
+            self.position[0].wrapping_add(((dt * self.velocity[0] as f32) as i32) as u32);
+        self.position[1] =
+            self.position[1].wrapping_add(((dt * self.velocity[1] as f32) as i32) as u32);
         self.emit_params.position_end = [self.position[0], self.position[1]];
 
         // Update velocity.
         self.emit_params.velocity = [self.velocity[0], self.velocity[1]];
         if accelerate {
+            let delta_v = [
+                (dt * self.acceleration
+                    * self.orientation.cos()
+                    * (super::int_grid::cell_size() as f32)) as i32,
+                (dt * self.acceleration
+                    * self.orientation.sin()
+                    * (super::int_grid::cell_size() as f32)) as i32,
+            ];
+
+            trace!("delta_v: {:?}", delta_v);
             trace!("acceleration: {:?}", self.velocity);
             self.velocity[0] += (dt
                 * self.acceleration
@@ -98,6 +112,7 @@ impl ShipState {
                 * self.acceleration
                 * self.orientation.sin()
                 * (super::int_grid::cell_size() as f32)) as i32;
+            trace!("acceleration: {:?}", self.velocity);
         }
 
         // Update orientation.
