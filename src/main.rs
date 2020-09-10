@@ -261,7 +261,7 @@ impl framework::Example for Example {
             game_time: std::time::Duration::new(0, 0),
         };
         if this.game_params.music_starts_on {
-            // let _ = spout::music_player::start_music_player_thread();
+            let _ = spout::music_player::start_music_player_thread();
         }
         queue.submit(Some(init_encoder.finish()));
         this
@@ -438,8 +438,13 @@ impl framework::Example for Example {
             self.viewport.render(&frame, &mut encoder);
         }
         {
-            self.debug_overlay
-                .render(&device, &frame.view, &mut encoder, 1.0 / dt as f64);
+            self.debug_overlay.render(
+                &device,
+                &mut self.staging_belt,
+                &frame.view,
+                &mut encoder,
+                1.0 / dt as f64,
+            );
         }
 
         self.staging_belt.finish();

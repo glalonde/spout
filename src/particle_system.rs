@@ -2,7 +2,7 @@ use wgpu::util::DeviceExt;
 use zerocopy::AsBytes;
 
 gflags::define! {
-    --emission_rate: f32 = 10000.0
+    --emission_rate: f32 = 100000.0
 }
 
 gflags::define! {
@@ -71,7 +71,7 @@ impl ComputeLocals {
         params: &SystemParams,
         game_params: &super::game_params::GameParams,
         level_manager: &super::level_manager::LevelManager,
-        init_encoder: &mut wgpu::CommandEncoder,
+        _init_encoder: &mut wgpu::CommandEncoder,
     ) -> Self {
         // This sets up the compute stage, which is responsible for updating the
         // particle system and most of the game logic. The output is updated game state

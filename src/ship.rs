@@ -11,7 +11,7 @@ gflags::define! {
 }
 
 gflags::define! {
-    --emit_velocity: f32 = 500.0
+    --emit_velocity: f32 = 300.0
 }
 
 gflags::define! {
@@ -162,7 +162,6 @@ impl ShipRenderer {
         });
         let ship_texture_view = ship_texture.create_view(&wgpu::TextureViewDescriptor::default());
 
-        let compute_uniform_size = std::mem::size_of::<RenderUniforms>() as wgpu::BufferAddress;
         let compute_uniforms = RenderUniforms {
             projection_matrix: [[0.0; 4]; 4],
             position: [0, 0],

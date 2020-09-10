@@ -64,7 +64,7 @@ impl TerrainRenderer {
     pub fn init(
         device: &wgpu::Device,
         compute_locals: &super::particle_system::ComputeLocals,
-        game_params: &super::game_params::GameParams,
+        _game_params: &super::game_params::GameParams,
         level_manager: &super::level_manager::LevelManager,
     ) -> Self {
         // Sets up the quad canvas.
@@ -74,7 +74,6 @@ impl TerrainRenderer {
         let fs = super::shader_utils::Shaders::get("particle_system/terrain.frag.spv").unwrap();
         let fs_module = device.create_shader_module(wgpu::util::make_spirv(&fs));
 
-        let fragment_uniform_size = std::mem::size_of::<FragmentUniforms>() as wgpu::BufferAddress;
         let fragment_uniforms = FragmentUniforms {
             viewport_width: compute_locals.system_params.width,
             viewport_height: compute_locals.system_params.height,
@@ -132,7 +131,6 @@ impl TerrainRenderer {
             });
 
         let mut render_bind_groups = vec![];
-        let terrain_buffer_size = level_manager.terrain_buffer_size();
         for config in level_manager.buffer_configurations() {
             render_bind_groups.push(device.create_bind_group(&wgpu::BindGroupDescriptor {
                 layout: &render_bind_group_layout,

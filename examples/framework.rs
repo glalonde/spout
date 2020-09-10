@@ -52,23 +52,23 @@ struct Setup {
 }
 
 async fn setup<E: Example>(title: &str) -> Setup {
-    #[cfg(target_arch = "wasm32")]
-    console_log::init().expect("could not initialize logger");
-
     gflags::parse();
     if HELP.flag {
         gflags::print_help_and_exit(0);
     }
+
     scrub_log::init_with_filter_string(LOG_FILTER.flag).unwrap();
 
     let event_loop = winit::event_loop::EventLoop::new();
     let mut builder = winit::window::WindowBuilder::new();
-    builder = builder.with_title(title);
-    #[cfg(windows_OFF)] // TODO
-    {
-        use winit::platform::windows::WindowBuilderExtWindows;
-        builder = builder.with_no_redirection_bitmap(true);
-    }
+    builder = builder
+        .with_title(title)
+        .with_decorations(false)
+        .with_inner_size(winit::dpi::Size::from(winit::dpi::LogicalSize::new(
+            640 * 2,
+            360 * 2,
+        )));
+
     let window = builder.build(&event_loop).unwrap();
 
     log::info!("Initializing the surface...");
@@ -138,42 +138,10 @@ fn start<E: Example>(
         queue,
     }: Setup,
 ) {
-    log::info!("Making spawner...");
-    #[cfg(not(target_arch = "wasm32"))]
-    let (mut pool, spawner) = {
+    let (mut _pool, spawner) = {
         let local_pool = futures::executor::LocalPool::new();
         let spawner = local_pool.spawner();
         (local_pool, spawner)
-    };
-
-    #[cfg(target_arch = "wasm32")]
-    let spawner = {
-        use futures::{future::LocalFutureObj, task::SpawnError};
-        use winit::platform::web::WindowExtWebSys;
-
-        struct WebSpawner {}
-        impl LocalSpawn for WebSpawner {
-            fn spawn_local_obj(
-                &self,
-                future: LocalFutureObj<'static, ()>,
-            ) -> Result<(), SpawnError> {
-                Ok(wasm_bindgen_futures::spawn_local(future))
-            }
-        }
-
-        std::panic::set_hook(Box::new(console_error_panic_hook::hook));
-
-        // On wasm, append the canvas to the document body
-        web_sys::window()
-            .and_then(|win| win.document())
-            .and_then(|doc| doc.body())
-            .and_then(|body| {
-                body.append_child(&web_sys::Element::from(window.canvas()))
-                    .ok()
-            })
-            .expect("couldn't append canvas to document body");
-
-        WebSpawner {}
     };
 
     log::info!("Making swapchain...");
@@ -194,39 +162,19 @@ fn start<E: Example>(
     log::info!("Initializing the example...");
     let mut example = E::init(&sc_desc, &device, &queue);
 
-    #[cfg(not(target_arch = "wasm32"))]
-    let mut last_update_inst = std::time::Instant::now();
-
     log::info!("Entering render loop...");
     event_loop.run(move |event, _, control_flow| {
         let _ = (&instance, &adapter); // force ownership by the closure
         *control_flow = if cfg!(feature = "metal-auto-capture") {
             winit::event_loop::ControlFlow::Exit
         } else {
-            #[cfg(not(target_arch = "wasm32"))]
             {
-                winit::event_loop::ControlFlow::WaitUntil(
-                    std::time::Instant::now() + std::time::Duration::from_millis(10),
-                )
-            }
-            #[cfg(target_arch = "wasm32")]
-            {
-                ControlFlow::Poll
+                winit::event_loop::ControlFlow::Poll
             }
         };
         match event {
             winit::event::Event::MainEventsCleared => {
-                #[cfg(not(target_arch = "wasm32"))]
-                {
-                    if last_update_inst.elapsed() > std::time::Duration::from_millis(20) {
-                        window.request_redraw();
-                        last_update_inst = std::time::Instant::now();
-                    }
-
-                    pool.run_until_stalled();
-                }
-
-                #[cfg(target_arch = "wasm32")]
+                // Main update logic
                 window.request_redraw();
             }
             winit::event::Event::WindowEvent {
@@ -244,6 +192,15 @@ fn start<E: Example>(
                     input:
                         winit::event::KeyboardInput {
                             virtual_keycode: Some(winit::event::VirtualKeyCode::Escape),
+                            state: winit::event::ElementState::Pressed,
+                            ..
+                        },
+                    ..
+                }
+                | WindowEvent::KeyboardInput {
+                    input:
+                        winit::event::KeyboardInput {
+                            virtual_keycode: Some(winit::event::VirtualKeyCode::Q),
                             state: winit::event::ElementState::Pressed,
                             ..
                         },
@@ -274,19 +231,9 @@ fn start<E: Example>(
     });
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 pub fn run<E: Example>(title: &str) {
     let setup = futures::executor::block_on(setup::<E>(title));
     start::<E>(setup);
-}
-
-#[cfg(target_arch = "wasm32")]
-pub fn run<E: Example>(title: &str) {
-    let title = title.to_owned();
-    wasm_bindgen_futures::spawn_local(async move {
-        let setup = setup::<E>(&title).await;
-        start::<E>(setup);
-    });
 }
 
 // This allows treating the framework as a standalone example,
