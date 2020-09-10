@@ -1,4 +1,5 @@
 use log::info;
+use wgpu::util::DeviceExt;
 use zerocopy::AsBytes;
 
 #[derive(rust_embed::RustEmbed)]
@@ -19,7 +20,6 @@ pub fn create_default_texture(
     };
     let texture = device.create_texture(&wgpu::TextureDescriptor {
         size: texture_extent,
-        array_layer_count: 1,
         mip_level_count: 1,
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
@@ -27,23 +27,28 @@ pub fn create_default_texture(
         usage: wgpu::TextureUsage::SAMPLED | wgpu::TextureUsage::COPY_DST,
         label: None,
     });
-    let temp_buf = device.create_buffer_with_data(data.as_bytes(), wgpu::BufferUsage::COPY_SRC);
+    let temp_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("Staging buffer"),
+        contents: &data.as_bytes(),
+        usage: wgpu::BufferUsage::COPY_SRC,
+    });
     encoder.copy_buffer_to_texture(
         wgpu::BufferCopyView {
             buffer: &temp_buf,
-            offset: 0,
-            bytes_per_row: 4 * width,
-            rows_per_image: height,
+            layout: wgpu::TextureDataLayout {
+                offset: 0,
+                bytes_per_row: 4 * width,
+                rows_per_image: height,
+            },
         },
         wgpu::TextureCopyView {
             texture: &texture,
             mip_level: 0,
-            array_layer: 0,
             origin: wgpu::Origin3d::ZERO,
         },
         texture_extent,
     );
-    texture.create_default_view()
+    texture.create_view(&wgpu::TextureViewDescriptor::default())
 }
 
 // Read an image file, create a command to copy it to a texture, and return a

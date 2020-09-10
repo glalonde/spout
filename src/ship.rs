@@ -1,4 +1,5 @@
 use log::{info, trace};
+use wgpu::util::DeviceExt;
 use zerocopy::AsBytes;
 
 gflags::define! {
@@ -148,7 +149,6 @@ impl ShipRenderer {
         };
         let ship_texture = device.create_texture(&wgpu::TextureDescriptor {
             size: texture_extent,
-            array_layer_count: 1,
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
@@ -160,7 +160,7 @@ impl ShipRenderer {
                 | wgpu::TextureUsage::SAMPLED,
             label: None,
         });
-        let ship_texture_view = ship_texture.create_default_view();
+        let ship_texture_view = ship_texture.create_view(&wgpu::TextureViewDescriptor::default());
 
         let compute_uniform_size = std::mem::size_of::<RenderUniforms>() as wgpu::BufferAddress;
         let compute_uniforms = RenderUniforms {
@@ -168,53 +168,56 @@ impl ShipRenderer {
             position: [0, 0],
             angle: 0.0,
         };
-        let uniform_buf = device.create_buffer_with_data(
-            &compute_uniforms.as_bytes(),
-            wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
-        );
+        let uniform_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Ship render uniforms"),
+            contents: &compute_uniforms.as_bytes(),
+            usage: wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
+        });
 
         // Sets up the quad canvas.
         let vs = super::shader_utils::Shaders::get("particle_system/ship.vert.spv").unwrap();
-        let vs_module =
-            device.create_shader_module(&wgpu::read_spirv(std::io::Cursor::new(&vs[..])).unwrap());
+        let vs_module = device.create_shader_module(wgpu::util::make_spirv(&vs));
         // Renders the data texture onto the canvas.
         let fs = super::shader_utils::Shaders::get("particle_system/ship.frag.spv").unwrap();
-        let fs_module =
-            device.create_shader_module(&wgpu::read_spirv(std::io::Cursor::new(&fs[..])).unwrap());
+        let fs_module = device.create_shader_module(wgpu::util::make_spirv(&fs));
 
         let render_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                bindings: &[
+                entries: &[
                     // Uniform inputs
                     wgpu::BindGroupLayoutEntry {
                         binding: 0,
                         visibility: wgpu::ShaderStage::VERTEX,
-                        ty: wgpu::BindingType::UniformBuffer { dynamic: false },
+                        ty: wgpu::BindingType::UniformBuffer {
+                            dynamic: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
                     },
                 ],
                 label: None,
             });
         let render_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &render_bind_group_layout,
-            bindings: &[
+            entries: &[
                 // Uniforms
-                wgpu::Binding {
+                wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: wgpu::BindingResource::Buffer {
-                        buffer: &uniform_buf,
-                        range: 0..compute_uniform_size,
-                    },
+                    resource: wgpu::BindingResource::Buffer(uniform_buf.slice(..)),
                 },
             ],
             label: None,
         });
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Ship render layout"),
                 bind_group_layouts: &[&render_bind_group_layout],
+                push_constant_ranges: &[],
             });
 
         let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            layout: &render_pipeline_layout,
+            label: Some("Ship render pipeline"),
+            layout: Some(&render_pipeline_layout),
             vertex_stage: wgpu::ProgrammableStageDescriptor {
                 module: &vs_module,
                 entry_point: "main",
@@ -229,6 +232,7 @@ impl ShipRenderer {
                 depth_bias: 0,
                 depth_bias_slope_scale: 0.0,
                 depth_bias_clamp: 0.0,
+                clamp_depth: false,
             }),
             primitive_topology: wgpu::PrimitiveTopology::TriangleStrip,
             color_states: &[wgpu::ColorStateDescriptor {
@@ -290,7 +294,11 @@ impl ShipRenderer {
         let bytes: &[u8] = values.as_bytes();
         let uniform_buf_size = std::mem::size_of::<RenderUniforms>();
         let create_buffer_start = std::time::Instant::now();
-        let temp_buf = device.create_buffer_with_data(bytes, wgpu::BufferUsage::COPY_SRC);
+        let temp_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Staging buffer"),
+            contents: bytes,
+            usage: wgpu::BufferUsage::COPY_SRC,
+        });
         encoder.copy_buffer_to_buffer(
             &temp_buf,
             0,
@@ -308,9 +316,10 @@ impl ShipRenderer {
             color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
                 attachment: texture_view,
                 resolve_target: None,
-                load_op: wgpu::LoadOp::Load,
-                store_op: wgpu::StoreOp::Store,
-                clear_color: wgpu::Color::BLACK,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: true,
+                },
             }],
             depth_stencil_attachment: None,
         });

@@ -1,3 +1,4 @@
+use futures::task::LocalSpawn;
 use winit::event::WindowEvent;
 
 gflags::define! {
@@ -9,28 +10,50 @@ gflags::define! {
 
 // "Framework" for a windowed executable.
 pub trait Example: 'static + Sized {
+    fn optional_features() -> wgpu::Features {
+        wgpu::Features::empty()
+    }
+    fn required_features() -> wgpu::Features {
+        wgpu::Features::empty()
+    }
+    fn required_limits() -> wgpu::Limits {
+        wgpu::Limits::default()
+    }
     fn init(
         sc_desc: &wgpu::SwapChainDescriptor,
         device: &wgpu::Device,
-    ) -> (Self, Option<wgpu::CommandBuffer>);
+        queue: &wgpu::Queue,
+    ) -> Self;
     fn resize(
         &mut self,
         sc_desc: &wgpu::SwapChainDescriptor,
         device: &wgpu::Device,
-    ) -> Option<wgpu::CommandBuffer>;
-    fn handle_event(&mut self, event: WindowEvent);
+        queue: &wgpu::Queue,
+    );
+    fn update(&mut self, event: WindowEvent);
     fn render(
         &mut self,
-        frame: &wgpu::SwapChainOutput,
+        frame: &wgpu::SwapChainTexture,
         device: &wgpu::Device,
-    ) -> wgpu::CommandBuffer;
+        queue: &wgpu::Queue,
+        spawner: &impl LocalSpawn,
+    );
 }
 
-async fn run_async<E: Example>(title: &str) {
-    use winit::{
-        event,
-        event_loop::{ControlFlow, EventLoop},
-    };
+struct Setup {
+    window: winit::window::Window,
+    event_loop: winit::event_loop::EventLoop<()>,
+    instance: wgpu::Instance,
+    size: winit::dpi::PhysicalSize<u32>,
+    surface: wgpu::Surface,
+    adapter: wgpu::Adapter,
+    device: wgpu::Device,
+    queue: wgpu::Queue,
+}
+
+async fn setup<E: Example>(title: &str) -> Setup {
+    #[cfg(target_arch = "wasm32")]
+    console_log::init().expect("could not initialize logger");
 
     gflags::parse();
     if HELP.flag {
@@ -38,137 +61,232 @@ async fn run_async<E: Example>(title: &str) {
     }
     scrub_log::init_with_filter_string(LOG_FILTER.flag).unwrap();
 
-    let event_loop = EventLoop::new();
-    log::info!("Initializing the window...");
+    let event_loop = winit::event_loop::EventLoop::new();
+    let mut builder = winit::window::WindowBuilder::new();
+    builder = builder.with_title(title);
+    #[cfg(windows_OFF)] // TODO
+    {
+        use winit::platform::windows::WindowBuilderExtWindows;
+        builder = builder.with_no_redirection_bitmap(true);
+    }
+    let window = builder.build(&event_loop).unwrap();
 
-    let (window, size, surface) = {
-        let window = winit::window::WindowBuilder::new()
-            .with_title(title)
-            .with_decorations(false)
-            .with_inner_size(winit::dpi::Size::from(winit::dpi::LogicalSize::new(
-                640 * 2,
-                360 * 2,
-            )))
-            .build(&event_loop)
-            .unwrap();
+    log::info!("Initializing the surface...");
+
+    let instance = wgpu::Instance::new(wgpu::BackendBit::PRIMARY);
+    let (size, surface) = unsafe {
         let size = window.inner_size();
-        let surface = wgpu::Surface::create(&window);
-        (window, size, surface)
+        let surface = instance.create_surface(&window);
+        (size, surface)
     };
 
-    window.set_cursor_visible(false);
-
-    let adapter = wgpu::Adapter::request(
-        &wgpu::RequestAdapterOptions {
+    log::info!("Requesting adapter...");
+    let adapter = instance
+        .request_adapter(&wgpu::RequestAdapterOptions {
             power_preference: wgpu::PowerPreference::Default,
             compatible_surface: Some(&surface),
-        },
-        wgpu::BackendBit::PRIMARY,
-    )
-    .await
-    .unwrap();
-
-    let (device, queue) = adapter
-        .request_device(&wgpu::DeviceDescriptor {
-            extensions: wgpu::Extensions {
-                anisotropic_filtering: false,
-            },
-            limits: wgpu::Limits::default(),
         })
-        .await;
+        .await
+        .unwrap();
 
+    let optional_features = E::optional_features();
+    let required_features = E::required_features();
+    let adapter_features = adapter.features();
+    assert!(
+        adapter_features.contains(required_features),
+        "Adapter does not support required features for this example: {:?}",
+        required_features - adapter_features
+    );
+
+    let needed_limits = E::required_limits();
+
+    let trace_dir = std::env::var("WGPU_TRACE");
+    let (device, queue) = adapter
+        .request_device(
+            &wgpu::DeviceDescriptor {
+                features: (optional_features & adapter_features) | required_features,
+                limits: needed_limits,
+                shader_validation: true,
+            },
+            trace_dir.ok().as_ref().map(std::path::Path::new),
+        )
+        .await
+        .unwrap();
+
+    log::info!("Done with setup!");
+    Setup {
+        window,
+        event_loop,
+        instance,
+        size,
+        surface,
+        adapter,
+        device,
+        queue,
+    }
+}
+
+fn start<E: Example>(
+    Setup {
+        window,
+        event_loop,
+        instance,
+        size,
+        surface,
+        adapter,
+        device,
+        queue,
+    }: Setup,
+) {
+    log::info!("Making spawner...");
+    #[cfg(not(target_arch = "wasm32"))]
+    let (mut pool, spawner) = {
+        let local_pool = futures::executor::LocalPool::new();
+        let spawner = local_pool.spawner();
+        (local_pool, spawner)
+    };
+
+    #[cfg(target_arch = "wasm32")]
+    let spawner = {
+        use futures::{future::LocalFutureObj, task::SpawnError};
+        use winit::platform::web::WindowExtWebSys;
+
+        struct WebSpawner {}
+        impl LocalSpawn for WebSpawner {
+            fn spawn_local_obj(
+                &self,
+                future: LocalFutureObj<'static, ()>,
+            ) -> Result<(), SpawnError> {
+                Ok(wasm_bindgen_futures::spawn_local(future))
+            }
+        }
+
+        std::panic::set_hook(Box::new(console_error_panic_hook::hook));
+
+        // On wasm, append the canvas to the document body
+        web_sys::window()
+            .and_then(|win| win.document())
+            .and_then(|doc| doc.body())
+            .and_then(|body| {
+                body.append_child(&web_sys::Element::from(window.canvas()))
+                    .ok()
+            })
+            .expect("couldn't append canvas to document body");
+
+        WebSpawner {}
+    };
+
+    log::info!("Making swapchain...");
     let mut sc_desc = wgpu::SwapChainDescriptor {
         usage: wgpu::TextureUsage::OUTPUT_ATTACHMENT,
-        format: wgpu::TextureFormat::Bgra8UnormSrgb,
+        // TODO: Allow srgb unconditionally
+        format: if cfg!(target_arch = "wasm32") {
+            wgpu::TextureFormat::Bgra8Unorm
+        } else {
+            wgpu::TextureFormat::Bgra8UnormSrgb
+        },
         width: size.width,
         height: size.height,
-        present_mode: wgpu::PresentMode::Immediate,
+        present_mode: wgpu::PresentMode::Mailbox,
     };
     let mut swap_chain = device.create_swap_chain(&surface, &sc_desc);
 
     log::info!("Initializing the example...");
-    let (mut example, init_command_buf) = E::init(&sc_desc, &device);
-    if let Some(command_buf) = init_command_buf {
-        queue.submit(&[command_buf]);
-    }
-    let mut last_frame_start = std::time::Instant::now();
+    let mut example = E::init(&sc_desc, &device, &queue);
+
+    #[cfg(not(target_arch = "wasm32"))]
+    let mut last_update_inst = std::time::Instant::now();
 
     log::info!("Entering render loop...");
     event_loop.run(move |event, _, control_flow| {
+        let _ = (&instance, &adapter); // force ownership by the closure
         *control_flow = if cfg!(feature = "metal-auto-capture") {
-            ControlFlow::Exit
+            winit::event_loop::ControlFlow::Exit
         } else {
-            ControlFlow::Poll
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                winit::event_loop::ControlFlow::WaitUntil(
+                    std::time::Instant::now() + std::time::Duration::from_millis(10),
+                )
+            }
+            #[cfg(target_arch = "wasm32")]
+            {
+                ControlFlow::Poll
+            }
         };
         match event {
-            event::Event::WindowEvent {
+            winit::event::Event::MainEventsCleared => {
+                #[cfg(not(target_arch = "wasm32"))]
+                {
+                    if last_update_inst.elapsed() > std::time::Duration::from_millis(20) {
+                        window.request_redraw();
+                        last_update_inst = std::time::Instant::now();
+                    }
+
+                    pool.run_until_stalled();
+                }
+
+                #[cfg(target_arch = "wasm32")]
+                window.request_redraw();
+            }
+            winit::event::Event::WindowEvent {
                 event: WindowEvent::Resized(size),
                 ..
             } => {
                 log::info!("Resizing to {:?}", size);
-                sc_desc.width = size.width;
-                sc_desc.height = size.height;
+                sc_desc.width = if size.width == 0 { 1 } else { size.width };
+                sc_desc.height = if size.height == 0 { 1 } else { size.height };
+                example.resize(&sc_desc, &device, &queue);
                 swap_chain = device.create_swap_chain(&surface, &sc_desc);
-                let command_buf = example.resize(&sc_desc, &device);
-                if let Some(command_buf) = command_buf {
-                    queue.submit(&[command_buf]);
-                }
             }
-            event::Event::WindowEvent { event, .. } => match event {
-                // TODO factor out a better way to handle user requested exits.
+            winit::event::Event::WindowEvent { event, .. } => match event {
                 WindowEvent::KeyboardInput {
                     input:
-                        event::KeyboardInput {
-                            virtual_keycode: Some(event::VirtualKeyCode::Q),
-                            state: event::ElementState::Pressed,
-                            ..
-                        },
-                    ..
-                }
-                | WindowEvent::KeyboardInput {
-                    input:
-                        event::KeyboardInput {
-                            virtual_keycode: Some(event::VirtualKeyCode::Escape),
-                            state: event::ElementState::Pressed,
+                        winit::event::KeyboardInput {
+                            virtual_keycode: Some(winit::event::VirtualKeyCode::Escape),
+                            state: winit::event::ElementState::Pressed,
                             ..
                         },
                     ..
                 }
                 | WindowEvent::CloseRequested => {
-                    *control_flow = ControlFlow::Exit;
+                    *control_flow = winit::event_loop::ControlFlow::Exit;
                 }
                 _ => {
-                    example.handle_event(event);
+                    example.update(event);
                 }
             },
-            event::Event::MainEventsCleared => window.request_redraw(),
-            event::Event::RedrawRequested(_) => {
-                let frame = swap_chain
-                    .get_next_texture()
-                    .expect("Timeout when acquiring next swap chain texture");
-                let cpu_time_start = std::time::Instant::now();
-                let command_buf = example.render(&frame, &device);
-                let cpu_time = cpu_time_start.elapsed();
-                let gpu_time_start = std::time::Instant::now();
-                queue.submit(&[command_buf]);
-                device.poll(wgpu::Maintain::Wait);
-                let gpu_time = gpu_time_start.elapsed();
-                let frame_time = last_frame_start.elapsed();
-                last_frame_start = std::time::Instant::now();
-                log::info!(
-                    "Frame time: {:?}, GPU time: {:?}, CPU time: {:?}",
-                    frame_time,
-                    gpu_time,
-                    cpu_time
-                );
+            winit::event::Event::RedrawRequested(_) => {
+                let frame = match swap_chain.get_current_frame() {
+                    Ok(frame) => frame,
+                    Err(_) => {
+                        swap_chain = device.create_swap_chain(&surface, &sc_desc);
+                        swap_chain
+                            .get_current_frame()
+                            .expect("Failed to acquire next swap chain texture!")
+                    }
+                };
+
+                example.render(&frame.output, &device, &queue, &spawner);
             }
-            _ => (),
+            _ => {}
         }
     });
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub fn run<E: Example>(title: &str) {
-    futures::executor::block_on(run_async::<E>(title));
+    let setup = futures::executor::block_on(setup::<E>(title));
+    start::<E>(setup);
+}
+
+#[cfg(target_arch = "wasm32")]
+pub fn run<E: Example>(title: &str) {
+    let title = title.to_owned();
+    wasm_bindgen_futures::spawn_local(async move {
+        let setup = setup::<E>(&title).await;
+        start::<E>(setup);
+    });
 }
 
 // This allows treating the framework as a standalone example,

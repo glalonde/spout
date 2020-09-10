@@ -1,4 +1,5 @@
 use gflags::custom::{Arg, Error, Result, Value};
+use wgpu::util::DeviceExt;
 
 gflags::define! {
     --color_map: ColorMap = ColorMap::Inferno
@@ -66,7 +67,6 @@ pub fn create_color_map(
     };
     let texture = device.create_texture(&wgpu::TextureDescriptor {
         size: texture_extent,
-        array_layer_count: 1,
         mip_level_count: 1,
         sample_count: 1,
         dimension: wgpu::TextureDimension::D1,
@@ -76,21 +76,25 @@ pub fn create_color_map(
             | wgpu::TextureUsage::COPY_SRC,
         label: None,
     });
-    let temp_buf = device.create_buffer_with_data(
-        &data,
-        wgpu::BufferUsage::COPY_SRC | wgpu::BufferUsage::COPY_DST | wgpu::BufferUsage::MAP_READ,
-    );
+
+    let temp_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("Staging Buffer"),
+        contents: &data,
+        usage: wgpu::BufferUsage::COPY_SRC | wgpu::BufferUsage::MAP_WRITE,
+    });
+
     encoder.copy_buffer_to_texture(
         wgpu::BufferCopyView {
             buffer: &temp_buf,
-            offset: 0,
-            bytes_per_row: 4 * size,
-            rows_per_image: 1,
+            layout: wgpu::TextureDataLayout {
+                offset: 0,
+                bytes_per_row: 4 * size,
+                rows_per_image: 1,
+            },
         },
         wgpu::TextureCopyView {
             texture: &texture,
             mip_level: 0,
-            array_layer: 0,
             origin: wgpu::Origin3d::ZERO,
         },
         texture_extent,

@@ -1,4 +1,5 @@
 use log::trace;
+use wgpu::util::DeviceExt;
 use zerocopy::AsBytes;
 
 // This should match the struct defined in the relevant compute shader.
@@ -118,23 +119,19 @@ impl Emitter {
         self.params.num_particles
     }
 
-    fn create_particle_buffer(
-        device: &wgpu::Device,
-        num_particles: u32,
-    ) -> (wgpu::BufferAddress, wgpu::Buffer) {
+    fn create_particle_buffer(device: &wgpu::Device, num_particles: u32) -> wgpu::Buffer {
         let buf_size =
             (num_particles * std::mem::size_of::<Particle>() as u32) as wgpu::BufferAddress;
-        (
-            buf_size,
-            device.create_buffer(&wgpu::BufferDescriptor {
-                size: buf_size,
-                usage: wgpu::BufferUsage::STORAGE,
-                label: Some("Particle storage"),
-            }),
-        )
+
+        device.create_buffer(&wgpu::BufferDescriptor {
+            size: buf_size,
+            usage: wgpu::BufferUsage::STORAGE,
+            label: Some("Particle storage"),
+            mapped_at_creation: false,
+        })
     }
 
-    fn create_uniform_buffer(device: &wgpu::Device) -> (wgpu::BufferAddress, wgpu::Buffer) {
+    fn create_uniform_buffer(device: &wgpu::Device) -> wgpu::Buffer {
         let emitter_uniforms = EmitterUniforms {
             start_index: 0,
             num_emitted: 0,
@@ -142,21 +139,19 @@ impl Emitter {
             time: 0.0,
             dt: 0.0,
         };
-        (
-            std::mem::size_of::<EmitterUniforms>() as wgpu::BufferAddress,
-            device.create_buffer_with_data(
-                &emitter_uniforms.as_bytes(),
-                wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
-            ),
-        )
+
+        device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Emitter Uniform Buffer"),
+            contents: &emitter_uniforms.as_bytes(),
+            usage: wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
+        })
     }
 
     pub fn new(device: &wgpu::Device, emission_frequency: f32, max_particle_life: f32) -> Self {
         let max_num_particles = (emission_frequency * max_particle_life).ceil() as u32;
-        let (particle_buffer_size, particle_buffer) =
-            Emitter::create_particle_buffer(device, max_num_particles);
+        let particle_buffer = Emitter::create_particle_buffer(device, max_num_particles);
         // Initialize the uniform buffer.
-        let (uniform_buffer_size, uniform_buffer) = Emitter::create_uniform_buffer(device);
+        let uniform_buffer = Emitter::create_uniform_buffer(device);
 
         // This needs to match the layout size in the the particle compute shader. Maybe
         // an equivalent to "specialization constants" will come out and allow us to
@@ -168,7 +163,7 @@ impl Emitter {
         // Setup the shader pipeline stage.
         let compute_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                bindings: &[
+                entries: &[
                     // Particle storage buffer
                     wgpu::BindGroupLayoutEntry {
                         binding: 0,
@@ -176,13 +171,19 @@ impl Emitter {
                         ty: wgpu::BindingType::StorageBuffer {
                             dynamic: false,
                             readonly: false,
+                            min_binding_size: None,
                         },
+                        count: None,
                     },
                     // Uniform inputs
                     wgpu::BindGroupLayoutEntry {
                         binding: 1,
                         visibility: wgpu::ShaderStage::COMPUTE,
-                        ty: wgpu::BindingType::UniformBuffer { dynamic: false },
+                        ty: wgpu::BindingType::UniformBuffer {
+                            dynamic: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
                     },
                 ],
                 label: Some("Particle update layout"),
@@ -190,36 +191,32 @@ impl Emitter {
 
         let compute_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &compute_bind_group_layout,
-            bindings: &[
+            entries: &[
                 // Particle storage buffer
-                wgpu::Binding {
+                wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: wgpu::BindingResource::Buffer {
-                        buffer: &particle_buffer,
-                        range: 0..particle_buffer_size,
-                    },
+                    resource: wgpu::BindingResource::Buffer(particle_buffer.slice(..)),
                 },
                 // Uniforms
-                wgpu::Binding {
+                wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: wgpu::BindingResource::Buffer {
-                        buffer: &uniform_buffer,
-                        range: 0..uniform_buffer_size,
-                    },
+                    resource: wgpu::BindingResource::Buffer(uniform_buffer.slice(..)),
                 },
             ],
             label: Some("Particle update binding"),
         });
         let compute_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Compute pipeline layout"),
                 bind_group_layouts: &[&compute_bind_group_layout],
+                push_constant_ranges: &[],
             });
 
         let cs = super::shader_utils::Shaders::get("particle_system/emitter.comp.spv").unwrap();
-        let cs_module =
-            device.create_shader_module(&wgpu::read_spirv(std::io::Cursor::new(&cs[..])).unwrap());
+        let cs_module = device.create_shader_module(wgpu::util::make_spirv(&cs));
         let compute_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            layout: &compute_pipeline_layout,
+            label: Some("Compute pipeline descriptor"),
+            layout: Some(&compute_pipeline_layout),
             compute_stage: wgpu::ProgrammableStageDescriptor {
                 module: &cs_module,
                 entry_point: "main",
@@ -265,8 +262,12 @@ impl Emitter {
         values: &EmitterUniforms,
     ) {
         let uniform_buf_size = std::mem::size_of::<EmitterUniforms>();
-        let temp_buf =
-            device.create_buffer_with_data(&values.as_bytes(), wgpu::BufferUsage::COPY_SRC);
+
+        let temp_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Staging Buffer"),
+            contents: &values.as_bytes(),
+            usage: wgpu::BufferUsage::COPY_SRC,
+        });
         encoder.copy_buffer_to_buffer(
             &temp_buf,
             0,

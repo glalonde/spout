@@ -1,5 +1,6 @@
 #[path = "../examples/framework.rs"]
 mod framework;
+use futures::task::{LocalSpawn, LocalSpawnExt};
 use log::{error, info};
 
 gflags::define! {
@@ -38,6 +39,7 @@ struct Example {
     fps: spout::fps_estimator::FpsEstimator,
     state: GameState,
     level_manager: spout::level_manager::LevelManager,
+    staging_belt: wgpu::util::StagingBelt,
     compute_locals: spout::particle_system::ComputeLocals,
     pre_glow_texture: wgpu::TextureView,
     post_glow_texture: wgpu::TextureView,
@@ -121,7 +123,6 @@ impl Example {
                     height: height,
                     depth: 1,
                 },
-                array_layer_count: 1,
                 mip_level_count: 1,
                 sample_count: 1,
                 dimension: wgpu::TextureDimension::D2,
@@ -129,7 +130,7 @@ impl Example {
                 usage: wgpu::TextureUsage::SAMPLED | wgpu::TextureUsage::OUTPUT_ATTACHMENT,
                 label: None,
             })
-            .create_default_view()
+            .create_view(&wgpu::TextureViewDescriptor::default())
     }
 
     fn read_config_from_file(path: &str) -> anyhow::Result<spout::game_params::GameParams> {
@@ -152,7 +153,9 @@ impl framework::Example for Example {
     fn init(
         sc_desc: &wgpu::SwapChainDescriptor,
         device: &wgpu::Device,
-    ) -> (Self, Option<wgpu::CommandBuffer>) {
+        queue: &wgpu::Queue,
+    ) -> Self {
+        log::info!("Running!");
         let mut init_encoder =
             device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
         let game_params = Example::get_game_config();
@@ -237,6 +240,7 @@ impl framework::Example for Example {
                 paused: false,
             },
             level_manager,
+            staging_belt: wgpu::util::StagingBelt::new(1024),
             compute_locals: compute_locals,
             pre_glow_texture: pre_glow_texture_view,
             post_glow_texture: post_glow_texture_view,
@@ -257,11 +261,12 @@ impl framework::Example for Example {
             game_time: std::time::Duration::new(0, 0),
         };
         if this.game_params.music_starts_on {
-            let _ = spout::music_player::start_music_player_thread();
+            // let _ = spout::music_player::start_music_player_thread();
         }
-        (this, Some(init_encoder.finish()))
+        queue.submit(Some(init_encoder.finish()));
+        this
     }
-    fn handle_event(&mut self, event: winit::event::WindowEvent) {
+    fn update(&mut self, event: winit::event::WindowEvent) {
         macro_rules! bind_keys {
             ($input:expr, $($pat:pat => $result:expr),*) => (
                             match $input {
@@ -292,7 +297,8 @@ impl framework::Example for Example {
         &mut self,
         sc_desc: &wgpu::SwapChainDescriptor,
         device: &wgpu::Device,
-    ) -> Option<wgpu::CommandBuffer> {
+        queue: &wgpu::Queue,
+    ) {
         let mut encoder =
             device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
         let viewport_aspect_ratio =
@@ -303,14 +309,16 @@ impl framework::Example for Example {
         info!("Window aspect ratio: {}", new_window_aspect_ratio);
         self.viewport.resize(sc_desc, device, &mut encoder);
         self.debug_overlay.resize(sc_desc);
-        Some(encoder.finish())
+        queue.submit(Some(encoder.finish()));
     }
 
     fn render(
         &mut self,
-        frame: &wgpu::SwapChainOutput,
+        frame: &wgpu::SwapChainTexture,
         device: &wgpu::Device,
-    ) -> wgpu::CommandBuffer {
+        queue: &wgpu::Queue,
+        spawner: &impl LocalSpawn,
+    ) {
         let mut encoder =
             device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
         let dt = self.update_state(device, &mut encoder);
@@ -334,9 +342,10 @@ impl framework::Example for Example {
                     color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
                         attachment: &self.pre_glow_texture,
                         resolve_target: None,
-                        load_op: wgpu::LoadOp::Clear,
-                        store_op: wgpu::StoreOp::Store,
-                        clear_color: wgpu::Color::BLACK,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                            store: true,
+                        },
                     }],
                     depth_stencil_attachment: None,
                 });
@@ -381,15 +390,17 @@ impl framework::Example for Example {
             // Display pause screen
             let width = self.game_params.viewport_width;
             let height = self.game_params.viewport_height;
+            let paused_text = wgpu_glyph::Text::new("Paused")
+                .with_color([1.0, 0.2, 0.2, 1.0])
+                .with_scale(wgpu_glyph::ab_glyph::PxScale { x: 20.0, y: 20.0 });
             self.text_renderer.render_direct(
                 device,
+                &mut self.staging_belt,
                 &self.game_view_texture,
                 &mut encoder,
                 &wgpu_glyph::Section {
-                    text: "Paused",
+                    text: vec![paused_text],
                     screen_position: (width as f32 / 2.0, height as f32 / 2.0),
-                    color: [1.0, 0.2, 0.2, 1.0],
-                    scale: wgpu_glyph::Scale { x: 20.0, y: 20.0 },
                     bounds: (width as f32, height as f32),
                     layout: wgpu_glyph::Layout::default()
                         .h_align(wgpu_glyph::HorizontalAlign::Center)
@@ -402,15 +413,19 @@ impl framework::Example for Example {
             // Render the score
             let width = self.game_params.viewport_width as f32;
             let height = self.game_params.viewport_height as f32;
+
+            let score_t = format!("{}", self.state.score);
+            let score_text = wgpu_glyph::Text::new(&score_t)
+                .with_color([0.2, 1.0, 0.2, 1.0])
+                .with_scale(wgpu_glyph::ab_glyph::PxScale { x: 28.0, y: 28.0 });
             self.text_renderer.render_direct(
                 device,
+                &mut self.staging_belt,
                 &self.game_view_texture,
                 &mut encoder,
                 &wgpu_glyph::Section {
-                    text: &format!("{}", self.state.score),
+                    text: vec![score_text],
                     screen_position: (width, 0.0),
-                    color: [0.2, 1.0, 0.2, 1.0],
-                    scale: wgpu_glyph::Scale { x: 28.0, y: 28.0 },
                     bounds: (width as f32 / 2.0, height as f32 / 2.0),
                     layout: wgpu_glyph::Layout::default_single_line()
                         .h_align(wgpu_glyph::HorizontalAlign::Right)
@@ -427,7 +442,23 @@ impl framework::Example for Example {
                 .render(&device, &frame.view, &mut encoder, 1.0 / dt as f64);
         }
 
-        encoder.finish()
+        self.staging_belt.finish();
+        queue.submit(Some(encoder.finish()));
+
+        let belt_future = self.staging_belt.recall();
+        spawner.spawn_local(belt_future).unwrap();
+    }
+
+    fn optional_features() -> wgpu::Features {
+        wgpu::Features::empty()
+    }
+
+    fn required_features() -> wgpu::Features {
+        wgpu::Features::empty()
+    }
+
+    fn required_limits() -> wgpu::Limits {
+        wgpu::Limits::default()
     }
 }
 

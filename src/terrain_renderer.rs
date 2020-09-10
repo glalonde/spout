@@ -1,3 +1,4 @@
+use wgpu::util::DeviceExt;
 use zerocopy::AsBytes;
 
 // Keep track of the rendering members and logic to turn the integer particle
@@ -46,7 +47,11 @@ impl TerrainRenderer {
         let bytes: &[u8] = values.as_bytes();
         let uniform_buf_size = std::mem::size_of::<FragmentUniforms>();
         // TODO Can we keep a persistent staging buffer around?
-        let temp_buf = device.create_buffer_with_data(bytes, wgpu::BufferUsage::COPY_SRC);
+        let temp_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Staging buffer"),
+            contents: bytes,
+            usage: wgpu::BufferUsage::COPY_SRC,
+        });
         encoder.copy_buffer_to_buffer(
             &temp_buf,
             0,
@@ -64,12 +69,10 @@ impl TerrainRenderer {
     ) -> Self {
         // Sets up the quad canvas.
         let vs = super::shader_utils::Shaders::get("particle_system/quad.vert.spv").unwrap();
-        let vs_module =
-            device.create_shader_module(&wgpu::read_spirv(std::io::Cursor::new(&vs[..])).unwrap());
+        let vs_module = device.create_shader_module(wgpu::util::make_spirv(&vs));
         // Renders the data texture onto the canvas.
         let fs = super::shader_utils::Shaders::get("particle_system/terrain.frag.spv").unwrap();
-        let fs_module =
-            device.create_shader_module(&wgpu::read_spirv(std::io::Cursor::new(&fs[..])).unwrap());
+        let fs_module = device.create_shader_module(wgpu::util::make_spirv(&fs));
 
         let fragment_uniform_size = std::mem::size_of::<FragmentUniforms>() as wgpu::BufferAddress;
         let fragment_uniforms = FragmentUniforms {
@@ -79,15 +82,16 @@ impl TerrainRenderer {
             height_of_bottom_buffer: 0,
             height_of_top_buffer: 0,
         };
-        let uniform_buf = device.create_buffer_with_data(
-            &fragment_uniforms.as_bytes(),
-            wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
-        );
+        let uniform_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Uniform buffer"),
+            contents: &fragment_uniforms.as_bytes(),
+            usage: wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
+        });
 
         // Create pipeline layout
         let render_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                bindings: &[
+                entries: &[
                     // Bottom terrain buffer
                     wgpu::BindGroupLayoutEntry {
                         binding: 0,
@@ -95,7 +99,10 @@ impl TerrainRenderer {
                         ty: wgpu::BindingType::StorageBuffer {
                             dynamic: false,
                             readonly: true,
+                            // TODO find out what min_binding_size should be
+                            min_binding_size: None,
                         },
+                        count: None,
                     },
                     // Top terrain buffer
                     wgpu::BindGroupLayoutEntry {
@@ -104,13 +111,21 @@ impl TerrainRenderer {
                         ty: wgpu::BindingType::StorageBuffer {
                             dynamic: false,
                             readonly: true,
+                            // TODO find out what min_binding_size should be
+                            min_binding_size: None,
                         },
+                        count: None,
                     },
                     // Uniform inputs
                     wgpu::BindGroupLayoutEntry {
                         binding: 2,
                         visibility: wgpu::ShaderStage::FRAGMENT,
-                        ty: wgpu::BindingType::UniformBuffer { dynamic: false },
+                        ty: wgpu::BindingType::UniformBuffer {
+                            dynamic: false,
+                            // TODO find out what min_binding_size should be
+                            min_binding_size: None,
+                        },
+                        count: None,
                     },
                 ],
                 label: None,
@@ -121,27 +136,22 @@ impl TerrainRenderer {
         for config in level_manager.buffer_configurations() {
             render_bind_groups.push(device.create_bind_group(&wgpu::BindGroupDescriptor {
                 layout: &render_bind_group_layout,
-                bindings: &[
-                    wgpu::Binding {
+                entries: &[
+                    wgpu::BindGroupEntry {
                         binding: 0,
-                        resource: wgpu::BindingResource::Buffer {
-                            buffer: &level_manager.terrain_buffers()[config[0]],
-                            range: 0..terrain_buffer_size as wgpu::BufferAddress,
-                        },
+                        resource: wgpu::BindingResource::Buffer(
+                            level_manager.terrain_buffers()[config[0]].slice(..),
+                        ),
                     },
-                    wgpu::Binding {
+                    wgpu::BindGroupEntry {
                         binding: 1,
-                        resource: wgpu::BindingResource::Buffer {
-                            buffer: &level_manager.terrain_buffers()[config[1]],
-                            range: 0..terrain_buffer_size as wgpu::BufferAddress,
-                        },
+                        resource: wgpu::BindingResource::Buffer(
+                            level_manager.terrain_buffers()[config[1]].slice(..),
+                        ),
                     },
-                    wgpu::Binding {
+                    wgpu::BindGroupEntry {
                         binding: 2,
-                        resource: wgpu::BindingResource::Buffer {
-                            buffer: &uniform_buf,
-                            range: 0..fragment_uniform_size,
-                        },
+                        resource: wgpu::BindingResource::Buffer(uniform_buf.slice(..)),
                     },
                 ],
                 label: None,
@@ -151,10 +161,13 @@ impl TerrainRenderer {
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 bind_group_layouts: &[&render_bind_group_layout],
+                label: None,
+                push_constant_ranges: &[],
             });
 
         let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            layout: &render_pipeline_layout,
+            layout: Some(&render_pipeline_layout),
+            label: None,
             vertex_stage: wgpu::ProgrammableStageDescriptor {
                 module: &vs_module,
                 entry_point: "main",
@@ -169,6 +182,7 @@ impl TerrainRenderer {
                 depth_bias: 0,
                 depth_bias_slope_scale: 0.0,
                 depth_bias_clamp: 0.0,
+                clamp_depth: false,
             }),
             primitive_topology: wgpu::PrimitiveTopology::TriangleStrip,
             color_states: &[wgpu::ColorStateDescriptor {
@@ -204,9 +218,10 @@ impl TerrainRenderer {
             color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
                 attachment: output_texture_view,
                 resolve_target: None,
-                load_op: wgpu::LoadOp::Load,
-                store_op: wgpu::StoreOp::Store,
-                clear_color: wgpu::Color::BLACK,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                    store: true,
+                },
             }],
             depth_stencil_attachment: None,
         });

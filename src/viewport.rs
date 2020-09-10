@@ -1,3 +1,4 @@
+use wgpu::util::DeviceExt;
 use zerocopy::{AsBytes, FromBytes};
 
 #[cfg_attr(rustfmt, rustfmt_skip)]
@@ -77,12 +78,10 @@ impl Viewport {
     ) -> Self {
         // Sets up the quad canvas.
         let vs = super::shader_utils::Shaders::get("particle_system/perspective.vert.spv").unwrap();
-        let vs_module =
-            device.create_shader_module(&wgpu::read_spirv(std::io::Cursor::new(&vs[..])).unwrap());
+        let vs_module = device.create_shader_module(wgpu::util::make_spirv(&vs));
         // Renders the data texture onto the canvas.
         let fs = super::shader_utils::Shaders::get("particle_system/perspective.frag.spv").unwrap();
-        let fs_module =
-            device.create_shader_module(&wgpu::read_spirv(std::io::Cursor::new(&fs[..])).unwrap());
+        let fs_module = device.create_shader_module(wgpu::util::make_spirv(&fs));
 
         // let input_texture_view =
         //    super::shader_utils::load_png_to_texture(device, "assets/coords.png",
@@ -91,19 +90,28 @@ impl Viewport {
         // Create the vertex and index buffers
         let vertex_size = std::mem::size_of::<Vertex>();
         let (vertex_data, index_data) = create_vertices();
-        let vertex_buf =
-            device.create_buffer_with_data(&vertex_data.as_bytes(), wgpu::BufferUsage::VERTEX);
-
-        let index_buf =
-            device.create_buffer_with_data(&index_data.as_bytes(), wgpu::BufferUsage::INDEX);
+        let vertex_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Vertex buffer"),
+            contents: &vertex_data.as_bytes(),
+            usage: wgpu::BufferUsage::VERTEX,
+        });
+        let index_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Index buffer"),
+            contents: &index_data.as_bytes(),
+            usage: wgpu::BufferUsage::INDEX,
+        });
 
         // Create pipeline layout
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            bindings: &[
+            entries: &[
                 wgpu::BindGroupLayoutEntry {
                     binding: 0,
                     visibility: wgpu::ShaderStage::VERTEX,
-                    ty: wgpu::BindingType::UniformBuffer { dynamic: false },
+                    ty: wgpu::BindingType::UniformBuffer {
+                        dynamic: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
                 },
                 wgpu::BindGroupLayoutEntry {
                     binding: 1,
@@ -113,21 +121,26 @@ impl Viewport {
                         multisampled: false,
                         dimension: wgpu::TextureViewDimension::D2,
                     },
+                    count: None,
                 },
                 wgpu::BindGroupLayoutEntry {
                     binding: 2,
                     visibility: wgpu::ShaderStage::FRAGMENT,
                     ty: wgpu::BindingType::Sampler { comparison: false },
+                    count: None,
                 },
             ],
             label: None,
         });
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("Viewport render layout"),
             bind_group_layouts: &[&bind_group_layout],
+            push_constant_ranges: &[],
         });
 
         // Create other resources
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("Viewport sampler"),
             address_mode_u: wgpu::AddressMode::ClampToEdge,
             address_mode_v: wgpu::AddressMode::ClampToEdge,
             address_mode_w: wgpu::AddressMode::ClampToEdge,
@@ -136,31 +149,30 @@ impl Viewport {
             mipmap_filter: wgpu::FilterMode::Nearest,
             lod_min_clamp: -100.0,
             lod_max_clamp: 100.0,
-            compare: wgpu::CompareFunction::Always,
+            compare: None,
+            anisotropy_clamp: None,
         });
         let mx_total = Self::generate_orthographic_matrix();
         let mx_ref: &[f32; 16] = mx_total.as_ref();
-        let uniform_buf = device.create_buffer_with_data(
-            mx_ref.as_bytes(),
-            wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
-        );
+        let uniform_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Viewport uniform"),
+            contents: mx_ref.as_bytes(),
+            usage: wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
+        });
 
         // Create bind group
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &bind_group_layout,
-            bindings: &[
-                wgpu::Binding {
+            entries: &[
+                wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: wgpu::BindingResource::Buffer {
-                        buffer: &uniform_buf,
-                        range: 0..64,
-                    },
+                    resource: wgpu::BindingResource::Buffer(uniform_buf.slice(..)),
                 },
-                wgpu::Binding {
+                wgpu::BindGroupEntry {
                     binding: 1,
                     resource: wgpu::BindingResource::TextureView(&input_texture_view),
                 },
-                wgpu::Binding {
+                wgpu::BindGroupEntry {
                     binding: 2,
                     resource: wgpu::BindingResource::Sampler(&sampler),
                 },
@@ -169,7 +181,8 @@ impl Viewport {
         });
 
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            layout: &pipeline_layout,
+            label: Some("Viewport render pipeline"),
+            layout: Some(&pipeline_layout),
             vertex_stage: wgpu::ProgrammableStageDescriptor {
                 module: &vs_module,
                 entry_point: "main",
@@ -184,6 +197,7 @@ impl Viewport {
                 depth_bias: 0,
                 depth_bias_slope_scale: 0.0,
                 depth_bias_clamp: 0.0,
+                clamp_depth: false,
             }),
             primitive_topology: wgpu::PrimitiveTopology::TriangleList,
             color_states: &[wgpu::ColorStateDescriptor {
@@ -235,31 +249,30 @@ impl Viewport {
     ) {
         let mx_total = Self::generate_orthographic_matrix();
         let mx_ref: &[f32; 16] = mx_total.as_ref();
-        let temp_buf =
-            device.create_buffer_with_data(mx_ref.as_bytes(), wgpu::BufferUsage::COPY_SRC);
+        let temp_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Resize staging buffer"),
+            contents: mx_ref.as_bytes(),
+            usage: wgpu::BufferUsage::COPY_SRC,
+        });
         encoder.copy_buffer_to_buffer(&temp_buf, 0, &self.uniform_buf, 0, 64);
     }
 
-    pub fn render(&self, frame: &wgpu::SwapChainOutput, encoder: &mut wgpu::CommandEncoder) {
+    pub fn render(&self, frame: &wgpu::SwapChainTexture, encoder: &mut wgpu::CommandEncoder) {
         let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
                 attachment: &frame.view,
                 resolve_target: None,
-                load_op: wgpu::LoadOp::Load,
-                store_op: wgpu::StoreOp::Store,
-                clear_color: wgpu::Color {
-                    r: 0.1,
-                    g: 0.2,
-                    b: 0.3,
-                    a: 1.0,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: true,
                 },
             }],
             depth_stencil_attachment: None,
         });
         rpass.set_pipeline(&self.pipeline);
         rpass.set_bind_group(0, &self.bind_group, &[]);
-        rpass.set_index_buffer(&self.index_buf, 0, 0);
-        rpass.set_vertex_buffer(0, &self.vertex_buf, 0, 0);
+        rpass.set_index_buffer(self.index_buf.slice(..));
+        rpass.set_vertex_buffer(0, self.vertex_buf.slice(..));
         rpass.draw_indexed(0..self.index_count as u32, 0, 0..1);
     }
 }

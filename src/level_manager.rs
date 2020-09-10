@@ -1,4 +1,5 @@
 use log::info;
+use wgpu::util::DeviceExt;
 use zerocopy::AsBytes;
 
 pub struct LevelManager {
@@ -162,9 +163,9 @@ impl LevelManager {
             size: size as wgpu::BufferAddress,
             usage: wgpu::BufferUsage::STORAGE
                 | wgpu::BufferUsage::COPY_DST
-                | wgpu::BufferUsage::COPY_SRC
-                | wgpu::BufferUsage::STORAGE_READ,
-            label: None,
+                | wgpu::BufferUsage::COPY_SRC,
+            label: Some("Terrain buffer"),
+            mapped_at_creation: false,
         })
     }
 
@@ -197,10 +198,13 @@ impl LevelManager {
             panic!("Need a positive level num. Requested: {}", level_num);
         }
         let level_data = &self.levels[level_num as usize];
-        let temp_buf = device.create_buffer_with_data(
-            level_data.as_bytes(),
-            wgpu::BufferUsage::COPY_SRC | wgpu::BufferUsage::COPY_DST | wgpu::BufferUsage::MAP_READ,
-        );
+        log::info!("asdf1");
+        let temp_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Staging Buffer"),
+            contents: level_data.as_bytes(),
+            usage: wgpu::BufferUsage::COPY_SRC | wgpu::BufferUsage::MAP_WRITE,
+        });
+        log::info!("asdf2");
         encoder.copy_buffer_to_buffer(
             &temp_buf,
             0,
@@ -208,5 +212,6 @@ impl LevelManager {
             0,
             self.terrain_buffer_size as u64,
         );
+        log::info!("asdf3");
     }
 }
