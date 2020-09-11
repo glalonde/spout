@@ -266,8 +266,8 @@ impl ShipRenderer {
         let mx_projection = cgmath::ortho(
             0.0,
             level_manager.level_width as f32,
-            viewport_bottom,
             viewport_bottom + level_manager.viewport_height as f32,
+            viewport_bottom,
             0.0,
             1.0,
         );

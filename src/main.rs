@@ -365,8 +365,11 @@ impl framework::Example for Example {
             }
             {
                 // Render the particle glow pass.
-                self.glow_renderer
-                    .render(&mut encoder, &self.post_glow_texture);
+                self.glow_renderer.render(
+                    &mut encoder,
+                    &self.post_glow_texture,
+                    self.game_params.disable_glow_pass,
+                );
             }
             {
                 // Render the ship.

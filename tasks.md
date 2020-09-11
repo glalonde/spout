@@ -9,14 +9,14 @@
 - [x] terrain collision capabilities
 - [ ] resolution selection
 - [ ] window aspect ratio
-- [ ] set fullscreen 
+- [x] set fullscreen 
 - [x] show score 
 - [x] pausing 
 - [x] music
 ---
 ## Medium
 - [x] level generation
-- [ ]  progressive level generation
+- [ ] progressive level generation
 ---
 ## Hard
 - [x] scrolling behavior

@@ -8,7 +8,7 @@ pub struct GameViewport {
 impl GameViewport {
     pub fn init(device: &wgpu::Device, input_texture: &wgpu::TextureView) -> Self {
         // Sets up the quad canvas.
-        let vs = super::shader_utils::Shaders::get("particle_system/quad.vert.spv").unwrap();
+        let vs = super::shader_utils::Shaders::get("particle_system/flip_quad.vert.spv").unwrap();
         let vs_module = device.create_shader_module(wgpu::util::make_spirv(&vs));
         // Renders the data texture onto the canvas.
         let fs = super::shader_utils::Shaders::get("particle_system/quad.frag.spv").unwrap();
