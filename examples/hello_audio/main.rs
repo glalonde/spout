@@ -4,7 +4,7 @@ gflags::define! {
     --log_filter: &str = "info"
 }
 gflags::define! {
-    --library_dir: &str = "assets/music/output_flac"
+    --library_dir: &str = "assets/music/output"
 }
 
 #[derive(Debug)]
@@ -41,7 +41,7 @@ impl MusicPlayer {
             .into_iter()
             .filter_map(Result::ok)
             .filter(|e| !e.file_type().is_dir())
-            .filter(|e| e.path().extension().unwrap() == "flac")
+            .filter(|e| e.path().extension().unwrap() == "ogg")
             .filter(|e| std::fs::File::open(e.path()).is_ok())
             .filter_map(Some)
             .map(|e| e.path().to_path_buf())

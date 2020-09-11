@@ -4,7 +4,7 @@ gflags::define! {
     --log_filter: &str = "info"
 }
 gflags::define! {
-    --library_dir: &str = "assets/music/output_flac"
+    --library_dir: &str = "assets/music/output"
 }
 
 pub fn start_music_player_thread() -> crossbeam_channel::Sender<MusicPlayerCommand> {
@@ -46,15 +46,17 @@ impl MusicPlayer {
         };
 
         // Open all the library files.
-        let files: Vec<std::path::PathBuf> = walkdir::WalkDir::new(music_dir)
+        use rand::seq::SliceRandom;
+        let mut files: Vec<std::path::PathBuf> = walkdir::WalkDir::new(music_dir)
             .into_iter()
             .filter_map(Result::ok)
             .filter(|e| !e.file_type().is_dir())
-            .filter(|e| e.path().extension().unwrap() == "flac")
+            .filter(|e| e.path().extension().unwrap() == "ogg")
             .filter(|e| std::fs::File::open(e.path()).is_ok())
             .filter_map(Some)
             .map(|e| e.path().to_path_buf())
             .collect();
+        files.shuffle(&mut rand::thread_rng());
 
         if files.len() <= 0 {
             return Err(String::from("No songs to play"));
