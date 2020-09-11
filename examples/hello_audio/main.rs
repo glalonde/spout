@@ -15,6 +15,7 @@ enum MusicPlayerCommand {
 }
 
 struct MusicPlayer {
+    output_stream: rodio::OutputStream,
     sound_queue: spout::sound_queue::SoundQueueController<f32>,
     library: Vec<std::path::PathBuf>,
     current_track: usize,
@@ -26,8 +27,9 @@ impl MusicPlayer {
         music_dir: &std::path::Path,
         command_rx: crossbeam_channel::Receiver<MusicPlayerCommand>,
     ) -> Result<Self, String> {
-        let sound_queue = spout::sound_queue::make_default_sound_queue();
+        let (sound_queue, output_stream) = spout::sound_queue::make_default_sound_queue();
         let mut player = MusicPlayer {
+            output_stream,
             sound_queue,
             library: vec![],
             current_track: 0,
