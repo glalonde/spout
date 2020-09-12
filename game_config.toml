@@ -5,3 +5,4 @@ level_height = 960
 fps = 60.0
 music_starts_on = false 
 enable_glow_pass = true 
+render_ship = false 

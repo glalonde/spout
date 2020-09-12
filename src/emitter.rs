@@ -51,7 +51,7 @@ pub struct EmitParams {
 
 impl EmitParams {
     pub fn default() -> Self {
-        EmitParams::stationary(&[0, 0], 0.0, 0.0, 0.0, 0.0, 3.0)
+        EmitParams::stationary(&[0, 0], 0.0, 0.0, 0.0, 0.0, 1.0)
     }
 
     pub fn moving(

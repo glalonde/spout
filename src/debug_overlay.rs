@@ -36,7 +36,7 @@ impl DebugOverlay {
         let width = 640;
         let height = 320;
         let text_color: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
-        let render_text = format!("FPS: {:0.2}s", fps);
+        let render_text = format!("FPS: {:0.2}", fps);
         let section = wgpu_glyph::Section {
             text: vec![wgpu_glyph::Text::new(&render_text).with_color(text_color)],
             screen_position: (00.0, 00.0),

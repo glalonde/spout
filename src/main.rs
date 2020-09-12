@@ -369,7 +369,7 @@ impl framework::Example for Example {
                 self.glow_renderer
                     .render(&mut encoder, &self.post_glow_texture);
             }
-            {
+            if self.game_params.render_ship {
                 // Render the ship.
                 self.ship_renderer.render(
                     &self.post_glow_texture,

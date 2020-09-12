@@ -10,6 +10,7 @@ pub struct GameParams {
     pub fps: f64,
     pub music_starts_on: bool,
     pub enable_glow_pass: bool,
+    pub render_ship: bool,
 }
 
 impl std::str::FromStr for GameParams {
@@ -30,6 +31,7 @@ impl Default for GameParams {
             fps: 60.0,
             music_starts_on: false,
             enable_glow_pass: false,
+            render_ship: true,
         }
     }
 }
@@ -48,6 +50,7 @@ mod tests {
             fps: 60.0,
             music_starts_on: false,
             enable_glow_pass: false,
+            render_ship: true,
         };
         let serialized = toml::to_string(&params).unwrap();
         println!("serialized = {}", serialized);
