@@ -3,7 +3,6 @@
 pub struct GlowRenderer {
     pub render_bind_group: wgpu::BindGroup,
     pub render_pipeline: wgpu::RenderPipeline,
-    pub identity_render_pipeline: wgpu::RenderPipeline,
 }
 
 impl GlowRenderer {
@@ -14,10 +13,6 @@ impl GlowRenderer {
         // Renders the data texture onto the canvas.
         let fs = super::shader_utils::Shaders::get("particle_system/glow.frag.spv").unwrap();
         let fs_module = device.create_shader_module(wgpu::util::make_spirv(&fs));
-
-        let identity_fs =
-            super::shader_utils::Shaders::get("particle_system/quad.frag.spv").unwrap();
-        let identity_fs_module = device.create_shader_module(wgpu::util::make_spirv(&identity_fs));
 
         // The render pipeline renders data into this texture
         let input_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
@@ -115,46 +110,9 @@ impl GlowRenderer {
             sample_mask: !0,
             alpha_to_coverage_enabled: false,
         });
-        let identity_render_pipeline =
-            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some("Glow pass render pipeline"),
-                layout: Some(&render_pipeline_layout),
-                vertex_stage: wgpu::ProgrammableStageDescriptor {
-                    module: &vs_module,
-                    entry_point: "main",
-                },
-                fragment_stage: Some(wgpu::ProgrammableStageDescriptor {
-                    module: &identity_fs_module,
-                    entry_point: "main",
-                }),
-                rasterization_state: Some(wgpu::RasterizationStateDescriptor {
-                    front_face: wgpu::FrontFace::Ccw,
-                    cull_mode: wgpu::CullMode::None,
-                    depth_bias: 0,
-                    depth_bias_slope_scale: 0.0,
-                    depth_bias_clamp: 0.0,
-                    clamp_depth: false,
-                }),
-                primitive_topology: wgpu::PrimitiveTopology::TriangleStrip,
-                color_states: &[wgpu::ColorStateDescriptor {
-                    format: wgpu::TextureFormat::Bgra8UnormSrgb,
-                    color_blend: wgpu::BlendDescriptor::REPLACE,
-                    alpha_blend: wgpu::BlendDescriptor::REPLACE,
-                    write_mask: wgpu::ColorWrite::ALL,
-                }],
-                vertex_state: wgpu::VertexStateDescriptor {
-                    index_format: wgpu::IndexFormat::Uint16,
-                    vertex_buffers: &[],
-                },
-                depth_stencil_state: None,
-                sample_count: 1,
-                sample_mask: !0,
-                alpha_to_coverage_enabled: false,
-            });
         GlowRenderer {
             render_bind_group,
             render_pipeline,
-            identity_render_pipeline,
         }
     }
 
@@ -162,7 +120,6 @@ impl GlowRenderer {
         &self,
         encoder: &mut wgpu::CommandEncoder,
         output_texture_view: &wgpu::TextureView,
-        disable: bool,
     ) {
         // Render the density texture.
         let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -176,11 +133,7 @@ impl GlowRenderer {
             }],
             depth_stencil_attachment: None,
         });
-        if !disable {
-            rpass.set_pipeline(&self.render_pipeline);
-        } else {
-            rpass.set_pipeline(&self.identity_render_pipeline);
-        }
+        rpass.set_pipeline(&self.render_pipeline);
         rpass.set_bind_group(0, &self.render_bind_group, &[]);
         rpass.draw(0..4 as u32, 0..1);
     }

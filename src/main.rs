@@ -350,26 +350,24 @@ impl framework::Example for Example {
                     depth_stencil_attachment: None,
                 });
             }
+            let pre_glow_target = if self.game_params.enable_glow_pass {
+                &self.pre_glow_texture
+            } else {
+                &self.post_glow_texture
+            };
             {
                 // Render the terrain
-                self.terrain_renderer.render(
-                    &self.level_manager,
-                    &self.pre_glow_texture,
-                    &mut encoder,
-                );
+                self.terrain_renderer
+                    .render(&self.level_manager, pre_glow_target, &mut encoder);
             }
             {
                 // Render the density texture.
-                self.particle_renderer
-                    .render(&mut encoder, &self.pre_glow_texture);
+                self.particle_renderer.render(&mut encoder, pre_glow_target);
             }
-            {
+            if self.game_params.enable_glow_pass {
                 // Render the particle glow pass.
-                self.glow_renderer.render(
-                    &mut encoder,
-                    &self.post_glow_texture,
-                    self.game_params.disable_glow_pass,
-                );
+                self.glow_renderer
+                    .render(&mut encoder, &self.post_glow_texture);
             }
             {
                 // Render the ship.
