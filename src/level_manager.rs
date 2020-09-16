@@ -1,6 +1,78 @@
+use std::{collections::VecDeque, pin::Pin};
+
+use futures::{task::SpawnExt, Future};
 use log::info;
 use wgpu::util::DeviceExt;
 use zerocopy::AsBytes;
+
+pub struct LevelMaker {
+    level_width: u32,
+    level_height: u32,
+    levels: Vec<Vec<i32>>,
+    pool: futures::executor::ThreadPool,
+    future_levels: std::collections::HashMap<i32, Pin<Box<dyn Future<Output = Vec<i32>>>>>,
+}
+
+impl LevelMaker {
+    fn init(level_width: u32, level_height: u32) -> Self {
+        LevelMaker {
+            level_width,
+            level_height,
+            levels: vec![],
+            pool: futures::executor::ThreadPool::new().unwrap(),
+            future_levels: std::collections::HashMap::new(),
+        }
+    }
+    fn make_level(level_num: i32, level_height: u32, level_width: u32) -> Vec<i32> {
+        info!("Making level: {}", level_num);
+        image::ImageBuffer::<image::Luma<i32>, Vec<i32>>::from_fn(
+            level_width,
+            level_height,
+            |x, y| {
+                let (index, _) = match level_num % 2 {
+                    0 => (x, level_width),
+                    1 => (y, level_height),
+                    _ => panic!(),
+                };
+                match index % 5 {
+                    0 => image::Luma::<i32>([1000]),
+                    _ => image::Luma::<i32>([0]),
+                }
+            },
+        )
+        .into_raw()
+    }
+    pub fn prefetch_up_to_level(&mut self, i: i32) {
+        for level_num in self.levels.len() as i32..(i + 1) {
+            if !self.future_levels.contains_key(&level_num) {
+                let width = self.level_width;
+                let height = self.level_height;
+                let future_level = async move {
+                    log::info!("Making level: {}", i);
+                    LevelMaker::make_level(level_num as i32, height, width)
+                };
+                // Resolve ASAP on threadpool.
+                let handle = self.pool.spawn_with_handle(future_level).unwrap();
+                self.future_levels.insert(level_num, Box::pin(handle));
+            }
+        }
+    }
+
+    pub fn use_level<F>(&mut self, i: i32, mut action: F)
+    where
+        F: FnMut(&Vec<i32>),
+    {
+        // Resolve all futures up to the requested one.
+        for level_num in self.levels.len() as i32..(i + 1) {
+            // If the unwrap fails, then prefetch probably wasn't called.
+            self.levels.push(futures::executor::block_on(
+                self.future_levels.get_mut(&level_num).unwrap(),
+            ));
+            log::info!("Resolved level: {}", level_num);
+        }
+        action(&self.levels[i as usize]);
+    }
+}
 
 pub struct LevelManager {
     // Static params
@@ -24,7 +96,7 @@ pub struct LevelManager {
     // Buffer index -> level number
     buffer_levels: Vec<i32>,
 
-    levels: Vec<Vec<i32>>,
+    level_maker: LevelMaker,
 }
 
 impl LevelManager {
@@ -88,7 +160,7 @@ impl LevelManager {
             terrain_buffer_size,
             terrain_buffers,
             buffer_levels,
-            levels: vec![],
+            level_maker: LevelMaker::init(level_width, level_height),
         };
 
         lm.sync_height(device, height_of_viewport, init_encoder);
@@ -104,7 +176,10 @@ impl LevelManager {
         let current_bottom_level = height_of_viewport / (self.level_height as i32);
         let current_top_level = current_bottom_level + 1;
 
-        self.make_levels_through(current_top_level);
+        // self.make_levels_through(current_top_level);
+        // Async request levels
+        self.level_maker
+            .prefetch_up_to_level(current_top_level + 10);
 
         // Update the assignment of levels to buffers.
         let new_buffer_config_index = (current_bottom_level % 2) as usize;
@@ -120,6 +195,7 @@ impl LevelManager {
                 info!("Buffer index {} has level {}", i, level_number);
                 new_buffer_levels[i] = level_number;
             }
+
             self.sync_buffers(device, &new_buffer_levels, encoder);
             self.buffer_config_index = new_buffer_config_index;
             self.buffer_levels = new_buffer_levels;
@@ -130,32 +206,6 @@ impl LevelManager {
         }
 
         self.height_of_viewport = height_of_viewport;
-    }
-
-    fn make_level(&self, level_num: i32) -> Vec<i32> {
-        info!("Making level: {}", level_num);
-        image::ImageBuffer::<image::Luma<i32>, Vec<i32>>::from_fn(
-            self.level_width,
-            self.level_height,
-            |x, y| {
-                let (index, _) = match level_num % 2 {
-                    0 => (x, self.level_width),
-                    1 => (y, self.level_height),
-                    _ => panic!(),
-                };
-                match index % 5 {
-                    0 => image::Luma::<i32>([1000]),
-                    _ => image::Luma::<i32>([0]),
-                }
-            },
-        )
-        .into_raw()
-    }
-
-    fn make_levels_through(&mut self, level_num: i32) {
-        for i in (self.levels.len() as i32)..(level_num + 1) {
-            self.levels.push(self.make_level(i))
-        }
     }
 
     fn make_terrain_buffer(device: &wgpu::Device, size: usize) -> wgpu::Buffer {
@@ -182,36 +232,43 @@ impl LevelManager {
         for (buffer_index, (old, new)) in it.enumerate() {
             if old != new {
                 // Drop the old level, and load in a new level
-                self.copy_level_to_buffer(device, *new, buffer_index, encoder);
+                LevelManager::copy_level_to_buffer(
+                    &mut self.level_maker,
+                    device,
+                    *new,
+                    &self.terrain_buffers[buffer_index],
+                    self.terrain_buffer_size,
+                    encoder,
+                );
             }
         }
     }
 
     fn copy_level_to_buffer(
-        &self,
+        level_maker: &mut LevelMaker,
         device: &wgpu::Device,
         level_num: i32,
-        buffer_index: usize,
+        terrain_buffer: &wgpu::Buffer,
+        terrain_buffer_size: usize,
         encoder: &mut wgpu::CommandEncoder,
     ) {
         if level_num < 0 {
             panic!("Need a positive level num. Requested: {}", level_num);
         }
-        let level_data = &self.levels[level_num as usize];
-        log::info!("asdf1");
-        let temp_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Staging Buffer"),
-            contents: level_data.as_bytes(),
-            usage: wgpu::BufferUsage::COPY_SRC | wgpu::BufferUsage::MAP_WRITE,
-        });
-        log::info!("asdf2");
-        encoder.copy_buffer_to_buffer(
-            &temp_buf,
-            0,
-            &self.terrain_buffers[buffer_index],
-            0,
-            self.terrain_buffer_size as u64,
-        );
-        log::info!("asdf3");
+        let copy_func = |level_data: &Vec<i32>| {
+            let temp_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Staging Buffer"),
+                contents: level_data.as_bytes(),
+                usage: wgpu::BufferUsage::COPY_SRC | wgpu::BufferUsage::MAP_WRITE,
+            });
+            encoder.copy_buffer_to_buffer(
+                &temp_buf,
+                0,
+                terrain_buffer,
+                0,
+                terrain_buffer_size as u64,
+            );
+        };
+        level_maker.use_level(level_num, copy_func)
     }
 }
