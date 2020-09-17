@@ -80,17 +80,22 @@ void main() {
   // Interpolated time through the iteration.
   float interp_time = (1.0 - t_interp) * dt + time;
   float smooth_interp_time = (1.0 - float(distance) / float(num_emitted - 1)) * dt + time;
+  float rand1 = (hash11(10000*smooth_interp_time) - .5) * 2.0;
 
   const float x_interp_step = 1.0 / float(emits_per_pass - 1);
-  const float x_interp = (float(distance / num_passes_per_iteration) + (hash11(10000*smooth_interp_time) - .5)) * x_interp_step;
+  const float x_interp = (float(distance / num_passes_per_iteration) + rand1) * x_interp_step;
 
   float angle_delta = angle_difference(angle_end, angle_start);
 
   // Do all of the math as if the ship were at the origin oriented down the X axis, and then transform at the end.
-  float local_emit_angle = noise2d(vec2(x_interp * 5.0, interp_time)) - .5 + PI;
+  const float tentacle_frequency = 5.0;
+  float local_emit_angle = noise2d(vec2(x_interp * tentacle_frequency, interp_time)) - .5 + PI;
 
   vec2 unit_emit_rotation = vec2(cos(local_emit_angle), sin(local_emit_angle));
-  float local_emit_speed = mix(speed_min, speed_max, .5);
+
+  const float speed_noise_magnitude = .1;
+  float speed_noise = rand1 * speed_noise_magnitude;
+  float local_emit_speed = mix(speed_min, speed_max, .5 + speed_noise);
   vec2 local_emit_velocity = unit_emit_rotation * local_emit_speed;
   // This is "emit position on the wing" + "particle travel during the emission iteration"
   vec2 local_emit_position = nozzle_shape(x_interp) + local_emit_velocity * dt * t_interp;

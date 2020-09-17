@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, pin::Pin};
+use std::pin::Pin;
 
 use futures::{task::SpawnExt, Future};
 use log::info;
