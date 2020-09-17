@@ -11,7 +11,7 @@ debug = true
 default = []
 
 [dependencies]
-image = "0.21"
+image = "0.23"
 gflags = "0.3"
 winit = { version = "0.22", features = ["web-sys"] }
 scrub_log = "0.2"

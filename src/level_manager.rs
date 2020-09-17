@@ -2,6 +2,7 @@ use std::pin::Pin;
 
 use futures::{task::SpawnExt, Future};
 use log::info;
+use rand::{Rng, SeedableRng};
 use wgpu::util::DeviceExt;
 use zerocopy::AsBytes;
 
@@ -10,6 +11,7 @@ pub struct LevelMaker {
     level_height: u32,
     levels: Vec<Vec<i32>>,
     pool: futures::executor::ThreadPool,
+    // TODO delete level buffers after they're used
     future_levels: std::collections::HashMap<i32, Pin<Box<dyn Future<Output = Vec<i32>>>>>,
 }
 
@@ -23,7 +25,51 @@ impl LevelMaker {
             future_levels: std::collections::HashMap::new(),
         }
     }
-    fn make_level(level_num: i32, level_height: u32, level_width: u32) -> Vec<i32> {
+
+    #[allow(dead_code)]
+    fn make_rectangle_level(level_index: i32, level_width: u32, level_height: u32) -> Vec<i32> {
+        let generate_rectangle_helper = |max_dimension: u32, num_vacancies: u32| {
+            // Maximum dimension of any of the vacancies(should be a function of level_num).
+            let max_dimension =
+                std::cmp::min(max_dimension, std::cmp::min(level_width, level_height));
+
+            let seed: [u8; 32] = [0; 32];
+            let mut rng = rand::rngs::StdRng::from_seed(seed);
+            let solid_pixel = image::Luma::<i32>([1000]);
+            let empty_pixel = image::Luma::<i32>([0]);
+
+            // Start with a solid buffer
+            let mut level = image::ImageBuffer::<image::Luma<i32>, Vec<i32>>::from_pixel(
+                level_width,
+                level_height,
+                solid_pixel,
+            );
+            for _ in 0..num_vacancies {
+                let width = rng.gen_range(0, max_dimension);
+                let height = rng.gen_range(0, max_dimension);
+                let left = rng.gen_range(0, level_width - width);
+                let bot = rng.gen_range(0, level_height - height);
+                for y in bot..(bot + height) {
+                    for x in left..(left + width) {
+                        level.put_pixel(x, y, empty_pixel);
+                    }
+                }
+            }
+            level.into_raw()
+        };
+        let level_num = level_index + 1;
+        let max_dimension = (level_width / level_num as u32) / 2;
+        let num_vacancies = (level_height as f64 * (level_num as f64).sqrt()).ceil() as u32;
+
+        generate_rectangle_helper(max_dimension, num_vacancies)
+    }
+
+    fn make_level(level_num: i32, level_width: u32, level_height: u32) -> Vec<i32> {
+        LevelMaker::make_rectangle_level(level_num, level_width, level_height)
+    }
+
+    #[allow(dead_code)]
+    fn make_stripe_level(level_num: i32, level_width: u32, level_height: u32) -> Vec<i32> {
         info!("Making level: {}", level_num);
         image::ImageBuffer::<image::Luma<i32>, Vec<i32>>::from_fn(
             level_width,
@@ -49,7 +95,7 @@ impl LevelMaker {
                 let height = self.level_height;
                 let future_level = async move {
                     log::info!("Making level: {}", i);
-                    LevelMaker::make_level(level_num as i32, height, width)
+                    LevelMaker::make_level(level_num as i32, width, height)
                 };
                 // Resolve ASAP on threadpool.
                 let handle = self.pool.spawn_with_handle(future_level).unwrap();
@@ -178,8 +224,7 @@ impl LevelManager {
 
         // self.make_levels_through(current_top_level);
         // Async request levels
-        self.level_maker
-            .prefetch_up_to_level(current_top_level + 10);
+        self.level_maker.prefetch_up_to_level(current_top_level + 3);
 
         // Update the assignment of levels to buffers.
         let new_buffer_config_index = (current_bottom_level % 2) as usize;
