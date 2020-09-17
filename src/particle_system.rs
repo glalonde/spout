@@ -9,6 +9,13 @@ gflags::define! {
     --damage_rate: f32 = 0.00001
 }
 
+gflags::define! {
+    --gravity: f32 = -9.81
+}
+gflags::define! {
+    --elasticity: f32 = 0.9
+}
+
 #[derive(Clone, Copy)]
 pub struct SystemParams {
     pub width: u32,
@@ -29,6 +36,8 @@ pub struct ComputeUniforms {
     pub viewport_height: u32,
     pub viewport_bottom_height: u32,
     pub damage_rate: f32,
+    pub gravity: f32,
+    pub elasticity: f32,
 }
 
 pub struct ComputeLocals {
@@ -109,6 +118,8 @@ impl ComputeLocals {
             viewport_height: game_params.viewport_height,
             viewport_bottom_height: 0,
             damage_rate: DAMAGE_RATE.flag,
+            gravity: GRAVITY.flag,
+            elasticity: ELASTICITY.flag,
         };
         let uniform_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Particle uniforms"),
@@ -321,6 +332,8 @@ impl ComputeLocals {
             viewport_height: game_params.viewport_height,
             viewport_bottom_height: level_manager.height_of_viewport() as u32,
             damage_rate: DAMAGE_RATE.flag,
+            gravity: GRAVITY.flag,
+            elasticity: ELASTICITY.flag,
         };
         self.set_uniforms(device, encoder, &compute_uniforms);
     }

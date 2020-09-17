@@ -27,6 +27,8 @@ layout(set = 0, binding = 4) uniform Params {
     uint viewport_height;
     uint viewport_bottom_height;
     float damage_rate;
+    float gravity;
+    float elasticity;
 };
 
 float Norm(in ivec2 vel) {
@@ -151,7 +153,7 @@ void main() {
         // Bounce horizontally
         current_cell.x -= step.x;
         step.x *= -1;
-        vel_out.x *= -1;
+        vel_out.x = -int(vel_out.x * elasticity);
         end_remainder.y = int(kInnerGridSize) - end_remainder.y - 1;
       }
     } else {
@@ -169,12 +171,13 @@ void main() {
         // Bounce vertically 
         current_cell.y -= step.y;
         step.y *= -1;
-        vel_out.y *= -1;
+        vel_out.y = -int(vel_out.y * elasticity);
         end_remainder.x = int(kInnerGridSize) - end_remainder.x - 1;
       }
     }
     --num_cells;
   }
+  vel_out.y += int(gravity * kInnerGridSize);
 
   particles[gid].position = SetPositionRelative(uvec2(current_cell), uvec2(end_remainder));
   particles[gid].velocity = vel_out;

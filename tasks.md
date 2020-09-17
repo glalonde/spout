@@ -1,7 +1,7 @@
 # MVP Tasks
 ## Easy/Straightforward
 - [x] ship rendering
-- [ ] gravity
+- [x] gravity
 - [x] ship position rendering 
 - [x] ship motion
 - [ ] ship collision detection 
@@ -13,10 +13,11 @@
 - [x] show score 
 - [x] pausing 
 - [x] music
+- [ ] Game over screen 
 ---
 ## Medium
 - [x] level generation
-- [ ] progressive level generation
+- [x] progressive level generation
 ---
 ## Hard
 - [x] scrolling behavior
@@ -26,14 +27,17 @@
 # Improvement Tasks
 ## Easy/Straightforward
 - [ ] initialization (flags, logging)
-- [x] improved ship rendering
+- [ ] improved ship rendering
 - [ ] wireframe ship rendering
 - [ ] highres glow
 - [ ] separated gaussian glow
+- [ ] level edge glow 
 - [x] CI
 ---
 ## Medium
 - [ ] configs (load emitter params, etc from proto)
+- [ ] less uniform droplets when they fall off a platform
+- [ ] Find long pole in compilation
 ---
 ## Hard
 - [x] cross platform (windows and mac os)
@@ -41,15 +45,3 @@
 - [ ] CI builds macOS binaries
 - [ ] CI builds Windows binaries
 ---
-
-# Scrolling Subtasks
-- [x] Create N buffers for the world space data: particle accumulation, terrain
-- [x] Read the ship height in CPU and adjust the world space coordinates of the buffers to scroll
-- [x] Set orthographic camera perspective
-- [x] Render camera perspective and apply glow pass / visual effects
-
-
-# 4/25/20 weekend goals
-- [x] Fix level reset bug
-- [ ] Progressive, random level generation
-- [x] Get levels past level 2
