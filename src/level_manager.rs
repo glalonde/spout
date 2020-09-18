@@ -21,7 +21,10 @@ impl LevelMaker {
             level_width,
             level_height,
             levels: vec![],
-            pool: futures::executor::ThreadPool::new().unwrap(),
+            pool: futures::executor::ThreadPool::builder()
+                .pool_size(3)
+                .create()
+                .unwrap(),
             future_levels: std::collections::HashMap::new(),
         }
     }
@@ -70,7 +73,6 @@ impl LevelMaker {
 
     #[allow(dead_code)]
     fn make_stripe_level(level_num: i32, level_width: u32, level_height: u32) -> Vec<i32> {
-        info!("Making level: {}", level_num);
         image::ImageBuffer::<image::Luma<i32>, Vec<i32>>::from_fn(
             level_width,
             level_height,
@@ -94,8 +96,16 @@ impl LevelMaker {
                 let width = self.level_width;
                 let height = self.level_height;
                 let future_level = async move {
-                    log::info!("Making level: {}", i);
-                    LevelMaker::make_level(level_num as i32, width, height)
+                    let level_start = std::time::Instant::now();
+                    log::info!("Starting comp for: {}", level_num);
+                    let level = LevelMaker::make_level(level_num as i32, width, height);
+                    let level_comp_time = level_start.elapsed();
+                    log::info!(
+                        "Making level {} took {}",
+                        level_num,
+                        level_comp_time.as_secs_f64()
+                    );
+                    level
                 };
                 // Resolve ASAP on threadpool.
                 let handle = self.pool.spawn_with_handle(future_level).unwrap();

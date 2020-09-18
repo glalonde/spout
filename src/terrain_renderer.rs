@@ -75,8 +75,8 @@ impl TerrainRenderer {
         let fs_module = device.create_shader_module(wgpu::util::make_spirv(&fs));
 
         let fragment_uniforms = FragmentUniforms {
-            viewport_width: compute_locals.system_params.width,
-            viewport_height: compute_locals.system_params.height,
+            viewport_width: compute_locals.game_params.viewport_width,
+            viewport_height: compute_locals.game_params.viewport_height,
             height_of_viewport: 0,
             height_of_bottom_buffer: 0,
             height_of_top_buffer: 0,

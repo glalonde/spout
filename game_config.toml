@@ -1,8 +1,15 @@
-viewport_width = 640
-viewport_height = 320
+viewport_width = 640 
+viewport_height = 360
 level_width = 640
 level_height = 960
 fps = 60.0
-music_starts_on = false 
+music_starts_on = false
 enable_glow_pass = true 
 render_ship = false 
+
+[particle_system_params]
+emission_rate = 10000
+max_particle_life = 3.0
+damage_rate = 0.0001
+gravity = -5.0
+elasticity = 0.5

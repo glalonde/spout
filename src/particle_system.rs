@@ -12,15 +12,9 @@ gflags::define! {
 gflags::define! {
     --gravity: f32 = -9.81
 }
+
 gflags::define! {
     --elasticity: f32 = 0.9
-}
-
-#[derive(Clone, Copy)]
-pub struct SystemParams {
-    pub width: u32,
-    pub height: u32,
-    pub max_particle_life: f32,
 }
 
 #[repr(C)]
@@ -41,7 +35,7 @@ pub struct ComputeUniforms {
 }
 
 pub struct ComputeLocals {
-    pub system_params: SystemParams,
+    pub game_params: super::game_params::GameParams,
     pub emitter: super::emitter::Emitter,
     pub compute_work_groups: usize,
     pub density_buffer: wgpu::Buffer,
@@ -77,7 +71,6 @@ impl ComputeLocals {
 
     pub fn init(
         device: &wgpu::Device,
-        params: &SystemParams,
         game_params: &super::game_params::GameParams,
         level_manager: &super::level_manager::LevelManager,
         _init_encoder: &mut wgpu::CommandEncoder,
@@ -85,8 +78,11 @@ impl ComputeLocals {
         // This sets up the compute stage, which is responsible for updating the
         // particle system and most of the game logic. The output is updated game state
         // and a particle density texture.
-        let emitter =
-            super::emitter::Emitter::new(device, EMISSION_RATE.flag, params.max_particle_life);
+        let emitter = super::emitter::Emitter::new(
+            device,
+            game_params.particle_system_params.emission_rate,
+            game_params.particle_system_params.max_particle_life,
+        );
         let num_particles = emitter.num_particles();
 
         // This needs to match the layout size in the the particle compute shader. Maybe
@@ -98,8 +94,8 @@ impl ComputeLocals {
 
         let (density_buffer, density_buffer_size) = ComputeLocals::make_density_buffer(
             device,
-            params.width as usize,
-            params.height as usize,
+            game_params.viewport_width as usize,
+            game_params.viewport_height as usize,
         );
         let staging_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             size: density_buffer_size,
@@ -110,11 +106,11 @@ impl ComputeLocals {
 
         let compute_uniforms = ComputeUniforms {
             dt: 0.0,
-            level_width: params.width,
-            level_height: params.height,
+            level_width: game_params.level_width,
+            level_height: game_params.level_height,
             bottom_level_height: 0,
-            middle_level_height: params.height,
-            top_level_height: params.height * 2,
+            middle_level_height: game_params.viewport_height,
+            top_level_height: game_params.viewport_height * 2,
             viewport_height: game_params.viewport_height,
             viewport_bottom_height: 0,
             damage_rate: DAMAGE_RATE.flag,
@@ -243,6 +239,7 @@ impl ComputeLocals {
             },
         });
 
+        // Pipeline to clear the values out of the density buffer. Ideally wouldn't need a separate stage for this...
         let (clear_work_groups, clear_bind_group, clear_pipeline) = {
             let clear_bind_group_layout =
                 device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -292,14 +289,16 @@ impl ComputeLocals {
             });
 
             let clear_group_size = 512;
-            let clear_work_groups =
-                ((params.width * params.height) as f64 / clear_group_size as f64).ceil() as usize;
+            let clear_work_groups = ((game_params.viewport_width * game_params.viewport_height)
+                as f64
+                / clear_group_size as f64)
+                .ceil() as usize;
             (clear_work_groups, clear_bind_group, clear_pipeline)
         };
 
         // Copy initial data to GPU
         ComputeLocals {
-            system_params: *params,
+            game_params: *game_params,
             emitter,
             compute_work_groups,
             density_buffer,
@@ -322,6 +321,7 @@ impl ComputeLocals {
         dt: f32,
         encoder: &mut wgpu::CommandEncoder,
     ) {
+        let system_params = &game_params.particle_system_params;
         let compute_uniforms = ComputeUniforms {
             dt,
             level_width: game_params.level_width,
@@ -331,9 +331,9 @@ impl ComputeLocals {
             top_level_height: level_manager.buffer_height(1) as u32 + game_params.level_height,
             viewport_height: game_params.viewport_height,
             viewport_bottom_height: level_manager.height_of_viewport() as u32,
-            damage_rate: DAMAGE_RATE.flag,
-            gravity: GRAVITY.flag,
-            elasticity: ELASTICITY.flag,
+            damage_rate: system_params.damage_rate,
+            gravity: system_params.gravity,
+            elasticity: system_params.elasticity,
         };
         self.set_uniforms(device, encoder, &compute_uniforms);
     }
@@ -432,8 +432,8 @@ impl ParticleRenderer {
         );
 
         let fragment_uniforms = FragmentUniforms {
-            width: compute_locals.system_params.width,
-            height: compute_locals.system_params.height,
+            width: compute_locals.game_params.viewport_width,
+            height: compute_locals.game_params.viewport_height,
         };
         let uniform_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Particle render uniforms"),

@@ -65,8 +65,7 @@ async fn setup<E: Example>(title: &str) -> Setup {
         .with_title(title)
         .with_decorations(false)
         .with_inner_size(winit::dpi::Size::from(winit::dpi::LogicalSize::new(
-            640 * 2,
-            360 * 2,
+            1280, 720,
         )));
 
     let window = builder.build(&event_loop).unwrap();

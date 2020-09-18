@@ -162,17 +162,11 @@ impl framework::Example for Example {
 
         let width = game_params.viewport_width;
         let height = game_params.viewport_height;
-        let system_params = spout::particle_system::SystemParams {
-            width,
-            height,
-            max_particle_life: 5.0,
-        };
         let level_manager =
             spout::level_manager::LevelManager::init(device, &game_params, 0, &mut init_encoder);
 
         let compute_locals = spout::particle_system::ComputeLocals::init(
             device,
-            &system_params,
             &game_params,
             &level_manager,
             &mut init_encoder,
@@ -216,8 +210,8 @@ impl framework::Example for Example {
         );
 
         let ship_position = [
-            spout::int_grid::set_values_relative(system_params.width / 4, 0),
-            spout::int_grid::set_values_relative(system_params.height / 4, 0),
+            spout::int_grid::set_values_relative(game_params.viewport_width / 4, 0),
+            spout::int_grid::set_values_relative(game_params.viewport_height / 4, 0),
         ];
 
         let text_renderer = spout::text_renderer::TextRenderer::init(
@@ -251,8 +245,8 @@ impl framework::Example for Example {
             glow_renderer,
             ship_renderer: spout::ship::ShipRenderer::init(
                 device,
-                system_params.width,
-                system_params.height,
+                game_params.viewport_width,
+                game_params.viewport_height,
             ),
             viewport,
             debug_overlay: spout::debug_overlay::DebugOverlay::init(device, sc_desc),
