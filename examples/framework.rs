@@ -40,9 +40,15 @@ pub trait Example: 'static + Sized {
     );
 }
 
+struct AppState<E: Example> {
+    // This becomes available when we get a vulkan instance
+    setup: Option<Setup>,
+    // This will come and go as the app is suspended an resumed
+    swap_chain: Option<wgpu::SwapChain>,
+    example: Option<E>,
+}
+
 struct Setup {
-    window: winit::window::Window,
-    event_loop: winit::event_loop::EventLoop<()>,
     instance: wgpu::Instance,
     size: winit::dpi::PhysicalSize<u32>,
     surface: wgpu::Surface,
@@ -51,13 +57,17 @@ struct Setup {
     queue: wgpu::Queue,
 }
 
-async fn setup<E: Example>(title: &str) -> Setup {
+fn setup_window<E: Example>(
+    title: &str,
+) -> (winit::window::Window, winit::event_loop::EventLoop<()>) {
     gflags::parse();
     if HELP.flag {
         gflags::print_help_and_exit(0);
     }
 
-    scrub_log::init_with_filter_string(LOG_FILTER.flag).unwrap();
+    scrub_log::init_with_filter_string(LOG_FILTER.flag).unwrap_or_else(|_| {
+        println!("Failed to init logging with arg: {}", LOG_FILTER.flag);
+    });
 
     let event_loop = winit::event_loop::EventLoop::new();
     let mut builder = winit::window::WindowBuilder::new();
@@ -69,13 +79,16 @@ async fn setup<E: Example>(title: &str) -> Setup {
         )));
 
     let window = builder.build(&event_loop).unwrap();
+    (window, event_loop)
+}
 
+async fn setup_surface<E: Example>(window: &mut winit::window::Window) -> Setup {
     log::info!("Initializing the surface...");
 
     let instance = wgpu::Instance::new(wgpu::BackendBit::PRIMARY);
     let (size, surface) = unsafe {
         let size = window.inner_size();
-        let surface = instance.create_surface(&window);
+        let surface = instance.create_surface(window);
         (size, surface)
     };
 
@@ -114,8 +127,6 @@ async fn setup<E: Example>(title: &str) -> Setup {
 
     log::info!("Done with setup!");
     Setup {
-        window,
-        event_loop,
         instance,
         size,
         surface,
@@ -126,52 +137,74 @@ async fn setup<E: Example>(title: &str) -> Setup {
 }
 
 fn start<E: Example>(
-    Setup {
-        window,
-        event_loop,
-        instance,
-        size,
-        surface,
-        adapter,
-        device,
-        queue,
-    }: Setup,
+    mut window: winit::window::Window,
+    event_loop: winit::event_loop::EventLoop<()>,
 ) {
+    let mut app: AppState<E> = AppState {
+        setup: None,
+        swap_chain: None,
+        example: None,
+    };
+
     let (mut _pool, spawner) = {
         let local_pool = futures::executor::LocalPool::new();
         let spawner = local_pool.spawner();
         (local_pool, spawner)
     };
 
-    log::info!("Making swapchain...");
+    // On android it's too soon to create the app (because we can't get the handle to the surface)
+    #[cfg(not(target_os = "android"))]
+    {
+        app.setup = Some(futures::executor::block_on(setup_surface::<E>(&mut window)));
+    }
+
     let mut sc_desc = wgpu::SwapChainDescriptor {
         usage: wgpu::TextureUsage::OUTPUT_ATTACHMENT,
         // TODO: Allow srgb unconditionally
         format: if cfg!(target_arch = "wasm32") {
             wgpu::TextureFormat::Bgra8Unorm
         } else {
-            wgpu::TextureFormat::Bgra8UnormSrgb
+            wgpu::TextureFormat::Rgba8UnormSrgb
         },
-        width: size.width,
-        height: size.height,
+        width: 0,
+        height: 0,
         present_mode: wgpu::PresentMode::Mailbox,
     };
-    let mut swap_chain = device.create_swap_chain(&surface, &sc_desc);
 
-    log::info!("Initializing the example...");
-    let mut example = E::init(&sc_desc, &device, &queue);
-
-    log::info!("Entering render loop...");
     event_loop.run(move |event, _, control_flow| {
-        let _ = (&instance, &adapter); // force ownership by the closure
-        *control_flow = if cfg!(feature = "metal-auto-capture") {
-            winit::event_loop::ControlFlow::Exit
-        } else {
-            {
-                winit::event_loop::ControlFlow::Poll
-            }
-        };
+        let _ = &mut app; // force ownership by the closure
+        *control_flow = winit::event_loop::ControlFlow::Poll;
         match event {
+            // Create app on resume for android target. Now the handle to the surface should be accessible.
+            // #[cfg(target_os = "android")]
+            winit::event::Event::Resumed => {
+                log::info!("Application was resumed");
+                app.setup
+                    .replace(futures::executor::block_on(setup_surface::<E>(&mut window)));
+                match &app.setup {
+                    None => {
+                        log::error!("Failed to inialize app on resume.");
+                    }
+                    Some(setup) => {
+                        sc_desc.width = setup.size.width;
+                        sc_desc.height = setup.size.height;
+                        app.swap_chain
+                            .replace(setup.device.create_swap_chain(&setup.surface, &sc_desc));
+                        app.example
+                            .replace(E::init(&sc_desc, &setup.device, &setup.queue));
+                        log::info!("Initialized app");
+                    }
+                }
+            }
+            // Destroy app on suspend for android target.
+            // #[cfg(target_os = "android")]
+            winit::event::Event::Suspended => {
+                log::info!("Application was suspended");
+                // TODO: Wait for gpu, save state and tear down
+                app.example.take();
+                app.swap_chain.take();
+            }
+
             winit::event::Event::MainEventsCleared => {
                 // Main update logic
                 window.request_redraw();
@@ -179,13 +212,17 @@ fn start<E: Example>(
             winit::event::Event::WindowEvent {
                 event: WindowEvent::Resized(size),
                 ..
-            } => {
-                log::info!("Resizing to {:?}", size);
-                sc_desc.width = if size.width == 0 { 1 } else { size.width };
-                sc_desc.height = if size.height == 0 { 1 } else { size.height };
-                example.resize(&sc_desc, &device, &queue);
-                swap_chain = device.create_swap_chain(&surface, &sc_desc);
-            }
+            } => match (&mut app.example, &app.setup) {
+                (Some(example), Some(setup)) => {
+                    log::info!("Resizing to {:?}", size);
+                    sc_desc.width = if size.width == 0 { 1 } else { size.width };
+                    sc_desc.height = if size.height == 0 { 1 } else { size.height };
+                    example.resize(&sc_desc, &setup.device, &setup.queue);
+                    app.swap_chain
+                        .replace(setup.device.create_swap_chain(&setup.surface, &sc_desc));
+                }
+                _ => {}
+            },
             winit::event::Event::WindowEvent { event, .. } => match event {
                 WindowEvent::KeyboardInput {
                     input:
@@ -208,31 +245,39 @@ fn start<E: Example>(
                 | WindowEvent::CloseRequested => {
                     *control_flow = winit::event_loop::ControlFlow::Exit;
                 }
-                _ => {
-                    example.update(event);
-                }
+                _ => match &mut app.example {
+                    Some(example) => {
+                        example.update(event);
+                    }
+                    _ => {}
+                },
             },
             winit::event::Event::RedrawRequested(_) => {
-                let frame = match swap_chain.get_current_frame() {
-                    Ok(frame) => frame,
-                    Err(_) => {
-                        swap_chain = device.create_swap_chain(&surface, &sc_desc);
-                        swap_chain
-                            .get_current_frame()
-                            .expect("Failed to acquire next swap chain texture!")
+                if let Some(setup) = &mut app.setup.as_ref() {
+                    let mut frame = if app.swap_chain.is_some() {
+                        app.swap_chain.as_mut().unwrap().get_current_frame()
+                    } else {
+                        app.swap_chain =
+                            Some(setup.device.create_swap_chain(&setup.surface, &sc_desc));
+                        app.swap_chain.as_mut().unwrap().get_current_frame()
+                    };
+                    match (&mut app.example, &mut frame) {
+                        (Some(example), Ok(frame)) => {
+                            example.render(&frame.output, &setup.device, &setup.queue, &spawner);
+                        }
+                        _ => {}
                     }
-                };
-
-                example.render(&frame.output, &device, &queue, &spawner);
+                }
             }
+
             _ => {}
-        }
+        };
     });
 }
 
 pub fn run<E: Example>(title: &str) {
-    let setup = futures::executor::block_on(setup::<E>(title));
-    start::<E>(setup);
+    let (window, event_loop) = setup_window::<E>(title);
+    start::<E>(window, event_loop);
 }
 
 // This allows treating the framework as a standalone example,
