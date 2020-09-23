@@ -163,13 +163,24 @@ fn start<E: Example>(
         // TODO: Allow srgb unconditionally
         format: if cfg!(target_arch = "wasm32") {
             wgpu::TextureFormat::Bgra8Unorm
-        } else {
+        } else if cfg!(target_os = "android") {
             wgpu::TextureFormat::Rgba8UnormSrgb
+        } else {
+            wgpu::TextureFormat::Bgra8UnormSrgb
         },
         width: 0,
         height: 0,
         present_mode: wgpu::PresentMode::Mailbox,
     };
+    if let Some(setup) = &app.setup {
+        sc_desc.width = setup.size.width;
+        sc_desc.height = setup.size.height;
+        app.swap_chain
+            .replace(setup.device.create_swap_chain(&setup.surface, &sc_desc));
+        app.example
+            .replace(E::init(&sc_desc, &setup.device, &setup.queue));
+        log::info!("Initialized app");
+    }
 
     event_loop.run(move |event, _, control_flow| {
         let _ = &mut app; // force ownership by the closure
@@ -207,7 +218,26 @@ fn start<E: Example>(
 
             winit::event::Event::MainEventsCleared => {
                 // Main update logic
-                window.request_redraw();
+                log::info!("Main events cleared.");
+                log::info!("Redraw requested.");
+                if let Some(setup) = &mut app.setup.as_ref() {
+                    let mut frame = if app.swap_chain.is_some() {
+                        app.swap_chain.as_mut().unwrap().get_current_frame()
+                    } else {
+                        app.swap_chain =
+                            Some(setup.device.create_swap_chain(&setup.surface, &sc_desc));
+                        app.swap_chain.as_mut().unwrap().get_current_frame()
+                    };
+                    match (&mut app.example, &mut frame) {
+                        (Some(example), Ok(frame)) => {
+                            example.render(&frame.output, &setup.device, &setup.queue, &spawner);
+                        }
+                        (_, Err(frame_err)) => {
+                            log::error!("Frame render error {}", frame_err);
+                        }
+                        _ => {}
+                    }
+                }
             }
             winit::event::Event::WindowEvent {
                 event: WindowEvent::Resized(size),
@@ -253,6 +283,8 @@ fn start<E: Example>(
                 },
             },
             winit::event::Event::RedrawRequested(_) => {
+                log::info!("Redraw requested.");
+                /*
                 if let Some(setup) = &mut app.setup.as_ref() {
                     let mut frame = if app.swap_chain.is_some() {
                         app.swap_chain.as_mut().unwrap().get_current_frame()
@@ -265,9 +297,13 @@ fn start<E: Example>(
                         (Some(example), Ok(frame)) => {
                             example.render(&frame.output, &setup.device, &setup.queue, &spawner);
                         }
+                        (_, Err(frame_err)) => {
+                            log::error!("Frame render error {}", frame_err);
+                        }
                         _ => {}
                     }
                 }
+                */
             }
 
             _ => {}

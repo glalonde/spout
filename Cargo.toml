@@ -14,7 +14,7 @@ music = ["rodio"]
 [dependencies]
 image = "0.23"
 gflags = "0.3"
-winit = { version = "0.22", features = ["web-sys"] }
+winit = { path = "../winit", features = ["web-sys"] }
 scrub_log = "0.2"
 log = "0.4"
 wgpu = "0.6"
@@ -28,13 +28,10 @@ scarlet = "1.1.0"
 wgpu_glyph = "0.10"
 futures = { version = "0.3", features = ["thread-pool"] }
 crossbeam-channel = "0.4"
-rust-embed = { version = "5.5", features = ["interpolate-folder-path"] }
+rust-embed = { version = "5.5", features = ["interpolate-folder-path", "debug-embed"] }
 serde = { version = "1.0", features = ["derive"] }
 toml = "0.5"
 anyhow = "1.0"
-
-[patch.crates-io]
-winit = { git = "https://github.com/rust-windowing/winit" }
 
 [dependencies.rodio]
 git = "https://github.com/RustAudio/rodio" 
@@ -65,11 +62,12 @@ path = "./examples/spout_android/spout_android.rs"
 crate-type = ["cdylib"]
 
 # Android manifest
+# Documentation: https://github.com/rust-windowing/android-ndk-rs/tree/master/cargo-apk
 [package.metadata.android]
 apk_label = "Spout"
 target_sdk_version = 30
-fullscreen = false
-assets = "shaders"
+fullscreen = true
+orientation = "sensorLandscape"
 
 [[package.metadata.android.feature]]
 name = "android.hardware.vulkan.level"

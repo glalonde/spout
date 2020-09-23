@@ -42,3 +42,8 @@ Install and run on plugged in device:
 ```
 cargo apk run --example spout_android
 ```
+
+Inspect the APK
+```
+/opt/android-sdk/build-tools/30.0.2/aapt2 d xmltree spout.apk --file AndroidManifest.xml
+```

@@ -58,7 +58,16 @@ struct Example {
 impl Example {
     // Update pre-render cpu logic
     fn update_state(&mut self, device: &wgpu::Device, encoder: &mut wgpu::CommandEncoder) -> f32 {
-        let input_state = &self.state.input_state;
+        let input_state = if cfg!(target_os = "android") {
+            InputState {
+                forward: true,
+                left: true,
+                right: false,
+                pause: false,
+            }
+        } else {
+            self.state.input_state
+        };
         let delta_t = self.fps.tick();
         let dt = delta_t.as_secs_f32();
         if input_state.pause && !self.state.prev_input_state.pause {
@@ -314,6 +323,7 @@ impl framework::Example for Example {
         queue: &wgpu::Queue,
         spawner: &impl LocalSpawn,
     ) {
+        log::info!("Starting render.");
         let mut encoder =
             device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
         let dt = self.update_state(device, &mut encoder);
@@ -352,20 +362,27 @@ impl framework::Example for Example {
             };
             {
                 // Render the terrain
+                log::info!("Starting terrain render:");
                 self.terrain_renderer
                     .render(&self.level_manager, pre_glow_target, &mut encoder);
+                log::info!("Finished terrain render.");
             }
             {
                 // Render the density texture.
+                log::info!("Starting particle render:");
                 self.particle_renderer.render(&mut encoder, pre_glow_target);
+                log::info!("Finished particle render.");
             }
             if self.game_params.enable_glow_pass {
                 // Render the particle glow pass.
+                log::info!("Starting glow pass:");
                 self.glow_renderer
                     .render(&mut encoder, &self.post_glow_texture);
+                log::info!("Finished glow pass.");
             }
             if self.game_params.render_ship {
                 // Render the ship.
+                log::info!("Starting ship render:");
                 self.ship_renderer.render(
                     &self.post_glow_texture,
                     device,
@@ -373,14 +390,17 @@ impl framework::Example for Example {
                     &self.level_manager,
                     &mut encoder,
                 );
+                log::info!("Finished ship render.");
             }
         }
 
         // Flip the frame vertically. Before this everything is blitted in "world
         // coordinates".
         {
+            log::info!("Starting viewport render:");
             self.game_viewport
                 .render(&mut encoder, &self.game_view_texture);
+            log::info!("Finished viewport render.");
         }
         if self.state.paused {
             // Display pause screen
@@ -407,6 +427,7 @@ impl framework::Example for Example {
         }
         {
             // Render the score
+            log::info!("Starting score render:");
             let width = self.game_params.viewport_width as f32;
             let height = self.game_params.viewport_height as f32;
 
@@ -429,11 +450,16 @@ impl framework::Example for Example {
                     ..wgpu_glyph::Section::default()
                 },
             );
+            log::info!("Finished score render.");
         }
         {
+            log::info!("Starting viewport render:");
             self.viewport.render(&frame, &mut encoder);
+            log::info!("Finished viewport render.");
         }
         {
+            log::info!("Starting debug overlay render:");
+            /*
             self.debug_overlay.render(
                 &device,
                 &mut self.staging_belt,
@@ -441,13 +467,20 @@ impl framework::Example for Example {
                 &mut encoder,
                 1.0 / dt as f64,
             );
+            */
+            log::info!("Finished debug overlay render.");
         }
 
+        log::info!("Staging belt finish.");
         self.staging_belt.finish();
+        log::info!("Queue submit.");
         queue.submit(Some(encoder.finish()));
 
+        log::info!("Staging belt recall.");
         let belt_future = self.staging_belt.recall();
+        log::info!("Spawn local.");
         spawner.spawn_local(belt_future).unwrap();
+        log::info!("Done.");
     }
 
     fn optional_features() -> wgpu::Features {
