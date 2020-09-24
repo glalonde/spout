@@ -19,13 +19,15 @@ impl FpsEstimator {
         let now = std::time::Instant::now();
         let system_sleep_until = done.checked_sub(NATIVE_SLEEP_ACCURACY).unwrap_or(now);
         if now < system_sleep_until {
-            std::thread::sleep(system_sleep_until.duration_since(now));
+            // std::thread::sleep(system_sleep_until.duration_since(now));
         }
     }
 
     pub fn tick(&mut self) -> std::time::Duration {
         let sleep_until = self.iteration_start + self.iteration_duration;
+        let t1 = std::time::Instant::now();
         FpsEstimator::high_resolution_sleep_until(&sleep_until);
+        info!("Sleeping time: {:?}", t1.elapsed());
         let now = std::time::Instant::now();
         if now > sleep_until {
             let overslept_by = now - sleep_until;

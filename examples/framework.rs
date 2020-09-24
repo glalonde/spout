@@ -45,6 +45,7 @@ struct AppState<E: Example> {
     setup: Option<Setup>,
     // This will come and go as the app is suspended an resumed
     swap_chain: Option<wgpu::SwapChain>,
+    swap_chain_descriptor: wgpu::SwapChainDescriptor,
     example: Option<E>,
 }
 
@@ -136,6 +137,23 @@ async fn setup_surface<E: Example>(window: &mut winit::window::Window) -> Setup 
     }
 }
 
+fn try_setup_app<E: Example>(app: &mut AppState<E>) {
+    if let Some(setup) = &app.setup {
+        app.swap_chain_descriptor.width = setup.size.width;
+        app.swap_chain_descriptor.height = setup.size.height;
+        app.swap_chain.replace(
+            setup
+                .device
+                .create_swap_chain(&setup.surface, &app.swap_chain_descriptor),
+        );
+        app.example.replace(E::init(
+            &app.swap_chain_descriptor,
+            &setup.device,
+            &setup.queue,
+        ));
+    }
+}
+
 fn start<E: Example>(
     mut window: winit::window::Window,
     event_loop: winit::event_loop::EventLoop<()>,
@@ -143,6 +161,20 @@ fn start<E: Example>(
     let mut app: AppState<E> = AppState {
         setup: None,
         swap_chain: None,
+        swap_chain_descriptor: wgpu::SwapChainDescriptor {
+            usage: wgpu::TextureUsage::OUTPUT_ATTACHMENT,
+            // TODO: Allow srgb unconditionally
+            format: if cfg!(target_arch = "wasm32") {
+                wgpu::TextureFormat::Bgra8Unorm
+            } else if cfg!(target_os = "android") {
+                wgpu::TextureFormat::Rgba8UnormSrgb
+            } else {
+                wgpu::TextureFormat::Bgra8UnormSrgb
+            },
+            width: 0,
+            height: 0,
+            present_mode: wgpu::PresentMode::Mailbox,
+        },
         example: None,
     };
 
@@ -156,31 +188,11 @@ fn start<E: Example>(
     #[cfg(not(target_os = "android"))]
     {
         app.setup = Some(futures::executor::block_on(setup_surface::<E>(&mut window)));
+        try_setup_app(&mut app);
     }
 
-    let mut sc_desc = wgpu::SwapChainDescriptor {
-        usage: wgpu::TextureUsage::OUTPUT_ATTACHMENT,
-        // TODO: Allow srgb unconditionally
-        format: if cfg!(target_arch = "wasm32") {
-            wgpu::TextureFormat::Bgra8Unorm
-        } else if cfg!(target_os = "android") {
-            wgpu::TextureFormat::Rgba8UnormSrgb
-        } else {
-            wgpu::TextureFormat::Bgra8UnormSrgb
-        },
-        width: 0,
-        height: 0,
-        present_mode: wgpu::PresentMode::Mailbox,
-    };
-    if let Some(setup) = &app.setup {
-        sc_desc.width = setup.size.width;
-        sc_desc.height = setup.size.height;
-        app.swap_chain
-            .replace(setup.device.create_swap_chain(&setup.surface, &sc_desc));
-        app.example
-            .replace(E::init(&sc_desc, &setup.device, &setup.queue));
-        log::info!("Initialized app");
-    }
+    let mut update_start = std::time::Instant::now();
+    let mut update_end = std::time::Instant::now();
 
     event_loop.run(move |event, _, control_flow| {
         let _ = &mut app; // force ownership by the closure
@@ -192,20 +204,7 @@ fn start<E: Example>(
                 log::info!("Application was resumed");
                 app.setup
                     .replace(futures::executor::block_on(setup_surface::<E>(&mut window)));
-                match &app.setup {
-                    None => {
-                        log::error!("Failed to inialize app on resume.");
-                    }
-                    Some(setup) => {
-                        sc_desc.width = setup.size.width;
-                        sc_desc.height = setup.size.height;
-                        app.swap_chain
-                            .replace(setup.device.create_swap_chain(&setup.surface, &sc_desc));
-                        app.example
-                            .replace(E::init(&sc_desc, &setup.device, &setup.queue));
-                        log::info!("Initialized app");
-                    }
-                }
+                try_setup_app(&mut app);
             }
             // Destroy app on suspend for android target.
             // #[cfg(target_os = "android")]
@@ -219,18 +218,24 @@ fn start<E: Example>(
             winit::event::Event::MainEventsCleared => {
                 // Main update logic
                 log::info!("Main events cleared.");
-                log::info!("Redraw requested.");
                 if let Some(setup) = &mut app.setup.as_ref() {
                     let mut frame = if app.swap_chain.is_some() {
                         app.swap_chain.as_mut().unwrap().get_current_frame()
                     } else {
-                        app.swap_chain =
-                            Some(setup.device.create_swap_chain(&setup.surface, &sc_desc));
+                        app.swap_chain = Some(
+                            setup
+                                .device
+                                .create_swap_chain(&setup.surface, &app.swap_chain_descriptor),
+                        );
                         app.swap_chain.as_mut().unwrap().get_current_frame()
                     };
                     match (&mut app.example, &mut frame) {
                         (Some(example), Ok(frame)) => {
+                            log::info!("Time since last update end: {:?}", update_end.elapsed());
+                            update_start = std::time::Instant::now();
                             example.render(&frame.output, &setup.device, &setup.queue, &spawner);
+                            log::info!("Time spent updating: {:?}", update_start.elapsed());
+                            update_end = std::time::Instant::now();
                         }
                         (_, Err(frame_err)) => {
                             log::error!("Frame render error {}", frame_err);
@@ -245,11 +250,15 @@ fn start<E: Example>(
             } => match (&mut app.example, &app.setup) {
                 (Some(example), Some(setup)) => {
                     log::info!("Resizing to {:?}", size);
-                    sc_desc.width = if size.width == 0 { 1 } else { size.width };
-                    sc_desc.height = if size.height == 0 { 1 } else { size.height };
-                    example.resize(&sc_desc, &setup.device, &setup.queue);
-                    app.swap_chain
-                        .replace(setup.device.create_swap_chain(&setup.surface, &sc_desc));
+                    app.swap_chain_descriptor.width = if size.width == 0 { 1 } else { size.width };
+                    app.swap_chain_descriptor.height =
+                        if size.height == 0 { 1 } else { size.height };
+                    example.resize(&app.swap_chain_descriptor, &setup.device, &setup.queue);
+                    app.swap_chain.replace(
+                        setup
+                            .device
+                            .create_swap_chain(&setup.surface, &app.swap_chain_descriptor),
+                    );
                 }
                 _ => {}
             },
@@ -282,30 +291,6 @@ fn start<E: Example>(
                     _ => {}
                 },
             },
-            winit::event::Event::RedrawRequested(_) => {
-                log::info!("Redraw requested.");
-                /*
-                if let Some(setup) = &mut app.setup.as_ref() {
-                    let mut frame = if app.swap_chain.is_some() {
-                        app.swap_chain.as_mut().unwrap().get_current_frame()
-                    } else {
-                        app.swap_chain =
-                            Some(setup.device.create_swap_chain(&setup.surface, &sc_desc));
-                        app.swap_chain.as_mut().unwrap().get_current_frame()
-                    };
-                    match (&mut app.example, &mut frame) {
-                        (Some(example), Ok(frame)) => {
-                            example.render(&frame.output, &setup.device, &setup.queue, &spawner);
-                        }
-                        (_, Err(frame_err)) => {
-                            log::error!("Frame render error {}", frame_err);
-                        }
-                        _ => {}
-                    }
-                }
-                */
-            }
-
             _ => {}
         };
     });

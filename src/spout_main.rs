@@ -324,11 +324,13 @@ impl framework::Example for Example {
         spawner: &impl LocalSpawn,
     ) {
         log::info!("Starting render.");
+        let t1 = std::time::Instant::now();
         let mut encoder =
             device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
         let dt = self.update_state(device, &mut encoder);
         self.state.prev_input_state = self.state.input_state;
 
+        log::info!("time: {:?}", t1.elapsed());
         if !self.state.paused {
             {
                 // Clear the density texture.
@@ -340,6 +342,7 @@ impl framework::Example for Example {
                     .compute(&self.level_manager, &mut encoder);
             }
         }
+        log::info!("time: {:?}", t1.elapsed());
         {
             {
                 // Clear the pre-glow pass
@@ -355,11 +358,13 @@ impl framework::Example for Example {
                     depth_stencil_attachment: None,
                 });
             }
+            log::info!("time: {:?}", t1.elapsed());
             let pre_glow_target = if self.game_params.enable_glow_pass {
                 &self.pre_glow_texture
             } else {
                 &self.post_glow_texture
             };
+            log::info!("time: {:?}", t1.elapsed());
             {
                 // Render the terrain
                 log::info!("Starting terrain render:");
@@ -367,12 +372,14 @@ impl framework::Example for Example {
                     .render(&self.level_manager, pre_glow_target, &mut encoder);
                 log::info!("Finished terrain render.");
             }
+            log::info!("time: {:?}", t1.elapsed());
             {
                 // Render the density texture.
                 log::info!("Starting particle render:");
                 self.particle_renderer.render(&mut encoder, pre_glow_target);
                 log::info!("Finished particle render.");
             }
+            log::info!("time: {:?}", t1.elapsed());
             if self.game_params.enable_glow_pass {
                 // Render the particle glow pass.
                 log::info!("Starting glow pass:");
@@ -380,6 +387,7 @@ impl framework::Example for Example {
                     .render(&mut encoder, &self.post_glow_texture);
                 log::info!("Finished glow pass.");
             }
+            log::info!("time: {:?}", t1.elapsed());
             if self.game_params.render_ship {
                 // Render the ship.
                 log::info!("Starting ship render:");
@@ -392,6 +400,7 @@ impl framework::Example for Example {
                 );
                 log::info!("Finished ship render.");
             }
+            log::info!("time: {:?}", t1.elapsed());
         }
 
         // Flip the frame vertically. Before this everything is blitted in "world
@@ -402,6 +411,7 @@ impl framework::Example for Example {
                 .render(&mut encoder, &self.game_view_texture);
             log::info!("Finished viewport render.");
         }
+        log::info!("time: {:?}", t1.elapsed());
         if self.state.paused {
             // Display pause screen
             let width = self.game_params.viewport_width;
@@ -425,6 +435,7 @@ impl framework::Example for Example {
                 },
             );
         }
+        log::info!("time: {:?}", t1.elapsed());
         {
             // Render the score
             log::info!("Starting score render:");
@@ -452,11 +463,13 @@ impl framework::Example for Example {
             );
             log::info!("Finished score render.");
         }
+        log::info!("time: {:?}", t1.elapsed());
         {
             log::info!("Starting viewport render:");
             self.viewport.render(&frame, &mut encoder);
             log::info!("Finished viewport render.");
         }
+        log::info!("time: {:?}", t1.elapsed());
         {
             log::info!("Starting debug overlay render:");
             /*
@@ -470,16 +483,21 @@ impl framework::Example for Example {
             */
             log::info!("Finished debug overlay render.");
         }
+        log::info!("time: {:?}", t1.elapsed());
 
         log::info!("Staging belt finish.");
         self.staging_belt.finish();
         log::info!("Queue submit.");
+        log::info!("time: {:?}", t1.elapsed());
         queue.submit(Some(encoder.finish()));
 
+        log::info!("time: {:?}", t1.elapsed());
         log::info!("Staging belt recall.");
         let belt_future = self.staging_belt.recall();
+        log::info!("time: {:?}", t1.elapsed());
         log::info!("Spawn local.");
         spawner.spawn_local(belt_future).unwrap();
+        log::info!("time: {:?}", t1.elapsed());
         log::info!("Done.");
     }
 
