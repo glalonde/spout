@@ -29,8 +29,8 @@ pub struct ParticleSystemParams {
 impl Default for ParticleSystemParams {
     fn default() -> Self {
         ParticleSystemParams {
-            emission_rate: 10000.0,
-            max_particle_life: 3.0,
+            emission_rate: 100000.0,
+            max_particle_life: 2.0,
             damage_rate: 0.00001,
             gravity: -5.0,
             elasticity: 0.5,
@@ -55,8 +55,8 @@ impl Default for GameParams {
             level_height: 960,
             fps: 60.0,
             music_starts_on: false,
-            enable_glow_pass: false,
-            render_ship: true,
+            enable_glow_pass: true,
+            render_ship: false,
             particle_system_params: ParticleSystemParams::default(),
         }
     }

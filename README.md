@@ -27,3 +27,23 @@ Here's the final version of the previous incarnation(click for video). I'm still
 
 [![Watch the video](https://img.youtube.com/vi/ByFWa8JPO0c/maxresdefault.jpg)](https://youtu.be/ByFWa8JPO0c)
 
+
+---
+
+Android Dev Notes
+===
+
+Get rust logging out of ADB:
+```
+adb logcat RustStdoutStderr:D *:S
+```
+
+Install and run on plugged in device:
+```
+cargo apk run --example spout_android
+```
+
+Inspect the APK
+```
+/opt/android-sdk/build-tools/30.0.2/aapt2 d xmltree spout.apk --file AndroidManifest.xml
+```

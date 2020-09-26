@@ -8,14 +8,18 @@ pub mod game_viewport;
 pub mod glow_pass;
 pub mod int_grid;
 pub mod level_manager;
-pub mod music_player;
 pub mod particle_system;
 pub mod shader_utils;
 pub mod ship;
-pub mod sound_queue;
+pub mod spout_main;
 pub mod terrain_renderer;
 pub mod text_renderer;
 pub mod viewport;
+
+#[cfg(feature = "music")]
+pub mod music_player;
+#[cfg(feature = "music")]
+pub mod sound_queue;
 
 #[cfg(test)]
 mod tests {

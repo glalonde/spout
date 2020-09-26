@@ -9,11 +9,12 @@ debug = true
 
 [features]
 default = []
+music = ["rodio"]
 
 [dependencies]
 image = "0.23"
 gflags = "0.3"
-winit = { version = "0.22", features = ["web-sys"] }
+winit = { git = "https://github.com/rust-windowing/winit", features = ["web-sys"] }
 scrub_log = "0.2"
 log = "0.4"
 wgpu = "0.6"
@@ -26,12 +27,17 @@ png = "0.15"
 scarlet = "1.1.0"
 wgpu_glyph = "0.10"
 futures = { version = "0.3", features = ["thread-pool"] }
-rodio = { git = "https://github.com/RustAudio/rodio" , default-features = false, features = ["vorbis", "flac", "wav"] }
 crossbeam-channel = "0.4"
-rust-embed = { version = "5.5", features = ["interpolate-folder-path"] }
+rust-embed = { version = "5.5", features = ["interpolate-folder-path", "debug-embed"] }
 serde = { version = "1.0", features = ["derive"] }
 toml = "0.5"
 anyhow = "1.0"
+
+[dependencies.rodio]
+git = "https://github.com/RustAudio/rodio" 
+default-features = false
+features = ["vorbis", "flac", "wav"]
+optional = true
 
 [build-dependencies]
 log = "*"
@@ -39,3 +45,30 @@ shaderc = "*"
 walkdir = "2.2.9"
 phf = {version = "0.8.0", features = ["macros"]}
 scrub_log = "0.2"
+
+[target.'cfg(target_os = "android")'.dependencies]
+ndk-glue = "0.2.0"
+ndk-sys = "0.2.0"
+ndk = { version = "0.2.0", features = ["trace"] }
+
+[[example]]
+name = "hello_android"
+path = "./examples/hello_android/hello_android.rs"
+crate-type = ["cdylib"]
+
+[[example]]
+name = "spout_android"
+path = "./examples/spout_android/spout_android.rs"
+crate-type = ["cdylib"]
+
+# Android manifest
+# Documentation: https://github.com/rust-windowing/android-ndk-rs/tree/master/cargo-apk
+[package.metadata.android]
+apk_label = "Spout"
+target_sdk_version = 30
+fullscreen = true
+orientation = "sensorLandscape"
+
+[[package.metadata.android.feature]]
+name = "android.hardware.vulkan.level"
+version = "1"
