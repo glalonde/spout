@@ -44,4 +44,5 @@
 - [x] CI builds linux binaries
 - [ ] CI builds macOS binaries
 - [ ] CI builds Windows binaries
+- [ ] 2d fluid sim
 ---

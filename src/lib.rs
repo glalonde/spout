@@ -1,4 +1,5 @@
 pub mod color_maps;
+pub mod cpu_collision_detector;
 pub mod debug_overlay;
 pub mod emitter;
 pub mod fonts;

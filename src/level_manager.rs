@@ -149,6 +149,10 @@ pub struct LevelManager {
 
     // Buffer index -> Buffer. (This doesn't change after init)
     terrain_buffers: Vec<wgpu::Buffer>,
+    read_staging_buffer: wgpu::Buffer,
+    write_staging_buffer: wgpu::Buffer,
+    // staged_level: Vec<i32>,
+
     // Buffer index -> level number
     buffer_levels: Vec<i32>,
 
@@ -215,6 +219,14 @@ impl LevelManager {
             buffer_config_index: 1,
             terrain_buffer_size,
             terrain_buffers,
+            read_staging_buffer: LevelManager::make_read_staging_buffer(
+                device,
+                terrain_buffer_size,
+            ),
+            write_staging_buffer: LevelManager::make_write_staging_buffer(
+                device,
+                terrain_buffer_size,
+            ),
             buffer_levels,
             level_maker: LevelMaker::init(level_width, level_height),
         };
@@ -274,6 +286,24 @@ impl LevelManager {
         })
     }
 
+    fn make_read_staging_buffer(device: &wgpu::Device, size: usize) -> wgpu::Buffer {
+        device.create_buffer(&wgpu::BufferDescriptor {
+            size: size as wgpu::BufferAddress,
+            usage: wgpu::BufferUsage::MAP_READ | wgpu::BufferUsage::COPY_DST,
+            label: Some("Read staging buffer"),
+            mapped_at_creation: true,
+        })
+    }
+
+    fn make_write_staging_buffer(device: &wgpu::Device, size: usize) -> wgpu::Buffer {
+        device.create_buffer(&wgpu::BufferDescriptor {
+            size: size as wgpu::BufferAddress,
+            usage: wgpu::BufferUsage::MAP_WRITE | wgpu::BufferUsage::COPY_SRC,
+            label: Some("Write staging buffer"),
+            mapped_at_creation: true,
+        })
+    }
+
     fn sync_buffers(
         &mut self,
         device: &wgpu::Device,
@@ -298,6 +328,10 @@ impl LevelManager {
             }
         }
     }
+
+    // fn start_async_read() -> Vec<i32> {
+        // map_async().and_then
+    // }
 
     fn copy_level_to_buffer(
         level_maker: &mut LevelMaker,
