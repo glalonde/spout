@@ -6,10 +6,6 @@ use winit::{
     event_loop::{ControlFlow, EventLoop},
 };
 
-#[cfg(test)]
-#[path = "../tests/common/mod.rs"]
-pub mod test_common;
-
 #[rustfmt::skip]
 #[allow(unused)]
 pub const OPENGL_TO_WGPU_MATRIX: cgmath::Matrix4<f32> = cgmath::Matrix4::new(
@@ -433,114 +429,6 @@ pub fn parse_url_query_string<'a>(query: &'a str, search_key: &str) -> Option<&'
     }
 
     None
-}
-
-#[cfg(test)]
-pub struct FrameworkRefTest {
-    pub image_path: &'static str,
-    pub width: u32,
-    pub height: u32,
-    pub optional_features: wgpu::Features,
-    pub base_test_parameters: test_common::TestParameters,
-    pub tolerance: u8,
-    pub max_outliers: usize,
-}
-
-#[cfg(test)]
-#[allow(dead_code)]
-pub fn test<E: Example>(mut params: FrameworkRefTest) {
-    use std::{mem, num::NonZeroU32};
-
-    assert_eq!(params.width % 64, 0, "width needs to be aligned 64");
-
-    let features = E::required_features() | params.optional_features;
-
-    test_common::initialize_test(
-        mem::take(&mut params.base_test_parameters).features(features),
-        |ctx| {
-            let spawner = Spawner::new();
-
-            let dst_texture = ctx.device.create_texture(&wgpu::TextureDescriptor {
-                label: Some("destination"),
-                size: wgpu::Extent3d {
-                    width: params.width,
-                    height: params.height,
-                    depth_or_array_layers: 1,
-                },
-                mip_level_count: 1,
-                sample_count: 1,
-                dimension: wgpu::TextureDimension::D2,
-                format: wgpu::TextureFormat::Rgba8UnormSrgb,
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
-            });
-
-            let dst_view = dst_texture.create_view(&wgpu::TextureViewDescriptor::default());
-
-            let dst_buffer = ctx.device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("image map buffer"),
-                size: params.width as u64 * params.height as u64 * 4,
-                usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-                mapped_at_creation: false,
-            });
-
-            let mut example = E::init(
-                &wgpu::SurfaceConfiguration {
-                    usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-                    format: wgpu::TextureFormat::Rgba8UnormSrgb,
-                    width: params.width,
-                    height: params.height,
-                    present_mode: wgpu::PresentMode::Fifo,
-                },
-                &ctx.adapter,
-                &ctx.device,
-                &ctx.queue,
-            );
-
-            example.render(&dst_view, &ctx.device, &ctx.queue, &spawner);
-
-            let mut cmd_buf = ctx
-                .device
-                .create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
-
-            cmd_buf.copy_texture_to_buffer(
-                wgpu::ImageCopyTexture {
-                    texture: &dst_texture,
-                    mip_level: 0,
-                    origin: wgpu::Origin3d::ZERO,
-                    aspect: wgpu::TextureAspect::All,
-                },
-                wgpu::ImageCopyBuffer {
-                    buffer: &dst_buffer,
-                    layout: wgpu::ImageDataLayout {
-                        offset: 0,
-                        bytes_per_row: NonZeroU32::new(params.width * 4),
-                        rows_per_image: None,
-                    },
-                },
-                wgpu::Extent3d {
-                    width: params.width,
-                    height: params.height,
-                    depth_or_array_layers: 1,
-                },
-            );
-
-            ctx.queue.submit(Some(cmd_buf.finish()));
-
-            let dst_buffer_slice = dst_buffer.slice(..);
-            let _ = dst_buffer_slice.map_async(wgpu::MapMode::Read);
-            ctx.device.poll(wgpu::Maintain::Wait);
-            let bytes = dst_buffer_slice.get_mapped_range().to_vec();
-
-            test_common::image::compare_image_output(
-                env!("CARGO_MANIFEST_DIR").to_string() + params.image_path,
-                params.width,
-                params.height,
-                &bytes,
-                params.tolerance,
-                params.max_outliers,
-            );
-        },
-    );
 }
 
 // This allows treating the framework as a standalone example,
