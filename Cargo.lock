@@ -1728,6 +1728,7 @@ dependencies = [
  "rodio",
  "scrub_log",
  "serde",
+ "toml",
  "wgpu",
  "winit",
 ]
