@@ -48,14 +48,6 @@ bytemuck = { version = "1.4", features = ["derive"] }
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 async-executor = "1.0"
 pollster = "0.2"
-scrub_log = "0.2"
-
-
-
-
-
-
-
 
 [dependencies.rodio]
 git = "https://github.com/RustAudio/rodio" 

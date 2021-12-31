@@ -8,18 +8,7 @@ use log::error;
 use std::{borrow::Cow, mem};
 use wgpu::util::DeviceExt;
 
-
-/* 
-gflags::define! {
-    --config: &str = "game_config.toml"
-}
-*/
-
-/*
-TODO Render into the preloaded texture.
- */
-
-struct Example {
+struct Spout {
     camera: camera::Camera,
     camera_bind_group: wgpu::BindGroup,
     camera_uniform_buf: wgpu::Buffer,
@@ -32,26 +21,23 @@ struct Example {
     staging_belt: wgpu::util::StagingBelt,
 }
 
-impl Example {
-    fn read_config_from_file(path: &str) -> anyhow::Result<game_params::GameParams> {
-        let params = std::fs::read_to_string(path)?.parse()?;
-        Ok(params)
-    }
-
-    /*
+impl Spout {
     fn get_game_config() -> game_params::GameParams {
-        match Example::read_config_from_file(CONFIG.flag) {
+        let config_data = include_str!("../game_config.toml");
+        match config_data.parse() {
             Ok(params) => params,
             Err(e) => {
-                error!("Failed to parse config file({}): {:?}", CONFIG.flag, e);
+                error!(
+                    "Failed to parse config file({}): {:?}",
+                    "../game_config.toml", e
+                );
                 game_params::GameParams::default()
             }
         }
     }
-    */
 }
 
-impl framework::Example for Example {
+impl framework::Example for Spout {
     fn optional_features() -> wgpu::Features {
         wgpu::Features::TIMESTAMP_QUERY | wgpu::Features::PIPELINE_STATISTICS_QUERY
     }
@@ -65,7 +51,7 @@ impl framework::Example for Example {
         let mut init_encoder =
             device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
 
-        // let game_params = Example::get_game_config();
+        let _game_params = Spout::get_game_config();
 
         let camera = camera::Camera {
             screen_size: (config.width, config.height),
@@ -148,7 +134,7 @@ impl framework::Example for Example {
 
         queue.submit(Some(init_encoder.finish()));
 
-        Example {
+        Spout {
             camera: camera::Camera {
                 screen_size: (config.width, config.height),
                 radius: 5.0,
@@ -240,5 +226,5 @@ impl framework::Example for Example {
 }
 
 fn main() {
-    framework::run::<Example>("mipmap");
+    framework::run::<Spout>("spout");
 }

@@ -68,6 +68,8 @@ pub trait Example: 'static + Sized {
     );
 }
 
+
+#[allow(dead_code)]
 struct Setup {
     window: winit::window::Window,
     event_loop: EventLoop<()>,
@@ -79,6 +81,7 @@ struct Setup {
     queue: wgpu::Queue,
 }
 
+#[allow(dead_code)]
 async fn setup<E: Example>(title: &str) -> Setup {
     #[cfg(not(target_arch = "wasm32"))]
     {
@@ -189,6 +192,8 @@ async fn setup<E: Example>(title: &str) -> Setup {
     }
 }
 
+
+#[allow(dead_code)]
 fn start<E: Example>(
     Setup {
         window,
@@ -345,6 +350,7 @@ pub struct Spawner<'a> {
 
 #[cfg(not(target_arch = "wasm32"))]
 impl<'a> Spawner<'a> {
+    #[allow(dead_code)]
     fn new() -> Self {
         Self {
             executor: async_executor::LocalExecutor::new(),
@@ -356,6 +362,7 @@ impl<'a> Spawner<'a> {
         self.executor.spawn(future).detach();
     }
 
+    #[allow(dead_code)]
     fn run_until_stalled(&self) {
         while self.executor.try_tick() {}
     }
@@ -376,6 +383,8 @@ impl Spawner {
     }
 }
 
+
+#[allow(dead_code)]
 #[cfg(not(target_arch = "wasm32"))]
 pub fn run<E: Example>(title: &str) {
     let setup = pollster::block_on(setup::<E>(title));
