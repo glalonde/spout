@@ -6,7 +6,7 @@ set -ex
 
 echo "Compiling..."
 RUSTFLAGS=--cfg=web_sys_unstable_apis
-cargo build --target wasm32-unknown-unknown --features "$1"
+cargo build --target wasm32-unknown-unknown
 
 # Use the following for an example(as opposed to the main binary):
 # cargo build --example $1 --target wasm32-unknown-unknown --features "$2"
