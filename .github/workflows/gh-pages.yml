@@ -1,0 +1,41 @@
+name: github pages
+
+on:
+  push:
+    branches:
+      - updatewgpu2  # Set a branch to deploy
+  pull_request:
+
+env:
+  RUSTFLAGS: --cfg=web_sys_unstable_apis
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          submodules: false  # Fetch Hugo themes (true OR recursive)
+          fetch-depth: 0    # Fetch all history for .GitInfo and .Lastmod
+
+      - name: Install Rust WASM toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: wasm32-unknown-unknown
+
+      - name: Install wasm-bindgen-cli
+        run: cargo install wasm-bindgen-cli
+
+      - name: Build WebGL
+        run: cargo build --release --target wasm32-unknown-unknown --features=webgl
+
+      - name: Generate JS bindings for WebGPU examples
+        run: wasm-bindgen --no-typescript --out-dir target/generated-gpu --web target/wasm32-unknown-unknown/release/spout.wasm
+
+      - name: Deploy
+        uses: peaceiris/actions-gh-pages@v3
+        if: github.ref == 'refs/heads/updatewgpu2'
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./target/wasm-examples/spout
