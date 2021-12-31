@@ -31,11 +31,14 @@ jobs:
         run: cargo build --release --target wasm32-unknown-unknown
 
       - name: Generate JS bindings for WebGPU examples
-        run: wasm-bindgen --no-typescript --out-dir target/generated-gpu --web target/wasm32-unknown-unknown/release/spout.wasm
+        run: wasm-bindgen --no-typescript --out-dir target/spout_web --web target/wasm32-unknown-unknown/release/spout.wasm
+
+      - name: Write html
+        run: cat wasm-resources/index.template.html | sed "s/{{example}}/$TITLE/g" > target/spout_web/index.html
 
       - name: Deploy
         uses: peaceiris/actions-gh-pages@v3
         if: github.ref == 'refs/heads/updatewgpu2'
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./target/wasm-examples/spout
+          publish_dir: ./target/spout_web
