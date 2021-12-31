@@ -34,7 +34,7 @@ jobs:
         run: wasm-bindgen --no-typescript --out-dir target/spout_web --web target/wasm32-unknown-unknown/release/spout.wasm
 
       - name: Write html
-        run: cat wasm-resources/index.template.html | sed "s/{{example}}/$TITLE/g" > target/spout_web/index.html
+        run: cat wasm-resources/index.template.html | sed "s/{{example}}/spout/g" > target/spout_web/index.html
 
       - name: Deploy
         uses: peaceiris/actions-gh-pages@v3
