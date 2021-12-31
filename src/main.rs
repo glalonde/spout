@@ -9,9 +9,11 @@ use std::{borrow::Cow, mem};
 use wgpu::util::DeviceExt;
 
 
+/* 
 gflags::define! {
     --config: &str = "game_config.toml"
 }
+*/
 
 /*
 TODO Render into the preloaded texture.
@@ -36,6 +38,7 @@ impl Example {
         Ok(params)
     }
 
+    /*
     fn get_game_config() -> game_params::GameParams {
         match Example::read_config_from_file(CONFIG.flag) {
             Ok(params) => params,
@@ -45,6 +48,7 @@ impl Example {
             }
         }
     }
+    */
 }
 
 impl framework::Example for Example {
@@ -61,7 +65,7 @@ impl framework::Example for Example {
         let mut init_encoder =
             device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
 
-        let game_params = Example::get_game_config();
+        // let game_params = Example::get_game_config();
 
         let camera = camera::Camera {
             screen_size: (config.width, config.height),

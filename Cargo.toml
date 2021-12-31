@@ -27,6 +27,20 @@ anyhow = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 toml = "0.5"
 
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+console_error_panic_hook = "0.1.6"
+console_log = "0.2.0"
+wasm-bindgen-futures = "0.4.20"
+wasm-bindgen = "0.2.76"
+web-sys = { version = "0.3.53", features = [
+    "Document",
+    "Window",
+    "Element",
+    "Location",
+]}
+wgpu = { version = "0.12", features = ["webgl"]}
+js-sys = "0.3.50"
+
 
 [dev-dependencies]
 bytemuck = { version = "1.4", features = ["derive"] }
@@ -35,6 +49,13 @@ bytemuck = { version = "1.4", features = ["derive"] }
 async-executor = "1.0"
 pollster = "0.2"
 scrub_log = "0.2"
+
+
+
+
+
+
+
 
 [dependencies.rodio]
 git = "https://github.com/RustAudio/rodio" 

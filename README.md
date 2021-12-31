@@ -47,3 +47,11 @@ Inspect the APK
 ```
 /opt/android-sdk/build-tools/30.0.2/aapt2 d xmltree spout.apk --file AndroidManifest.xml
 ```
+
+Web Dev Notes
+===
+
+Try running the wasm version! It might work:
+```
+./run_wasm.sh
+```
