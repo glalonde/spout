@@ -89,7 +89,6 @@ fn init_logger() {
 
     #[cfg(target_arch = "wasm32")]
     {
-        use winit::platform::web::WindowExtWebSys;
         let query_string = web_sys::window().unwrap().location().search().unwrap();
         let level: log::Level = parse_url_query_string(&query_string, "RUST_LOG")
             .map(|x| x.parse().ok())
@@ -116,7 +115,7 @@ async fn setup<E: Example>(title: &str) -> Setup {
 
     #[cfg(target_arch = "wasm32")]
     {
-        let query_string = web_sys::window().unwrap().location().search().unwrap();
+        use winit::platform::web::WindowExtWebSys;
         // On wasm, append the canvas to the document body
         web_sys::window()
             .and_then(|win| win.document())
@@ -400,6 +399,7 @@ pub fn run<E: Example>(title: &str) {
     start::<E>(setup);
 }
 
+#[allow(dead_code)]
 #[cfg(target_arch = "wasm32")]
 pub fn run<E: Example>(title: &str) {
     use wasm_bindgen::{prelude::*, JsCast};
