@@ -84,7 +84,7 @@ struct Setup {
 fn init_logger() {
     #[cfg(not(target_arch = "wasm32"))]
     {
-        scrub_log::init_with_filter_string("info").unwrap();
+        scrub_log::init_with_filter_string("spout=info").unwrap();
     };
 
     #[cfg(target_arch = "wasm32")]

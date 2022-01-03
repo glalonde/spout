@@ -62,6 +62,21 @@ impl Default for GameParams {
     }
 }
 
+pub fn get_game_config_from_default_file() -> GameParams {
+    let config_data = include_str!("../game_config.toml");
+    match config_data.parse() {
+        Ok(params) => params,
+        Err(e) => {
+            log::error!(
+                "Failed to parse config file({}): {:?}",
+                "../game_config.toml",
+                e
+            );
+            GameParams::default()
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

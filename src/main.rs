@@ -2,38 +2,139 @@ mod camera;
 #[path = "../examples/framework.rs"]
 mod framework;
 mod game_params;
+mod int_grid;
+mod render;
+mod ship;
 mod textured_quad;
+use log::{error, info};
 
-use log::error;
-use std::{borrow::Cow, mem};
-use wgpu::util::DeviceExt;
+#[derive(Debug, Copy, Clone)]
+pub struct InputState {
+    forward: bool,
+    left: bool,
+    right: bool,
+    pause: bool,
+
+    // Camera controls:
+    cam_up: bool,
+    cam_down: bool,
+    cam_left: bool,
+    cam_right: bool,
+}
+impl Default for InputState {
+    fn default() -> Self {
+        InputState {
+            forward: false,
+            left: false,
+            right: false,
+            pause: false,
+
+            cam_up: false,
+            cam_down: false,
+            cam_left: false,
+            cam_right: false,
+        }
+    }
+}
+
+#[derive(Debug)]
+struct GameState {
+    input_state: InputState,
+    prev_input_state: InputState,
+    ship_state: ship::ShipState,
+    score: i32,
+    paused: bool,
+}
+impl Default for GameState {
+    fn default() -> Self {
+        GameState {
+            input_state: InputState::default(),
+            prev_input_state: InputState::default(),
+            ship_state: ship::ShipState::default(),
+            score: 0,
+            paused: false,
+        }
+    }
+}
 
 struct Spout {
-    camera: camera::Camera,
-    camera_bind_group: wgpu::BindGroup,
-    camera_uniform_buf: wgpu::Buffer,
+    game_params: game_params::GameParams,
+    state: GameState,
+    // level_manager: level_manager::LevelManager,
+    game_time: std::time::Duration,
+    iteration_start: instant::Instant,
+    renderer: render::Render,
+    // staging_belt: wgpu::util::StagingBelt,
 
-    draw_pipeline: wgpu::RenderPipeline,
-
-    model: textured_quad::TexturedQuad,
-
-    frame_num: i64,
-    staging_belt: wgpu::util::StagingBelt,
+    // fps: fps_estimator::FpsEstimator,
+    /*
+    compute_locals: super::particle_system::ComputeLocals,
+    pre_glow_texture: wgpu::TextureView,
+    post_glow_texture: wgpu::TextureView,
+    game_view_texture: wgpu::TextureView,
+    terrain_renderer: super::terrain_renderer::TerrainRenderer,
+    particle_renderer: super::particle_system::ParticleRenderer,
+    glow_renderer: super::glow_pass::GlowRenderer,
+    ship_renderer: super::ship::ShipRenderer,
+    viewport: super::viewport::Viewport,
+    debug_overlay: super::debug_overlay::DebugOverlay,
+    text_renderer: super::text_renderer::TextRenderer,
+    game_viewport: super::game_viewport::GameViewport,
+    */
 }
 
 impl Spout {
-    fn get_game_config() -> game_params::GameParams {
-        let config_data = include_str!("../game_config.toml");
-        match config_data.parse() {
-            Ok(params) => params,
-            Err(e) => {
-                error!(
-                    "Failed to parse config file({}): {:?}",
-                    "../game_config.toml", e
-                );
-                game_params::GameParams::default()
+    fn update_ship(&mut self, dt: f32) {
+        let input_state = self.state.input_state;
+        let ship_state = &mut self.state.ship_state;
+
+        // Update "ship"
+        let rotation: ship::RotationDirection = match (input_state.left, input_state.right) {
+            (true, false) => ship::RotationDirection::CCW,
+            (false, true) => ship::RotationDirection::CW,
+            _ => ship::RotationDirection::None,
+        };
+        ship_state.update(dt, input_state.forward, rotation);
+    }
+
+    fn tick(&mut self) -> f32 {
+        let now = instant::Instant::now();
+        let delta_t = now - self.iteration_start;
+        self.iteration_start = now;
+
+        if self.state.paused {
+            return 0.0;
+        } else {
+            self.game_time += delta_t;
+            return delta_t.as_secs_f32();
+        }
+    }
+
+    fn update_paused(&mut self) {
+        if self.state.input_state.pause && !self.state.prev_input_state.pause {
+            // new pause signal.
+            self.state.paused = !self.state.paused;
+            if self.state.paused {
+                log::info!("Paused game at t={:#?}", self.game_time);
+            } else {
+                log::info!("Unpaused game at t={:#?}", self.game_time);
             }
         }
+    }
+
+    fn update_state(&mut self) {
+        self.update_paused();
+
+        // let target_duration = std::time::Duration::from_secs_f64(1.0 / self.game_params.fps);
+        let dt = self.tick();
+
+        self.renderer.update_state(dt, &self.state.input_state);
+
+        // Process input state integrated over passage of time.
+        self.update_ship(dt);
+
+        // Finished processing input, set previous input state.
+        self.state.prev_input_state = self.state.input_state;
     }
 }
 
@@ -44,114 +145,59 @@ impl framework::Example for Spout {
 
     fn init(
         config: &wgpu::SurfaceConfiguration,
-        _adapter: &wgpu::Adapter,
+        adapter: &wgpu::Adapter,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
     ) -> Self {
-        let mut init_encoder =
-            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-
-        let _game_params = Spout::get_game_config();
-
-        let camera = camera::Camera {
-            screen_size: (config.width, config.height),
-            radius: 5.0,
-            phi: 0.0,
-            height: 3.0,
-        };
-        let raw_uniforms = camera.to_uniform_data();
-        let camera_uniform_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Uniform Buffer"),
-            contents: bytemuck::cast_slice(&raw_uniforms),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
-
-        // Create the vertex and index buffers
-        let vertex_size = mem::size_of::<textured_quad::Vertex>();
-        let vertex_buffers = [wgpu::VertexBufferLayout {
-            array_stride: vertex_size as wgpu::BufferAddress,
-            step_mode: wgpu::VertexStepMode::Vertex,
-            attributes: &[
-                // Vertex position.
-                wgpu::VertexAttribute {
-                    format: wgpu::VertexFormat::Float32x4,
-                    offset: 0,
-                    shader_location: 0,
-                },
-                // Texture position.
-                wgpu::VertexAttribute {
-                    format: wgpu::VertexFormat::Float32x2,
-                    offset: 4 * 4,
-                    shader_location: 1,
-                },
-            ],
-        }];
-
-        // Create the render pipeline
-        let shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
-            label: None,
-            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("textured_model.wgsl"))),
-        });
-
-        let draw_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("draw"),
-            layout: None,
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: "vs_main",
-                buffers: &vertex_buffers,
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: "fs_main",
-                targets: &[config.format.into()],
-            }),
-            primitive: wgpu::PrimitiveState {
-                // cull_mode: Some(wgpu::Face::Back),
-                ..Default::default()
-            },
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
-            multiview: None,
-        });
-
-        // Create bind group
-        let camera_bind_group_layout = draw_pipeline.get_bind_group_layout(0);
-        let camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &camera_bind_group_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: camera_uniform_buf.as_entire_binding(),
-            }],
-            label: None,
-        });
-
-        let textured_quad = textured_quad::TexturedQuad::init(
-            device,
-            draw_pipeline.get_bind_group_layout(1),
-            &mut init_encoder,
-        );
-
-        queue.submit(Some(init_encoder.finish()));
+        let game_params = game_params::get_game_config_from_default_file();
+        let game_state = GameState::default();
+        let renderer = render::Render::init(config, adapter, device, queue);
 
         Spout {
-            camera: camera::Camera {
-                screen_size: (config.width, config.height),
-                radius: 5.0,
-                phi: 0.0,
-                height: 3.0,
-            },
-            camera_bind_group,
-            camera_uniform_buf,
-            draw_pipeline,
-            model: textured_quad,
-
-            frame_num: 0,
-            staging_belt: wgpu::util::StagingBelt::new(0x100),
+            game_params,
+            state: game_state,
+            game_time: std::time::Duration::default(),
+            iteration_start: instant::Instant::now(),
+            renderer,
         }
     }
 
-    fn update(&mut self, _event: winit::event::WindowEvent) {}
+    fn update(&mut self, event: winit::event::WindowEvent) {
+        // Update inpute state
+        macro_rules! bind_keys {
+            ($input:expr, $($pat:pat => $result:expr),*) => (
+                            match $input {
+                                    $(
+                            winit::event::KeyboardInput {
+                                virtual_keycode: Some($pat),
+                                state,
+                                ..
+                            } => match state {
+                                winit::event::ElementState::Pressed =>  $result = true,
+                                winit::event::ElementState::Released => $result = false,
+                            }
+                        ),*
+                    _ => (),
+                }
+            );
+        }
+        match event {
+            winit::event::WindowEvent::KeyboardInput { input, .. } => bind_keys!(input,
+                // Ship motion bindings
+                winit::event::VirtualKeyCode::W => self.state.input_state.forward,
+                winit::event::VirtualKeyCode::A => self.state.input_state.left,
+                winit::event::VirtualKeyCode::P => self.state.input_state.pause,
+                winit::event::VirtualKeyCode::D => self.state.input_state.right,
+
+                // Camera bindings
+                winit::event::VirtualKeyCode::I => self.state.input_state.cam_up,
+                winit::event::VirtualKeyCode::K => self.state.input_state.cam_down,
+                winit::event::VirtualKeyCode::J => self.state.input_state.cam_left,
+                winit::event::VirtualKeyCode::L => self.state.input_state.cam_right
+            ),
+            _ => (),
+        }
+    }
 
     fn resize(
         &mut self,
@@ -159,7 +205,7 @@ impl framework::Example for Spout {
         _device: &wgpu::Device,
         _queue: &wgpu::Queue,
     ) {
-        self.camera.screen_size = (config.width, config.height);
+        self.renderer.resize(config);
     }
 
     fn render(
@@ -169,62 +215,15 @@ impl framework::Example for Spout {
         queue: &wgpu::Queue,
         _spawner: &framework::Spawner,
     ) {
-        let mut encoder =
-            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-        {
-            // Update camera position by rotating in cylindrical coordinates.
-            let p = self.frame_num as f32 / 120.0;
-            self.camera.phi = p;
+        self.update_state();
+        // Run compute pipeline.
+        // TODO
 
-            let raw_uniforms = self.camera.to_uniform_data();
-            self.staging_belt
-                .write_buffer(
-                    &mut encoder,
-                    &self.camera_uniform_buf,
-                    0,
-                    wgpu::BufferSize::new((raw_uniforms.len() * 4) as wgpu::BufferAddress).unwrap(),
-                    device,
-                )
-                .copy_from_slice(bytemuck::cast_slice(&raw_uniforms));
-
-            self.staging_belt.finish();
-        }
-
-        {
-            let clear_color = wgpu::Color {
-                r: 0.1,
-                g: 0.2,
-                b: 0.3,
-                a: 1.0,
-            };
-            {
-                let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: None,
-                    color_attachments: &[wgpu::RenderPassColorAttachment {
-                        view,
-                        resolve_target: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(clear_color),
-                            store: true,
-                        },
-                    }],
-                    depth_stencil_attachment: None,
-                });
-                rpass.set_pipeline(&self.draw_pipeline);
-
-                // Bind camera data.
-                rpass.set_bind_group(0, &self.camera_bind_group, &[]);
-
-                self.model.render(&mut rpass);
-            }
-        }
-
-        self.frame_num += 1;
-
-        queue.submit(Some(encoder.finish()));
+        // Run render pipeline.
+        self.renderer.render(view, device, queue);
     }
 }
 
 fn main() {
-    framework::run::<Spout>("spout");
+    framework::run::<Spout>("Spout");
 }

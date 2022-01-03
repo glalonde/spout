@@ -1,7 +1,13 @@
-
 #[path = "../examples/framework.rs"]
 mod framework;
+
+pub struct CameraMotion {
+    pub angular_speed: f32,
+    pub vertical_speed: f32,
+}
+
 pub struct Camera {
+    pub motion_params: CameraMotion,
     pub screen_size: (u32, u32),
     // Camera in cylindrical coordinates.
     pub phi: f32,
@@ -23,7 +29,7 @@ impl Camera {
             self.height,
         );
 
-        // camera_pose_world 
+        // camera_pose_world
         let mx_view = cgmath::Matrix4::look_at_rh(
             cam_pos,
             cgmath::Point3::new(0f32, 0.0, 0.0),
@@ -36,5 +42,20 @@ impl Camera {
         raw[..16].copy_from_slice(&AsRef::<[f32; 16]>::as_ref(&proj)[..]);
         raw[16..32].copy_from_slice(&AsRef::<[f32; 16]>::as_ref(&view)[..]);
         raw
+    }
+
+    pub fn update_state(&mut self, dt: f32, input_state: &crate::InputState) {
+        //
+        if input_state.cam_up && !input_state.cam_down {
+            self.height += self.motion_params.vertical_speed * dt;
+        } else if !input_state.cam_up && input_state.cam_down {
+            self.height -= self.motion_params.vertical_speed * dt;
+        }
+        if input_state.cam_left && !input_state.cam_right {
+            self.phi += self.motion_params.angular_speed * dt;
+        } else if !input_state.cam_left && input_state.cam_right {
+            self.phi -= self.motion_params.angular_speed * dt;
+        }
+        // self.radius
     }
 }
