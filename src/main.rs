@@ -6,7 +6,6 @@ mod int_grid;
 mod render;
 mod ship;
 mod textured_quad;
-use log::{error, info};
 
 #[derive(Debug, Copy, Clone)]
 pub struct InputState {

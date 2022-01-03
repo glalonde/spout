@@ -45,7 +45,6 @@ impl Camera {
     }
 
     pub fn update_state(&mut self, dt: f32, input_state: &crate::InputState) {
-        //
         if input_state.cam_up && !input_state.cam_down {
             self.height += self.motion_params.vertical_speed * dt;
         } else if !input_state.cam_up && input_state.cam_down {
