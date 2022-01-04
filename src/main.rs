@@ -1,4 +1,5 @@
 mod camera;
+mod emitter;
 #[path = "../examples/framework.rs"]
 mod framework;
 mod game_params;
@@ -63,6 +64,7 @@ struct Spout {
     game_time: std::time::Duration,
     iteration_start: instant::Instant,
     renderer: render::Render,
+    emitter: emitter::Emitter,
     // staging_belt: wgpu::util::StagingBelt,
 
     // fps: fps_estimator::FpsEstimator,
@@ -83,19 +85,6 @@ struct Spout {
 }
 
 impl Spout {
-    fn update_ship(&mut self, dt: f32) {
-        let input_state = self.state.input_state;
-        let ship_state = &mut self.state.ship_state;
-
-        // Update "ship"
-        let rotation: ship::RotationDirection = match (input_state.left, input_state.right) {
-            (true, false) => ship::RotationDirection::CCW,
-            (false, true) => ship::RotationDirection::CW,
-            _ => ship::RotationDirection::None,
-        };
-        ship_state.update(dt, input_state.forward, rotation);
-    }
-
     fn tick(&mut self) -> f32 {
         let now = instant::Instant::now();
         let delta_t = now - self.iteration_start;
@@ -121,16 +110,39 @@ impl Spout {
         }
     }
 
+    fn update_ship(&mut self, dt: f32) {
+        let input_state = self.state.input_state;
+        let ship_state = &mut self.state.ship_state;
+
+        // Update "ship"
+        let rotation: ship::RotationDirection = match (input_state.left, input_state.right) {
+            (true, false) => ship::RotationDirection::CCW,
+            (false, true) => ship::RotationDirection::CW,
+            _ => ship::RotationDirection::None,
+        };
+        ship_state.update(dt, input_state.forward, rotation);
+    }
+
+    fn update_emitter(&mut self, dt: f32) {
+        if self.state.input_state.forward {
+            self.emitter.update(dt, emitter::EmitterMotion::default());
+        }
+    }
+
+    /// Mostly responsible for updating superficial state based on new inputs.
     fn update_state(&mut self) {
         self.update_paused();
 
         // let target_duration = std::time::Duration::from_secs_f64(1.0 / self.game_params.fps);
         let dt = self.tick();
 
-        self.renderer.update_state(dt, &self.state.input_state);
-
         // Process input state integrated over passage of time.
         self.update_ship(dt);
+
+        self.update_emitter(dt);
+
+        // Update camera state.
+        self.renderer.update_state(dt, &self.state.input_state);
 
         // Finished processing input, set previous input state.
         self.state.prev_input_state = self.state.input_state;
@@ -138,8 +150,15 @@ impl Spout {
 }
 
 impl framework::Example for Spout {
-    fn optional_features() -> wgpu::Features {
-        wgpu::Features::TIMESTAMP_QUERY | wgpu::Features::PIPELINE_STATISTICS_QUERY
+    fn required_limits() -> wgpu::Limits {
+        wgpu::Limits::downlevel_defaults()
+    }
+
+    fn required_downlevel_capabilities() -> wgpu::DownlevelCapabilities {
+        wgpu::DownlevelCapabilities {
+            flags: wgpu::DownlevelFlags::COMPUTE_SHADERS,
+            ..Default::default()
+        }
     }
 
     fn init(
@@ -152,12 +171,20 @@ impl framework::Example for Spout {
         let game_state = GameState::default();
         let renderer = render::Render::init(config, adapter, device, queue);
 
+        // TODO load params from config.
+        let emitter = emitter::Emitter::new(
+            device,
+            game_params.particle_system_params.emission_rate,
+            game_params.particle_system_params.max_particle_life,
+        );
+
         Spout {
             game_params,
             state: game_state,
             game_time: std::time::Duration::default(),
             iteration_start: instant::Instant::now(),
             renderer,
+            emitter,
         }
     }
 
@@ -212,14 +239,22 @@ impl framework::Example for Spout {
         view: &wgpu::TextureView,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        _spawner: &framework::Spawner,
+        spawner: &framework::Spawner,
     ) {
+        let mut encoder =
+            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+
         self.update_state();
+
         // Run compute pipeline.
-        // TODO
+        self.emitter.run_compute(device, &mut encoder);
 
         // Run render pipeline.
-        self.renderer.render(view, device, queue);
+        self.renderer.render(view, device, &mut encoder);
+
+        queue.submit(Some(encoder.finish()));
+        self.emitter.after_queue_submission(spawner);
+        self.renderer.after_queue_submission(spawner);
     }
 }
 

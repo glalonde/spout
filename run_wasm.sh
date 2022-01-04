@@ -5,8 +5,7 @@
 set -ex
 
 echo "Compiling..."
-RUSTFLAGS=--cfg=web_sys_unstable_apis
-cargo build --target wasm32-unknown-unknown
+RUSTFLAGS=--cfg=web_sys_unstable_apis cargo build --no-default-features --target wasm32-unknown-unknown
 
 TITLE="spout"
 OUTPUT_DIR="target/wasm-examples/$TITLE"

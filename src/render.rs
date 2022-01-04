@@ -43,7 +43,7 @@ impl Render {
         };
         let raw_uniforms = camera.to_uniform_data();
         let camera_uniform_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Uniform Buffer"),
+            label: Some("Camera Uniform Buffer"),
             contents: bytemuck::cast_slice(&raw_uniforms),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
@@ -132,14 +132,17 @@ impl Render {
         self.camera.screen_size = (config.width, config.height);
     }
 
-    pub fn render(&mut self, view: &wgpu::TextureView, device: &wgpu::Device, queue: &wgpu::Queue) {
-        let mut encoder =
-            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+    pub fn render(
+        &mut self,
+        view: &wgpu::TextureView,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+    ) {
         {
             let raw_uniforms = self.camera.to_uniform_data();
             self.staging_belt
                 .write_buffer(
-                    &mut encoder,
+                    encoder,
                     &self.camera_uniform_buf,
                     0,
                     wgpu::BufferSize::new((raw_uniforms.len() * 4) as wgpu::BufferAddress).unwrap(),
@@ -180,7 +183,10 @@ impl Render {
         }
 
         self.frame_num += 1;
+    }
 
-        queue.submit(Some(encoder.finish()));
+    pub fn after_queue_submission(&mut self, spawner: &crate::framework::Spawner) {
+        let belt_future = self.staging_belt.recall();
+        spawner.spawn_local(belt_future);
     }
 }

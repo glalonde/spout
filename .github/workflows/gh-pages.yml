@@ -27,7 +27,7 @@ jobs:
       - name: Install wasm-bindgen-cli
         run: cargo install wasm-bindgen-cli
 
-      - name: Build WebGL
+      - name: Build WebGPU
         run: cargo build --release --target wasm32-unknown-unknown
 
       - name: Generate JS bindings for WebGPU examples
