@@ -1,3 +1,4 @@
+{% include "particle.wgsl.include" %}
 
 struct EmitterMotion {
     position_start: vec2<u32>;
@@ -28,21 +29,16 @@ struct EmitData {
 [[group(0), binding(0)]]
 var<uniform> emit_data: EmitData;
 
-// Size 8 + 8 + 4 + 4 = 24
-struct Particle {
-  position: vec2<u32>;
-  velocity: vec2<i32>;
-  ttl: f32;
-  _padding: u32;
-};
-
 struct Particles {
     particles: [[stride(24)]] array<Particle>;
 };
 [[group(0), binding(1)]]
 var<storage, read_write> data: Particles;
 
-[[stage(compute), workgroup_size(1)]]
-fn main([[builtin(global_invocation_id)]] global_id: vec3<u32>) {
-    data.particles[global_id.x] = data.particles[global_id.x];
+[[stage(compute), workgroup_size(256)]]
+fn main([[builtin(global_invocation_id)]] global_id: vec3<u32>, [[builtin(num_workgroups)]] num_workgroups: vec3<u32>) {
+    let total_particles = num_workgroups[0] * u32(512);
+    let gid = global_id[0];
+
+    data.particles[gid].position[0] = total_particles;
 }

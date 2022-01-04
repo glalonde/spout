@@ -5,6 +5,7 @@ mod framework;
 mod game_params;
 mod int_grid;
 mod render;
+mod shader_util;
 mod ship;
 mod textured_quad;
 
@@ -246,7 +247,7 @@ impl framework::Example for Spout {
 
         self.update_state();
 
-        // Run compute pipeline.
+        // Run compute pipeline(s).
         self.emitter.run_compute(device, &mut encoder);
 
         // Run render pipeline.

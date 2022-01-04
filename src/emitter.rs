@@ -168,7 +168,7 @@ impl Emitter {
         // Loads the shader from WGSL
         let cs_module = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
             label: Some("Emitter shader module"),
-            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("emitter.wgsl"))),
+            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(crate::include_shader!("emitter.wgsl"))),
         });
 
         let compute_bind_group_layout =
@@ -279,6 +279,7 @@ impl Emitter {
     pub fn run_compute(&mut self, device: &wgpu::Device, encoder: &mut wgpu::CommandEncoder) {
         if let Some(emit_params) = &self.emit_params {
             // Update uniforms
+            // TODO reference https://toji.github.io/webgpu-best-practices/buffer-uploads.html
             self.staging_belt
                 .write_buffer(
                     encoder,

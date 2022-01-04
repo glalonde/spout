@@ -48,8 +48,7 @@ bytemuck = { version = "1.4", features = ["derive"] }
 async-executor = "1.0"
 pollster = "0.2"
 
-[dependencies.rodio]
-git = "https://github.com/RustAudio/rodio" 
-default-features = false
-features = ["vorbis", "flac", "wav"]
-optional = true
+[build-dependencies]
+tera="1"
+# Game logic (use your own crate here)
+# shared={path="../shared"}
