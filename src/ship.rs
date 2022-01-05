@@ -1,5 +1,5 @@
 use log::trace;
-use crate::int_grid;
+use int_grid;
 
 #[repr(i8)]
 #[derive(Copy, Clone)]

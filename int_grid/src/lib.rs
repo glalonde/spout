@@ -1,4 +1,12 @@
-const INNER_GRID_BITS: u32 = 12;
+pub const INNER_GRID_BITS: u32 = 12;
+pub const OUTER_GRID_BITS: u32 = 32 - INNER_GRID_BITS;
+pub const OUTER_GRID_SIZE: i32 = 1 << OUTER_GRID_BITS;
+pub const HALF_OUTER_GRID_SIZE: i32 = OUTER_GRID_SIZE / 2;
+pub const GRID_ANCHOR: i32 = HALF_OUTER_GRID_SIZE;
+pub const GRID_ANCHOR_ABSOLUTE: u32 = (GRID_ANCHOR as u32) << INNER_GRID_BITS;
+pub const HIGH_RES_MASK: u32 = (1 << INNER_GRID_BITS) - 1;
+pub const INNER_GRID_SIZE: i32 = 1 << INNER_GRID_BITS;
+pub const HALF_INNER_GRID_SIZE: i32 = INNER_GRID_SIZE / 2;
 
 // Returns a T with a binary representation of n_ones in the least significant
 // digits
@@ -134,3 +142,4 @@ mod tests {
         );
     }
 }
+

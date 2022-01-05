@@ -3,7 +3,6 @@ mod emitter;
 #[path = "../examples/framework.rs"]
 mod framework;
 mod game_params;
-mod int_grid;
 mod render;
 mod shader_util;
 mod ship;

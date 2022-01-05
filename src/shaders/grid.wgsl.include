@@ -1,1 +1,50 @@
-// Helpful comments.
+// Particle position units are packed strangely:
+// There are two parts corrresponding to a hierarchical grid.
+// The lower-resolution grid is the "pixels" on the screen output, and the
+// resolution of the environment. The N most significant bits hold this higher
+// level grid. The 32 - N least significant bits hold the lower level grid.
+//
+// So this means there is a tradeoff between the resolution of the inner grid
+// and the outer grid.
+//
+// Additionally, there is a coordinate system defined so that the position data
+// can be unsigned. The grid is centered at an anchor point which should be
+// halfway into the outer grid range.
+//
+// This is pretty much just enabling adjustable fixed-point math.
+
+// Some of these should be specialization constants...
+// but WebGPU doesn't support that yet, so until then, either just real
+// constants or codegen could probably do it.
+let kInnerGridBits: u32 = {{ inner_grid_bits }}u;
+let kOuterGridBits: u32 = {{ outer_grid_bits }}u;
+let kOuterGridSize: i32 = {{ outer_grid_size }};
+let kHalfOuterGridSize: i32 = {{ half_outer_grid_size }};
+let kGridAnchor: i32 = {{ grid_anchor }};
+
+let kGridAnchorAbsolute: u32 = {{ grid_anchor_absolute }}u;
+let kHighResMask: u32 = {{ high_res_mask }}u;
+let kInnerGridSize: i32 = {{ inner_grid_size }};
+let kHalfInnerGridSize: i32 = {{ half_inner_grid_size }};
+
+// Get the "visible" position.
+fn GetOuterGrid(pos: vec2<u32>) -> vec2<i32> {
+    let outer_x: i32 = i32(pos.x >> kInnerGridBits);
+    let outer_y: i32 = i32(pos.y >> kInnerGridBits);
+    return vec2<i32>(outer_x, outer_y) - kGridAnchor;
+}
+
+// Get the high-res fractional position on the inner grid of the cell.
+fn GetInnerGrid(pos: vec2<u32>) -> vec2<u32> {
+  return vec2<u32>(pos.x & kHighResMask, pos.y & kHighResMask);
+}
+
+fn SetPosition(outer: vec2<u32>, inner: vec2<u32>) -> vec2<u32> {
+  let outer_x: u32 = outer.x << kInnerGridBits;
+  let outer_y: u32 = outer.y << kInnerGridBits;
+  return vec2<u32>(outer_x, outer_y) + inner;
+}
+
+fn SetPositionRelative(outer: vec2<u32>, inner: vec2<u32>) -> vec2<u32> {
+  return SetPosition(outer + vec2<u32>(u32(kGridAnchor), u32(kGridAnchor)), inner);
+}

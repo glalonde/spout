@@ -830,6 +830,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "int_grid"
+version = "0.1.0"
+
+[[package]]
 name = "itoa"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1662,6 +1666,7 @@ dependencies = [
  "console_error_panic_hook",
  "console_log",
  "instant",
+ "int_grid",
  "js-sys",
  "log",
  "pollster",

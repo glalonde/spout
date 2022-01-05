@@ -1,4 +1,5 @@
 {% include "particle.wgsl.include" %}
+{% include "grid.wgsl.include" %}
 
 struct EmitterMotion {
     position_start: vec2<u32>;
