@@ -114,9 +114,8 @@ pub struct SizedBuffer {
 }
 
 impl Emitter {
-    // Returns the total number of particles, including inactive ones.
-    pub fn num_particles(&self) -> u32 {
-        self.params.num_particles
+    fn num_particles(&self) -> u32 {
+        return self.params.num_particles;
     }
 
     fn create_particle_buffer(device: &wgpu::Device, num_particles: u32) -> SizedBuffer {
@@ -133,30 +132,18 @@ impl Emitter {
         }
     }
 
-    fn create_uniform_buffer(device: &wgpu::Device) -> SizedBuffer {
-        let emitter_uniforms = EmitParams::default();
-        let bytes = bytemuck::bytes_of(&emitter_uniforms);
-        SizedBuffer {
-            buffer: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("Emitter Uniform Buffer"),
-                contents: bytes,
-                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            }),
-            size: bytes.len() as _,
-        }
-    }
-
     pub fn new(device: &wgpu::Device, emission_frequency: f32, max_particle_life: f32) -> Self {
         let max_num_particles = (emission_frequency * max_particle_life).ceil() as u32;
         log::info!("Num particles: {}", max_num_particles);
         let particle_buffer = Emitter::create_particle_buffer(device, max_num_particles);
         // Initialize the uniform buffer.
-        let uniform_buffer = Emitter::create_uniform_buffer(device);
+        let uniform_buffer =
+            make_default_uniform_buffer::<EmitParams>(device, "Emitter Uniform Buffer");
 
         // This needs to match the layout size in the the particle compute shader. Maybe
         // an equivalent to "specialization constants" will come out and allow us to
         // specify the 512 programmatically.
-        let particle_group_size = 512;
+        let particle_group_size = 256;
         let compute_work_groups =
             (max_num_particles as f64 / particle_group_size as f64).ceil() as u32;
         log::info!(
@@ -309,5 +296,230 @@ impl Emitter {
     pub fn after_queue_submission(&mut self, spawner: &crate::framework::Spawner) {
         let belt_future = self.staging_belt.recall();
         spawner.spawn_local(belt_future);
+    }
+}
+
+pub struct ParticleSystem {
+    emitter: Emitter,
+    compute_work_groups: u32,
+
+    // GPU interface cruft
+    uniform_buffer: SizedBuffer,
+    density_buffer: SizedBuffer,
+    update_particles_pipeline: wgpu::ComputePipeline,
+    compute_bind_group: wgpu::BindGroup,
+    staging_belt: wgpu::util::StagingBelt,
+}
+
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+#[repr(C)]
+struct ParticleSystemUniforms {
+    dt: f32,
+    viewport_width: u32,
+    viewport_height: u32,
+    viewport_bottom_height: i32,
+}
+impl Default for ParticleSystemUniforms {
+    fn default() -> Self {
+        ParticleSystemUniforms {
+            dt: 0.0,
+            viewport_width: 0,
+            viewport_height: 0,
+            viewport_bottom_height: 0,
+        }
+    }
+}
+
+impl ParticleSystem {
+    fn make_density_buffer(device: &wgpu::Device, width: usize, height: usize) -> SizedBuffer {
+        let size = (std::mem::size_of::<u32>() * width * height) as wgpu::BufferAddress;
+        SizedBuffer {
+            buffer: device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("Density buffer"),
+                size,
+                usage: wgpu::BufferUsages::STORAGE
+                    | wgpu::BufferUsages::COPY_DST
+                    | wgpu::BufferUsages::COPY_SRC,
+                mapped_at_creation: false,
+            }),
+            size,
+        }
+    }
+
+    pub fn new(device: &wgpu::Device, game_params: &crate::game_params::GameParams) -> Self {
+        let compute_uniforms = ParticleSystemUniforms {
+            dt: 0.0,
+            viewport_width: game_params.level_width,
+            viewport_height: game_params.viewport_height,
+            viewport_bottom_height: 0,
+        };
+        let uniform_buffer = make_uniform_buffer::<ParticleSystemUniforms>(
+            device,
+            "Particle System Uniform Buffer",
+            &compute_uniforms,
+        );
+
+        let density_buffer = ParticleSystem::make_density_buffer(
+            device,
+            game_params.viewport_width as usize,
+            game_params.viewport_height as usize,
+        );
+
+        let emitter = Emitter::new(
+            device,
+            game_params.particle_system_params.emission_rate,
+            game_params.particle_system_params.max_particle_life,
+        );
+        let num_particles = emitter.num_particles();
+
+        let compute_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            entries: &[
+                // Uniform inputs
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: wgpu::BufferSize::new(uniform_buffer.size as _),
+                    },
+                    count: None,
+                },
+                // Particle storage buffer
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: false },
+                        has_dynamic_offset: false,
+                        min_binding_size: wgpu::BufferSize::new(emitter.particle_buffer.size as _),
+                    },
+                    count: None,
+                },
+                // Particle density buffer
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: false },
+                        has_dynamic_offset: false,
+                        min_binding_size: wgpu::BufferSize::new(density_buffer.size as _),
+                    },
+                    count: None,
+                },
+            ],
+            label: None,
+        });
+
+        let compute_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Particle system pipeline layout"),
+                bind_group_layouts: &[&compute_bgl],
+                push_constant_ranges: &[],
+            });
+
+        // Loads the shader from WGSL
+        let cs_module = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
+            label: Some("Particle system shader module"),
+            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(crate::include_shader!(
+                "particles.wgsl"
+            ))),
+        });
+
+        // Instantiates the pipeline.
+        let compute_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("Particle system pipeline"),
+            layout: Some(&compute_pipeline_layout),
+            module: &cs_module,
+            entry_point: "main",
+        });
+
+        // Instantiates the bind group, once again specifying the binding of buffers.
+        let compute_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: None,
+            layout: &compute_bgl,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: uniform_buffer.buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: emitter.particle_buffer.buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: density_buffer.buffer.as_entire_binding(),
+                },
+            ],
+        });
+
+        let staging_belt = wgpu::util::StagingBelt::new(uniform_buffer.size);
+
+        // TODO keep this in sync with shader.
+        let particle_group_size = 256;
+        let compute_work_groups =
+            (num_particles as f64 / particle_group_size as f64).ceil() as u32;
+
+        // See https://docs.rs/wgpu/latest/wgpu/struct.CommandEncoder.html#method.clear_buffer
+        ParticleSystem {
+            emitter,
+            compute_work_groups,
+            uniform_buffer,
+            density_buffer,
+            update_particles_pipeline: compute_pipeline,
+            compute_bind_group,
+            staging_belt,
+        }
+    }
+
+    pub fn run_compute(&mut self, device: &wgpu::Device, encoder: &mut wgpu::CommandEncoder) {
+        // Update uniforms
+        /*
+        self.staging_belt
+            .write_buffer(
+                encoder,
+                &self.uniform_buffer.buffer,
+                0,
+                wgpu::BufferSize::new(self.uniform_buffer.size as _).unwrap(),
+                device,
+            )
+            .copy_from_slice(bytemuck::bytes_of(&self.uniform_buffer.buffer));
+        self.staging_belt.finish();
+        */
+
+        {
+            let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("Particle Emitter"),
+            });
+            cpass.set_pipeline(&self.update_particles_pipeline);
+            cpass.set_bind_group(0, &self.compute_bind_group, &[]);
+            log::info!("Dispatching {} work groups", self.compute_work_groups);
+            cpass.dispatch(256, 1, 1);
+        }
+    }
+}
+
+fn make_default_uniform_buffer<T: std::default::Default + bytemuck::Pod>(
+    device: &wgpu::Device,
+    label: &str,
+) -> SizedBuffer {
+    let uniforms = T::default();
+    make_uniform_buffer::<T>(device, label, &uniforms)
+}
+
+fn make_uniform_buffer<T: bytemuck::Pod>(
+    device: &wgpu::Device,
+    label: &str,
+    data: &T,
+) -> SizedBuffer {
+    let bytes = bytemuck::bytes_of(data);
+    SizedBuffer {
+        buffer: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some(label),
+            contents: bytes,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        }),
+        size: bytes.len() as _,
     }
 }
