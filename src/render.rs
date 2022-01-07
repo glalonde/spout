@@ -26,11 +26,8 @@ impl Render {
         config: &wgpu::SurfaceConfiguration,
         _adapter: &wgpu::Adapter,
         device: &wgpu::Device,
-        queue: &wgpu::Queue,
+        texture_view: &wgpu::TextureView,
     ) -> Self {
-        let mut init_encoder =
-            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-
         let camera = camera::Camera {
             motion_params: camera::CameraMotion {
                 angular_speed: 1.0,
@@ -72,11 +69,14 @@ impl Render {
         // Create the render pipeline
         let shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
             label: None,
-            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(crate::include_shader!("textured_model.wgsl"))),
+            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(crate::include_shader!(
+                "textured_model.wgsl"
+            ))),
         });
 
         let draw_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("draw"),
+            // TODO convert this to explicit pipeline layout.
             layout: None,
             vertex: wgpu::VertexState {
                 module: &shader,
@@ -111,10 +111,8 @@ impl Render {
         let textured_quad = textured_quad::TexturedQuad::init(
             device,
             draw_pipeline.get_bind_group_layout(1),
-            &mut init_encoder,
+            texture_view,
         );
-
-        queue.submit(Some(init_encoder.finish()));
 
         Render {
             camera,

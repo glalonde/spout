@@ -64,46 +64,8 @@ impl TexturedQuad {
     pub fn init(
         device: &wgpu::Device,
         bind_group_layout: wgpu::BindGroupLayout,
-        init_encoder: &mut wgpu::CommandEncoder,
+        texture_view: &wgpu::TextureView,
     ) -> Self {
-        // Create the texture
-        let size: u32 = 1 << 9;
-        let texels = create_texels(size as usize, -0.8, 0.156);
-        let texture_extent = wgpu::Extent3d {
-            width: size as u32,
-            height: size as u32,
-            depth_or_array_layers: 1,
-        };
-        let texture = device.create_texture(&wgpu::TextureDescriptor {
-            size: texture_extent,
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8UnormSrgb,
-            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-            label: None,
-        });
-        let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-        //Note: we could use queue.write_texture instead, and this is what other
-        // examples do, but here we want to show another way to do this.
-        let temp_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Temporary Buffer"),
-            contents: texels.as_slice(),
-            usage: wgpu::BufferUsages::COPY_SRC,
-        });
-        init_encoder.copy_buffer_to_texture(
-            wgpu::ImageCopyBuffer {
-                buffer: &temp_buf,
-                layout: wgpu::ImageDataLayout {
-                    offset: 0,
-                    bytes_per_row: Some(std::num::NonZeroU32::new(4 * size).unwrap()),
-                    rows_per_image: None,
-                },
-            },
-            texture.as_image_copy(),
-            texture_extent,
-        );
-
         // Create the vertex and index buffers
         let (vertex_data, index_data) = create_vertices();
         let vertex_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -147,7 +109,7 @@ impl TexturedQuad {
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&texture_view),
+                    resource: wgpu::BindingResource::TextureView(texture_view),
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,

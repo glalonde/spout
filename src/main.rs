@@ -1,4 +1,5 @@
 mod camera;
+mod color_maps;
 mod emitter;
 #[path = "../examples/framework.rs"]
 mod framework;
@@ -63,8 +64,10 @@ struct Spout {
     // level_manager: level_manager::LevelManager,
     game_time: std::time::Duration,
     iteration_start: instant::Instant,
+    game_view_texture: wgpu::TextureView,
     renderer: render::Render,
-    emitter: emitter::Emitter,
+    // emitter: emitter::Emitter,
+    particle_system: emitter::ParticleSystem,
     // staging_belt: wgpu::util::StagingBelt,
 
     // fps: fps_estimator::FpsEstimator,
@@ -123,10 +126,9 @@ impl Spout {
         ship_state.update(dt, input_state.forward, rotation);
     }
 
-    fn update_emitter(&mut self, dt: f32) {
-        if self.state.input_state.forward {
-            self.emitter.update(dt, emitter::EmitterMotion::default());
-        }
+    fn update_particle_system(&mut self, dt: f32) {
+        let do_emit = self.state.input_state.forward;
+        self.particle_system.update_state(dt, do_emit);
     }
 
     /// Mostly responsible for updating superficial state based on new inputs.
@@ -139,7 +141,7 @@ impl Spout {
         // Process input state integrated over passage of time.
         self.update_ship(dt);
 
-        self.update_emitter(dt);
+        self.update_particle_system(dt);
 
         // Update camera state.
         self.renderer.update_state(dt, &self.state.input_state);
@@ -169,22 +171,32 @@ impl framework::Example for Spout {
     ) -> Self {
         let game_params = game_params::get_game_config_from_default_file();
         let game_state = GameState::default();
-        let renderer = render::Render::init(config, adapter, device, queue);
+
+        let game_view_texture = make_texture(
+            device,
+            game_params.viewport_width,
+            game_params.viewport_height,
+        );
+
+        let mut init_encoder =
+            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+
+        let renderer = render::Render::init(config, adapter, device, &game_view_texture);
 
         // TODO load params from config.
-        let emitter = emitter::Emitter::new(
-            device,
-            game_params.particle_system_params.emission_rate,
-            game_params.particle_system_params.max_particle_life,
-        );
+        // TODO render to game texture view.
+        let particle_system = emitter::ParticleSystem::new(device, &game_params, &mut init_encoder);
+
+        queue.submit(Some(init_encoder.finish()));
 
         Spout {
             game_params,
             state: game_state,
             game_time: std::time::Duration::default(),
             iteration_start: instant::Instant::now(),
+            game_view_texture,
             renderer,
-            emitter,
+            particle_system,
         }
     }
 
@@ -247,15 +259,34 @@ impl framework::Example for Spout {
         self.update_state();
 
         // Run compute pipeline(s).
-        self.emitter.run_compute(device, &mut encoder);
+        self.particle_system
+            .run_compute(device, &self.game_view_texture, &mut encoder);
 
         // Run render pipeline.
         self.renderer.render(view, device, &mut encoder);
 
         queue.submit(Some(encoder.finish()));
-        self.emitter.after_queue_submission(spawner);
+        self.particle_system.after_queue_submission(spawner);
         self.renderer.after_queue_submission(spawner);
     }
+}
+
+fn make_texture(device: &wgpu::Device, width: u32, height: u32) -> wgpu::TextureView {
+    device
+        .create_texture(&wgpu::TextureDescriptor {
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Bgra8UnormSrgb,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::RENDER_ATTACHMENT,
+            label: None,
+        })
+        .create_view(&wgpu::TextureViewDescriptor::default())
 }
 
 fn main() {

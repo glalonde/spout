@@ -3,6 +3,9 @@
 #[macro_export]
 macro_rules! include_shader {
     ($path:literal) => {
-        include_str!(concat!(env!("OUT_DIR"), "/shaders/", $path))
+        {
+            log::info!("Loading shader from {}", concat!(env!("OUT_DIR"), "/shaders/", $path));
+            include_str!(concat!(env!("OUT_DIR"), "/shaders/", $path))
+        }
     };
 }

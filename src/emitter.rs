@@ -239,7 +239,7 @@ impl Emitter {
         }
     }
 
-    pub fn update(&mut self, dt: f32, emitter_motion: EmitterMotion) {
+    pub fn emit_for_period(&mut self, dt: f32, emitter_motion: EmitterMotion) {
         // Update the emitter state and prepare all the necessary inputs to run compute, but don't actually run the compute yet.
         self.time += dt;
         self.dt = dt;
@@ -309,6 +309,8 @@ pub struct ParticleSystem {
     update_particles_pipeline: wgpu::ComputePipeline,
     compute_bind_group: wgpu::BindGroup,
     staging_belt: wgpu::util::StagingBelt,
+
+    renderer: ParticleRenderer,
 }
 
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -346,17 +348,33 @@ impl ParticleSystem {
         }
     }
 
-    pub fn new(device: &wgpu::Device, game_params: &crate::game_params::GameParams) -> Self {
-        let compute_uniforms = ParticleSystemUniforms {
-            dt: 0.0,
-            viewport_width: game_params.level_width,
-            viewport_height: game_params.viewport_height,
-            viewport_bottom_height: 0,
-        };
+    pub fn update_state(&mut self, dt: f32, do_emit: bool) {
+        if do_emit {
+            let motion = EmitterMotion {
+                position_start: [0, 0],
+                position_end: [640, 360],
+                velocity: [0, 0],
+                angle_start: 0.0,
+                angle_end: 0.0,
+            };
+            self.emitter.emit_for_period(dt, motion);
+        }
+    }
+
+    pub fn new(
+        device: &wgpu::Device,
+        game_params: &crate::game_params::GameParams,
+        init_encoder: &mut wgpu::CommandEncoder,
+    ) -> Self {
         let uniform_buffer = make_uniform_buffer::<ParticleSystemUniforms>(
             device,
             "Particle System Uniform Buffer",
-            &compute_uniforms,
+            &ParticleSystemUniforms {
+                dt: 0.0,
+                viewport_width: game_params.level_width,
+                viewport_height: game_params.viewport_height,
+                viewport_bottom_height: 0,
+            },
         );
 
         let density_buffer = ParticleSystem::make_density_buffer(
@@ -398,7 +416,7 @@ impl ParticleSystem {
                 },
                 // Particle density buffer
                 wgpu::BindGroupLayoutEntry {
-                    binding: 1,
+                    binding: 2,
                     visibility: wgpu::ShaderStages::COMPUTE,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Storage { read_only: false },
@@ -458,10 +476,9 @@ impl ParticleSystem {
 
         // TODO keep this in sync with shader.
         let particle_group_size = 256;
-        let compute_work_groups =
-            (num_particles as f64 / particle_group_size as f64).ceil() as u32;
+        let compute_work_groups = (num_particles as f64 / particle_group_size as f64).ceil() as u32;
+        let renderer = ParticleRenderer::init(device, game_params, &density_buffer, init_encoder);
 
-        // See https://docs.rs/wgpu/latest/wgpu/struct.CommandEncoder.html#method.clear_buffer
         ParticleSystem {
             emitter,
             compute_work_groups,
@@ -470,10 +487,18 @@ impl ParticleSystem {
             update_particles_pipeline: compute_pipeline,
             compute_bind_group,
             staging_belt,
+            renderer,
         }
     }
 
-    pub fn run_compute(&mut self, device: &wgpu::Device, encoder: &mut wgpu::CommandEncoder) {
+    pub fn run_compute(
+        &mut self,
+        device: &wgpu::Device,
+        game_view_texture: &wgpu::TextureView,
+        encoder: &mut wgpu::CommandEncoder,
+    ) {
+        self.emitter.run_compute(device, encoder);
+
         // Update uniforms
         /*
         self.staging_belt
@@ -488,6 +513,10 @@ impl ParticleSystem {
         self.staging_belt.finish();
         */
 
+        // Clear density buffer.
+        // See https://docs.rs/wgpu/latest/wgpu/struct.CommandEncoder.html#method.clear_buffer
+        encoder.clear_buffer(&self.density_buffer.buffer, 0 as wgpu::BufferAddress, None);
+
         {
             let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                 label: Some("Particle Emitter"),
@@ -495,9 +524,212 @@ impl ParticleSystem {
             cpass.set_pipeline(&self.update_particles_pipeline);
             cpass.set_bind_group(0, &self.compute_bind_group, &[]);
             log::info!("Dispatching {} work groups", self.compute_work_groups);
-            cpass.dispatch(256, 1, 1);
+            cpass.dispatch(self.compute_work_groups, 1, 1);
+        }
+        {
+            self.renderer.render(encoder, game_view_texture);
         }
     }
+
+    pub fn after_queue_submission(&mut self, spawner: &crate::framework::Spawner) {
+        self.emitter.after_queue_submission(spawner);
+
+        let belt_future = self.staging_belt.recall();
+        spawner.spawn_local(belt_future);
+    }
+}
+
+struct ParticleRenderer {
+    pub render_bind_group: wgpu::BindGroup,
+    pub render_pipeline: wgpu::RenderPipeline,
+}
+
+impl ParticleRenderer {
+    fn init(
+        device: &wgpu::Device,
+        game_params: &crate::game_params::GameParams,
+        density_buffer: &SizedBuffer,
+        init_encoder: &mut wgpu::CommandEncoder,
+    ) -> Self {
+        let shader_module = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
+            label: None,
+            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(crate::include_shader!(
+                "render_particles.wgsl"
+            ))),
+        });
+
+        let cm_texture = crate::color_maps::create_color_map(
+            256,
+            device,
+            super::color_maps::get_color_map_from_index(0),
+            init_encoder,
+        );
+
+        let fragment_uniforms = ParticleRendererUniforms {
+            width: game_params.viewport_width,
+            height: game_params.viewport_height,
+        };
+        let uniform_buffer = make_uniform_buffer::<ParticleRendererUniforms>(
+            device,
+            "Particle Renderer Uniform Buffer",
+            &fragment_uniforms,
+        );
+        // Create other resources
+        let color_map_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("Particle render sampler"),
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::FilterMode::Linear,
+            ..Default::default()
+        });
+
+        // Create pipeline layout
+        let render_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                entries: &[
+                    // Uniform inputs
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: wgpu::BufferSize::new(uniform_buffer.size as _),
+                        },
+                        count: None,
+                    },
+                    // Particle density buffer
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    // Color map.
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                            multisampled: false,
+                            view_dimension: wgpu::TextureViewDimension::D1,
+                        },
+                        count: None,
+                    },
+                    // Color map sampler.
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 3,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
+                ],
+                label: None,
+            });
+        let render_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &render_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::Buffer(
+                        uniform_buffer.buffer.as_entire_buffer_binding(),
+                    ),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Buffer(
+                        density_buffer.buffer.as_entire_buffer_binding(),
+                    ),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::TextureView(
+                        &cm_texture.create_view(&wgpu::TextureViewDescriptor::default()),
+                    ),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::Sampler(&color_map_sampler),
+                },
+            ],
+            label: None,
+        });
+        let render_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Particle render pipeline layout"),
+                bind_group_layouts: &[&render_bind_group_layout],
+                push_constant_ranges: &[],
+            });
+
+        let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("Particle render pipeline"),
+            layout: Some(&render_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &shader_module,
+                entry_point: "vs_main",
+                buffers: &[],
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader_module,
+                entry_point: "fs_main",
+                targets: &[wgpu::ColorTargetState {
+                    format: wgpu::TextureFormat::Bgra8UnormSrgb,
+                    blend: None,
+                    write_mask: wgpu::ColorWrites::all(),
+                }],
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleStrip,
+                // cull_mode: Some(wgpu::Face::Back),
+                ..Default::default()
+            },
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            multiview: None,
+        });
+        ParticleRenderer {
+            render_bind_group,
+            render_pipeline,
+        }
+    }
+
+    pub fn render(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        output_texture_view: &wgpu::TextureView,
+    ) {
+        // Render the density texture.
+
+        let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: None,
+            color_attachments: &[wgpu::RenderPassColorAttachment {
+                view: output_texture_view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: true,
+                },
+            }],
+            depth_stencil_attachment: None,
+        });
+        rpass.set_pipeline(&self.render_pipeline);
+        rpass.set_bind_group(0, &self.render_bind_group, &[]);
+        rpass.draw(0..4 as u32, 0..1);
+    }
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+struct ParticleRendererUniforms {
+    pub width: u32,
+    pub height: u32,
 }
 
 fn make_default_uniform_buffer<T: std::default::Default + bytemuck::Pod>(
