@@ -5,8 +5,8 @@ use wgpu::util::DeviceExt;
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C)]
 pub struct Particle {
-    position: [u32; 2],
-    velocity: [i32; 2],
+    position: [f32; 2],
+    velocity: [f32; 2],
     ttl: f32,
     _padding: i32,
 }
@@ -42,18 +42,18 @@ pub struct Emitter {
 #[repr(C)]
 pub struct EmitterMotion {
     // Boundary values for the emitter base
-    pub position_start: [u32; 2],
-    pub position_end: [u32; 2],
-    pub velocity: [i32; 2],
+    pub position_start: [f32; 2],
+    pub position_end: [f32; 2],
+    pub velocity: [f32; 2],
     pub angle_start: f32,
     pub angle_end: f32,
 }
 impl Default for EmitterMotion {
     fn default() -> Self {
         EmitterMotion {
-            position_start: [0, 0],
-            position_end: [0, 0],
-            velocity: [0, 0],
+            position_start: [0.0, 0.0],
+            position_end: [0.0, 0.0],
+            velocity: [0.0, 0.0],
             angle_start: 0.0,
             angle_end: 0.0,
         }
@@ -93,6 +93,7 @@ pub struct EmitParams {
 
     pub motion: EmitterMotion,
     pub nozzle: NozzleParams,
+    _padding: u32,
 }
 
 impl Default for EmitParams {
@@ -104,6 +105,7 @@ impl Default for EmitParams {
             dt: 0.0,
             motion: EmitterMotion::default(),
             nozzle: NozzleParams::default(),
+            _padding: 0,
         }
     }
 }
@@ -155,7 +157,7 @@ impl Emitter {
         // Loads the shader from WGSL
         let cs_module = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
             label: Some("Emitter shader module"),
-            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(crate::include_shader!("emitter.wgsl"))),
+            source: wgpu::ShaderSource::Wgsl(crate::include_shader!("emitter.wgsl")),
         });
 
         let compute_bind_group_layout =
@@ -255,6 +257,7 @@ impl Emitter {
                 dt,
                 motion: emitter_motion,
                 nozzle: self.params.nozzle,
+                _padding: 0,
             });
 
             self.write_index = (self.write_index + num_emitted) % self.params.num_particles;
@@ -284,7 +287,10 @@ impl Emitter {
                 });
                 cpass.set_pipeline(&self.compute_pipeline);
                 cpass.set_bind_group(0, &self.compute_bind_group, &[]);
-                log::info!("Dispatching {} work groups", self.compute_work_groups);
+                log::info!(
+                    "Emitter dispatching {} work groups",
+                    self.compute_work_groups
+                );
                 cpass.dispatch(self.compute_work_groups, 1, 1);
             }
 
@@ -301,6 +307,7 @@ impl Emitter {
 
 pub struct ParticleSystem {
     emitter: Emitter,
+    uniform_values: ParticleSystemUniforms,
     compute_work_groups: u32,
 
     // GPU interface cruft
@@ -351,14 +358,16 @@ impl ParticleSystem {
     pub fn update_state(&mut self, dt: f32, do_emit: bool) {
         if do_emit {
             let motion = EmitterMotion {
-                position_start: [0, 0],
-                position_end: [640, 360],
-                velocity: [0, 0],
+                position_start: [0.0, 0.0],
+                position_end: [640.0, 360.0],
+                velocity: [100.0, 100.0],
                 angle_start: 0.0,
-                angle_end: 0.0,
+                angle_end: std::f32::consts::PI,
             };
             self.emitter.emit_for_period(dt, motion);
         }
+
+        self.uniform_values.dt = dt;
     }
 
     pub fn new(
@@ -366,15 +375,16 @@ impl ParticleSystem {
         game_params: &crate::game_params::GameParams,
         init_encoder: &mut wgpu::CommandEncoder,
     ) -> Self {
+        let uniform_values = ParticleSystemUniforms {
+            dt: 0.0,
+            viewport_width: game_params.level_width,
+            viewport_height: game_params.viewport_height,
+            viewport_bottom_height: 0,
+        };
         let uniform_buffer = make_uniform_buffer::<ParticleSystemUniforms>(
             device,
             "Particle System Uniform Buffer",
-            &ParticleSystemUniforms {
-                dt: 0.0,
-                viewport_width: game_params.level_width,
-                viewport_height: game_params.viewport_height,
-                viewport_bottom_height: 0,
-            },
+            &uniform_values,
         );
 
         let density_buffer = ParticleSystem::make_density_buffer(
@@ -439,9 +449,7 @@ impl ParticleSystem {
         // Loads the shader from WGSL
         let cs_module = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
             label: Some("Particle system shader module"),
-            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(crate::include_shader!(
-                "particles.wgsl"
-            ))),
+            source: wgpu::ShaderSource::Wgsl(crate::include_shader!("particles.wgsl")),
         });
 
         // Instantiates the pipeline.
@@ -481,6 +489,7 @@ impl ParticleSystem {
 
         ParticleSystem {
             emitter,
+            uniform_values,
             compute_work_groups,
             uniform_buffer,
             density_buffer,
@@ -499,33 +508,35 @@ impl ParticleSystem {
     ) {
         self.emitter.run_compute(device, encoder);
 
-        // Update uniforms
-        /*
-        self.staging_belt
-            .write_buffer(
-                encoder,
-                &self.uniform_buffer.buffer,
-                0,
-                wgpu::BufferSize::new(self.uniform_buffer.size as _).unwrap(),
-                device,
-            )
-            .copy_from_slice(bytemuck::bytes_of(&self.uniform_buffer.buffer));
-        self.staging_belt.finish();
-        */
-
         // Clear density buffer.
         // See https://docs.rs/wgpu/latest/wgpu/struct.CommandEncoder.html#method.clear_buffer
         encoder.clear_buffer(&self.density_buffer.buffer, 0 as wgpu::BufferAddress, None);
 
         {
+            // Update uniforms
+            self.staging_belt
+                .write_buffer(
+                    encoder,
+                    &self.uniform_buffer.buffer,
+                    0,
+                    wgpu::BufferSize::new(self.uniform_buffer.size as _).unwrap(),
+                    device,
+                )
+                .copy_from_slice(bytemuck::bytes_of(&self.uniform_values));
+            self.staging_belt.finish();
+
             let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                 label: Some("Particle Emitter"),
             });
             cpass.set_pipeline(&self.update_particles_pipeline);
             cpass.set_bind_group(0, &self.compute_bind_group, &[]);
-            log::info!("Dispatching {} work groups", self.compute_work_groups);
+            log::info!(
+                "Particle update dispatching {} work groups",
+                self.compute_work_groups
+            );
             cpass.dispatch(self.compute_work_groups, 1, 1);
         }
+
         {
             self.renderer.render(encoder, game_view_texture);
         }
@@ -553,9 +564,7 @@ impl ParticleRenderer {
     ) -> Self {
         let shader_module = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
             label: None,
-            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(crate::include_shader!(
-                "render_particles.wgsl"
-            ))),
+            source: wgpu::ShaderSource::Wgsl(crate::include_shader!("render_particles.wgsl")),
         });
 
         let cm_texture = crate::color_maps::create_color_map(

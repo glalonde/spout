@@ -64,7 +64,5 @@ fn read_unsigned(tex_coord: vec2<f32>) -> f32 {
 
 [[stage(fragment)]]
 fn fs_main(in: VertexOutput) -> [[location(0)]] vec4<f32> {
-    // TODO uncomment...
-    // return textureSample(color_map, color_map_sampler, read_unsigned(in.tex_coord));
-    return textureSample(color_map, color_map_sampler, in.tex_coord.x);
+    return textureSample(color_map, color_map_sampler, read_unsigned(in.tex_coord));
 }

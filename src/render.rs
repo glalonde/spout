@@ -69,9 +69,7 @@ impl Render {
         // Create the render pipeline
         let shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
             label: None,
-            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(crate::include_shader!(
-                "textured_model.wgsl"
-            ))),
+            source: wgpu::ShaderSource::Wgsl(crate::include_shader!("textured_model.wgsl")),
         });
 
         let draw_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {

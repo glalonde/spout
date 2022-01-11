@@ -35,11 +35,36 @@ fn IncrementCell(cell_in: vec2<i32>) {
   atomicAdd(&density_buffer.data[index], 1u);
 }
 
-[[stage(compute), workgroup_size(256)]]
-fn main([[builtin(global_invocation_id)]] global_id: vec3<u32>) {
-    let gid = global_id[0];
+fn on_level_buffers(cell: vec2<i32>) -> bool {
+  return cell.x >= 0 && cell.x < i32(uniforms.viewport_width) && cell.y >= 0 && cell.y < i32(uniforms.viewport_height);
+}
 
-    let p = particle_buffer.data[gid];
-    let current_cell = p.position; // GetOuterGrid(p.position);
-    IncrementCell(vec2<i32>(i32(current_cell.x), i32(current_cell.y)));
+let PI: f32 = 3.14159265358979323846;
+
+[[stage(compute), workgroup_size(256)]]
+fn main([[builtin(global_invocation_id)]] global_id: vec3<u32>,  [[builtin(num_workgroups)]] num_workgroups: vec3<u32>) {
+  let total_particles = num_workgroups[0] * 256u;
+  let gid = global_id[0];
+
+  let particle = &(particle_buffer.data[gid]);
+  // var particle = particle_buffer.data[gid];
+  if ((*particle).ttl <= 0.0) {
+   return;
+  } 
+
+  // TODO collisions 
+  let delta_pos = (*particle).velocity * uniforms.dt;
+  (*particle).position = (*particle).position + delta_pos;
+  (*particle).ttl = (*particle).ttl - uniforms.dt;
+
+  // let current_cell = center + vec2<i32>(radius * vec2<f32>(cos(p * 2.0 * PI), sin(p * 2.0 * PI)));
+  let current_cell = vec2<i32>((*particle).position);
+
+  if (!on_level_buffers(current_cell)) {
+    (*particle).ttl = 0.0;
+    return;
+  } 
+
+  // Draw every particle.
+  IncrementCell(current_cell);
 }
