@@ -29,14 +29,8 @@ impl Render {
         texture_view: &wgpu::TextureView,
     ) -> Self {
         let camera = camera::Camera {
-            motion_params: camera::CameraMotion {
-                angular_speed: 1.0,
-                vertical_speed: 1.0,
-            },
             screen_size: (config.width, config.height),
-            radius: 5.0,
-            phi: 0.0,
-            height: 3.0,
+            ..Default::default()
         };
         let raw_uniforms = camera.to_uniform_data();
         let camera_uniform_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -151,9 +145,9 @@ impl Render {
 
         {
             let clear_color = wgpu::Color {
-                r: 0.1,
-                g: 0.2,
-                b: 0.3,
+                r: 0.0,
+                g: 0.0,
+                b: 0.0,
                 a: 1.0,
             };
             {

@@ -17,10 +17,15 @@ pub struct InputState {
     pause: bool,
 
     // Camera controls:
+    cam_in: bool,
+    cam_out: bool,
     cam_up: bool,
     cam_down: bool,
     cam_left: bool,
     cam_right: bool,
+
+    cam_perspective: bool,
+    cam_reset: bool,
 }
 impl Default for InputState {
     fn default() -> Self {
@@ -30,10 +35,15 @@ impl Default for InputState {
             right: false,
             pause: false,
 
+            cam_in: false,
+            cam_out: false,
             cam_up: false,
             cam_down: false,
             cam_left: false,
             cam_right: false,
+
+            cam_perspective: false,
+            cam_reset: false,
         }
     }
 }
@@ -228,10 +238,14 @@ impl framework::Example for Spout {
                 winit::event::VirtualKeyCode::D => self.state.input_state.right,
 
                 // Camera bindings
+                winit::event::VirtualKeyCode::U => self.state.input_state.cam_in,
+                winit::event::VirtualKeyCode::O => self.state.input_state.cam_out,
                 winit::event::VirtualKeyCode::I => self.state.input_state.cam_up,
                 winit::event::VirtualKeyCode::K => self.state.input_state.cam_down,
                 winit::event::VirtualKeyCode::J => self.state.input_state.cam_left,
-                winit::event::VirtualKeyCode::L => self.state.input_state.cam_right
+                winit::event::VirtualKeyCode::L => self.state.input_state.cam_right,
+                winit::event::VirtualKeyCode::N => self.state.input_state.cam_perspective,
+                winit::event::VirtualKeyCode::M => self.state.input_state.cam_reset
             ),
             _ => (),
         }
