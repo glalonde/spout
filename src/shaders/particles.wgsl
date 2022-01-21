@@ -1,6 +1,9 @@
 {% include "grid.wgsl.include" %}
 {% include "particle.wgsl.include" %}
 
+// This shader module handles particle update and aggregation.
+// It could possibly be combined with the emitter module... but for now it takes the particle_buffer, updates it, then aggregates particle densities into the density_buffer.
+
 struct UniformData {
     dt: f32;
     viewport_width: u32;
@@ -47,7 +50,6 @@ fn main([[builtin(global_invocation_id)]] global_id: vec3<u32>,  [[builtin(num_w
   let gid = global_id[0];
 
   let particle = &(particle_buffer.data[gid]);
-  // var particle = particle_buffer.data[gid];
   if ((*particle).ttl <= 0.0) {
    return;
   } 
