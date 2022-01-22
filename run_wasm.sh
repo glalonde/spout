@@ -12,7 +12,7 @@ OUTPUT_DIR="target/wasm-examples/$TITLE"
 
 echo "Generating bindings..."
 mkdir -p target/wasm-binary/$TITLE
-wasm-bindgen --target web --out-dir $OUTPUT_DIR target/wasm32-unknown-unknown/debug/$TITLE.wasm
+wasm-bindgen --target web --out-dir $OUTPUT_DIR target/wasm32-unknown-unknown/release/$TITLE.wasm
 cat wasm-resources/index.template.html | sed "s/{{example}}/$TITLE/g" > $OUTPUT_DIR/index.html
 
 # Find a serving tool to host the example

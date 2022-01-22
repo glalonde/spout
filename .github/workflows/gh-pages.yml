@@ -15,8 +15,8 @@ jobs:
     steps:
       - uses: actions/checkout@v2
         with:
-          submodules: false  # Fetch Hugo themes (true OR recursive)
-          fetch-depth: 0    # Fetch all history for .GitInfo and .Lastmod
+          submodules: false
+          fetch-depth: 0
 
       - name: Install Rust WASM toolchain
         uses: actions-rs/toolchain@v1
