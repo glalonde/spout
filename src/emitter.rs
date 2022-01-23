@@ -1,4 +1,3 @@
-use std::borrow::Cow;
 use wgpu::util::DeviceExt;
 
 // This should match the struct defined in the relevant compute shader.
@@ -73,8 +72,8 @@ pub struct NozzleParams {
 impl Default for NozzleParams {
     fn default() -> Self {
         NozzleParams {
-            speed_min: 0.0,
-            speed_max: 0.0,
+            speed_min: 10.0,
+            speed_max: 100.0,
             angle_spread: 0.0,
             ttl_min: 0.0,
             ttl_max: 0.0,
@@ -288,8 +287,10 @@ impl Emitter {
                 cpass.set_pipeline(&self.compute_pipeline);
                 cpass.set_bind_group(0, &self.compute_bind_group, &[]);
                 log::info!(
-                    "Emitter dispatching {} work groups",
-                    self.compute_work_groups
+                    "Emitter dispatching {} work groups, emit angle: {}, {}",
+                    self.compute_work_groups,
+                    emit_params.motion.angle_start,
+                    emit_params.motion.angle_end
                 );
                 cpass.dispatch(self.compute_work_groups, 1, 1);
             }
@@ -355,15 +356,8 @@ impl ParticleSystem {
         }
     }
 
-    pub fn update_state(&mut self, dt: f32, do_emit: bool) {
-        if do_emit {
-            let motion = EmitterMotion {
-                position_start: [0.0, 0.0],
-                position_end: [640.0, 360.0],
-                velocity: [100.0, 100.0],
-                angle_start: 0.0,
-                angle_end: std::f32::consts::PI,
-            };
+    pub fn update_state(&mut self, dt: f32, motion: Option<EmitterMotion>) {
+        if let Some(motion) = motion {
             self.emitter.emit_for_period(dt, motion);
         }
 

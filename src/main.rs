@@ -136,9 +136,20 @@ impl Spout {
         ship_state.update(dt, input_state.forward, rotation);
     }
 
-    fn update_particle_system(&mut self, dt: f32) {
-        let do_emit = self.state.input_state.forward;
-        self.particle_system.update_state(dt, do_emit);
+    fn update_particle_system(&mut self, dt: f32, prev_ship: &ship::ShipState) {
+        let current_ship = &self.state.ship_state;
+        let maybe_motion = if self.state.input_state.forward {
+            Some(emitter::EmitterMotion {
+                position_start: prev_ship.position,
+                position_end: current_ship.position,
+                velocity: current_ship.velocity,
+                angle_start: prev_ship.orientation,
+                angle_end: current_ship.orientation,
+            })
+        } else {
+            None
+        };
+        self.particle_system.update_state(dt, maybe_motion);
     }
 
     /// Mostly responsible for updating superficial state based on new inputs.
@@ -149,9 +160,10 @@ impl Spout {
         let dt = self.tick();
 
         // Process input state integrated over passage of time.
+        let prev_ship = self.state.ship_state;
         self.update_ship(dt);
 
-        self.update_particle_system(dt);
+        self.update_particle_system(dt, &prev_ship);
 
         // Update camera state.
         self.renderer.update_state(dt, &self.state.input_state);
@@ -180,7 +192,13 @@ impl framework::Example for Spout {
         queue: &wgpu::Queue,
     ) -> Self {
         let game_params = game_params::get_game_config_from_default_file();
-        let game_state = GameState::default();
+        let game_state = GameState {
+            ship_state: ship::ShipState {
+                position: [320.0, 180.0],
+                ..Default::default()
+            },
+            ..Default::default()
+        };
 
         let game_view_texture = make_texture(
             device,
@@ -211,7 +229,7 @@ impl framework::Example for Spout {
     }
 
     fn update(&mut self, event: winit::event::WindowEvent) {
-        // Update inpute state
+        // Update input state
         macro_rules! bind_keys {
             ($input:expr, $($pat:pat => $result:expr),*) => (
                             match $input {

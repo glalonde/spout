@@ -60,26 +60,35 @@ fn rotate2d(a: f32) -> mat2x2<f32> {
     return mat2x2<f32>(c,s,-s,c);
 }
 
+fn get_emit_index(global_id: u32, total_particles: u32) -> u32 {
+    // "progress" in terms of number of emitted particles, the interval [0, num_emitted).
+    var signed_emit_index = i32(global_id) - i32(emit_data.start_index);
+    var emit_index: u32;
+    if (signed_emit_index < 0) {
+        // Wrap over the circular buffer.
+        emit_index = u32(signed_emit_index + i32(total_particles));
+    } else {
+        emit_index = u32(signed_emit_index);
+    }
+    return emit_index;
+}
+
 [[stage(compute), workgroup_size(256)]]
 fn main([[builtin(global_invocation_id)]] global_id: vec3<u32>, [[builtin(num_workgroups)]] num_workgroups: vec3<u32>) {
     let total_particles = num_workgroups[0] * 256u;
     let gid = global_id[0];
     let particle = &(particle_buffer.data[gid]);
 
-    // "progress" in terms of number of emitted particles.
-    var signed_distance = i32(gid) - i32(emit_data.start_index);
-    var distance = u32(signed_distance);
-    if (signed_distance < 0) {
-        // Wrap over the circular buffer.
-        distance = u32(signed_distance + i32(total_particles));
-    }
-    if (distance >= emit_data.num_emitted) {
+    let emit_index = get_emit_index(gid, total_particles);
+    if (emit_index >= emit_data.num_emitted) {
         return;
     } 
 
     let num_passes_per_iteration: u32 = 5u;
     let emits_per_pass = u32(ceil(f32(emit_data.num_emitted) / f32(num_passes_per_iteration)));
-    let t_interp = f32(distance) / f32(emit_data.num_emitted);//f32(distance % num_passes_per_iteration) / f32(num_passes_per_iteration); 
+    
+    // The 'time' interpolation because we're approximating a continous stream with discrete time processing.
+    let t_interp = f32(emit_index % emits_per_pass) / f32(emits_per_pass); 
 
     let local_emit_angle: f32 = 0.0;
     let unit_emit_rotation = vec2<f32>(cos(local_emit_angle), sin(local_emit_angle)); 
