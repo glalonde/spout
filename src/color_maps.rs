@@ -1,5 +1,7 @@
 use wgpu::util::DeviceExt;
 
+
+#[allow(dead_code)]
 #[repr(u8)]
 #[derive(Copy, Clone)]
 enum ColorMap {
@@ -59,8 +61,7 @@ pub fn create_color_map(
         label: None,
     });
 
-    let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-    //Note: we could use queue.write_texture instead, and this is what other
+    // Note: we could use queue.write_texture instead, and this is what other
     // examples do, but here we want to show another way to do this.
     let temp_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: Some("Temporary Buffer"),

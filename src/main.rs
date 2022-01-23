@@ -53,7 +53,7 @@ struct GameState {
     input_state: InputState,
     prev_input_state: InputState,
     ship_state: ship::ShipState,
-    score: i32,
+    _score: i32,
     paused: bool,
 }
 impl Default for GameState {
@@ -62,14 +62,14 @@ impl Default for GameState {
             input_state: InputState::default(),
             prev_input_state: InputState::default(),
             ship_state: ship::ShipState::default(),
-            score: 0,
+            _score: 0,
             paused: false,
         }
     }
 }
 
 struct Spout {
-    game_params: game_params::GameParams,
+    _game_params: game_params::GameParams,
     state: GameState,
     // level_manager: level_manager::LevelManager,
     game_time: std::time::Duration,
@@ -218,7 +218,7 @@ impl framework::Example for Spout {
         queue.submit(Some(init_encoder.finish()));
 
         Spout {
-            game_params,
+            _game_params: game_params,
             state: game_state,
             game_time: std::time::Duration::default(),
             iteration_start: instant::Instant::now(),

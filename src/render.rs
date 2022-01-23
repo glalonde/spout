@@ -1,7 +1,7 @@
 use crate::camera;
 use crate::textured_quad;
 
-use std::{borrow::Cow, mem};
+use std::mem;
 use wgpu::util::DeviceExt;
 
 pub struct Render {
