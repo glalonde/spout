@@ -309,14 +309,18 @@ impl Emitter {
 pub struct ParticleSystem {
     emitter: Emitter,
     uniform_values: ParticleSystemUniforms,
-    compute_work_groups: u32,
 
     // GPU interface cruft
     uniform_buffer: SizedBuffer,
-    density_buffer: SizedBuffer,
-    update_particles_pipeline: wgpu::ComputePipeline,
-    compute_bind_group: wgpu::BindGroup,
     staging_belt: wgpu::util::StagingBelt,
+
+    update_particles_work_groups: u32,
+    update_particles_pipeline: wgpu::ComputePipeline,
+    update_particles_bind_group: wgpu::BindGroup,
+
+    clear_work_groups: u32,
+    clear_pipeline: wgpu::ComputePipeline,
+    clear_bind_group: wgpu::BindGroup,
 
     renderer: ParticleRenderer,
 }
@@ -364,36 +368,12 @@ impl ParticleSystem {
         self.uniform_values.dt = dt;
     }
 
-    pub fn new(
+    fn init_update_particles_pipeline(
         device: &wgpu::Device,
-        game_params: &crate::game_params::GameParams,
-        init_encoder: &mut wgpu::CommandEncoder,
-    ) -> Self {
-        let uniform_values = ParticleSystemUniforms {
-            dt: 0.0,
-            viewport_width: game_params.level_width,
-            viewport_height: game_params.viewport_height,
-            viewport_bottom_height: 0,
-        };
-        let uniform_buffer = make_uniform_buffer::<ParticleSystemUniforms>(
-            device,
-            "Particle System Uniform Buffer",
-            &uniform_values,
-        );
-
-        let density_buffer = ParticleSystem::make_density_buffer(
-            device,
-            game_params.viewport_width as usize,
-            game_params.viewport_height as usize,
-        );
-
-        let emitter = Emitter::new(
-            device,
-            game_params.particle_system_params.emission_rate,
-            game_params.particle_system_params.max_particle_life,
-        );
-        let num_particles = emitter.num_particles();
-
+        uniform_buffer: &SizedBuffer,
+        density_buffer: &SizedBuffer,
+        emitter: &Emitter,
+    ) -> (u32, wgpu::ComputePipeline, wgpu::BindGroup) {
         let compute_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             entries: &[
                 // Uniform inputs
@@ -447,15 +427,16 @@ impl ParticleSystem {
         });
 
         // Instantiates the pipeline.
-        let compute_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: Some("Particle system pipeline"),
-            layout: Some(&compute_pipeline_layout),
-            module: &cs_module,
-            entry_point: "main",
-        });
+        let update_particles_pipeline =
+            device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("Particle system pipeline"),
+                layout: Some(&compute_pipeline_layout),
+                module: &cs_module,
+                entry_point: "main",
+            });
 
         // Instantiates the bind group, once again specifying the binding of buffers.
-        let compute_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        let update_particles_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: None,
             layout: &compute_bgl,
             entries: &[
@@ -474,22 +455,136 @@ impl ParticleSystem {
             ],
         });
 
-        let staging_belt = wgpu::util::StagingBelt::new(uniform_buffer.size);
+        // TODO keep this in sync with shader.
+        let num_particles = emitter.num_particles();
+        let particle_group_size = 256;
+        let update_particles_work_groups =
+            (num_particles as f64 / particle_group_size as f64).ceil() as u32;
+        (
+            update_particles_work_groups,
+            update_particles_pipeline,
+            update_particles_bind_group,
+        )
+    }
+
+    fn init_clear_buffer_pipeline(
+        device: &wgpu::Device,
+        density_buffer: &SizedBuffer,
+    ) -> (u32, wgpu::ComputePipeline, wgpu::BindGroup) {
+        let compute_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            entries: &[
+                // Particle density buffer
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: false },
+                        has_dynamic_offset: false,
+                        min_binding_size: wgpu::BufferSize::new(density_buffer.size as _),
+                    },
+                    count: None,
+                },
+            ],
+            label: None,
+        });
+
+        let compute_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Clear density buffer pipeline layout"),
+                bind_group_layouts: &[&compute_bgl],
+                push_constant_ranges: &[],
+            });
+
+        // Loads the shader from WGSL
+        let cs_module = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
+            label: Some("Clear density buffer shader module"),
+            source: wgpu::ShaderSource::Wgsl(crate::include_shader!("clear_density_buffer.wgsl")),
+        });
+
+        // Instantiates the pipeline.
+        let clear_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("Clear density buffer pipeline"),
+            layout: Some(&compute_pipeline_layout),
+            module: &cs_module,
+            entry_point: "main",
+        });
+
+        // Instantiates the bind group, once again specifying the binding of buffers.
+        let clear_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: None,
+            layout: &compute_bgl,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: density_buffer.buffer.as_entire_binding(),
+            }],
+        });
 
         // TODO keep this in sync with shader.
-        let particle_group_size = 256;
-        let compute_work_groups = (num_particles as f64 / particle_group_size as f64).ceil() as u32;
+        let clear_group_size = 256;
+        let num_density_cells = density_buffer.size / (std::mem::size_of::<u32>() as u64);
+        let clear_work_groups = (num_density_cells as f64 / clear_group_size as f64).ceil() as u32;
+        (clear_work_groups, clear_pipeline, clear_bind_group)
+    }
+
+    pub fn new(
+        device: &wgpu::Device,
+        game_params: &crate::game_params::GameParams,
+        init_encoder: &mut wgpu::CommandEncoder,
+    ) -> Self {
+        let uniform_values = ParticleSystemUniforms {
+            dt: 0.0,
+            viewport_width: game_params.level_width,
+            viewport_height: game_params.viewport_height,
+            viewport_bottom_height: 0,
+        };
+        let uniform_buffer = make_uniform_buffer::<ParticleSystemUniforms>(
+            device,
+            "Particle System Uniform Buffer",
+            &uniform_values,
+        );
+
+        let density_buffer = ParticleSystem::make_density_buffer(
+            device,
+            game_params.viewport_width as usize,
+            game_params.viewport_height as usize,
+        );
+
+        let emitter = Emitter::new(
+            device,
+            game_params.particle_system_params.emission_rate,
+            game_params.particle_system_params.max_particle_life,
+        );
+
+        let staging_belt = wgpu::util::StagingBelt::new(uniform_buffer.size);
         let renderer = ParticleRenderer::init(device, game_params, &density_buffer, init_encoder);
+
+        // Set up all the clear density buffer compute pass.
+        let (clear_work_groups, clear_pipeline, clear_bind_group) =
+            ParticleSystem::init_clear_buffer_pipeline(device, &density_buffer);
+
+        // Set up all the stuff for the particle update compute pass.
+        let (update_particles_work_groups, update_particles_pipeline, update_particles_bind_group) =
+            ParticleSystem::init_update_particles_pipeline(
+                device,
+                &uniform_buffer,
+                &density_buffer,
+                &emitter,
+            );
 
         ParticleSystem {
             emitter,
             uniform_values,
-            compute_work_groups,
             uniform_buffer,
-            density_buffer,
-            update_particles_pipeline: compute_pipeline,
-            compute_bind_group,
             staging_belt,
+
+            update_particles_work_groups,
+            update_particles_pipeline,
+            update_particles_bind_group,
+
+            clear_work_groups,
+            clear_pipeline,
+            clear_bind_group,
+
             renderer,
         }
     }
@@ -504,7 +599,18 @@ impl ParticleSystem {
 
         // Clear density buffer.
         // See https://docs.rs/wgpu/latest/wgpu/struct.CommandEncoder.html#method.clear_buffer
-        encoder.clear_buffer(&self.density_buffer.buffer, 0 as wgpu::BufferAddress, None);
+        // encoder.clear_buffer(&self.density_buffer.buffer, 0 as wgpu::BufferAddress, None);
+        // Can't use `clear_buffer` on wasm yet:
+        // see todo: https://github.com/gfx-rs/wgpu/blob/master/wgpu/src/backend/web.rs#L2079
+        {
+            // So use a compute shader instead.
+            let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("Clear density buffer"),
+            });
+            cpass.set_pipeline(&self.clear_pipeline);
+            cpass.set_bind_group(0, &self.clear_bind_group, &[]);
+            cpass.dispatch(self.clear_work_groups, 1, 1);
+        }
 
         {
             // Update uniforms
@@ -523,12 +629,8 @@ impl ParticleSystem {
                 label: Some("Particle Emitter"),
             });
             cpass.set_pipeline(&self.update_particles_pipeline);
-            cpass.set_bind_group(0, &self.compute_bind_group, &[]);
-            log::info!(
-                "Particle update dispatching {} work groups",
-                self.compute_work_groups
-            );
-            cpass.dispatch(self.compute_work_groups, 1, 1);
+            cpass.set_bind_group(0, &self.update_particles_bind_group, &[]);
+            cpass.dispatch(self.update_particles_work_groups, 1, 1);
         }
 
         {

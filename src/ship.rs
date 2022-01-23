@@ -39,9 +39,7 @@ impl ShipState {
             self.velocity[1] += dt * self.acceleration * self.orientation.sin();
         }
 
-        // Update orientation.
         let angle_delta = dt * (rotation as i8 as f32) * self.rotation_rate;
         self.orientation += angle_delta;
-        log::info!("Ship state update: {:?}", self);
     }
 }
