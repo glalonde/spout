@@ -68,6 +68,9 @@ pub struct NozzleParams {
     pub angle_spread: f32,
     pub ttl_min: f32,
     pub ttl_max: f32,
+    pub _p0: u32,
+    pub _p1: u32,
+    pub _p2: u32,
 }
 impl Default for NozzleParams {
     fn default() -> Self {
@@ -77,6 +80,9 @@ impl Default for NozzleParams {
             angle_spread: 0.0,
             ttl_min: 0.0,
             ttl_max: 0.0,
+            _p0: 0,
+            _p1: 0,
+            _p2: 0,
         }
     }
 }
@@ -92,7 +98,6 @@ pub struct EmitParams {
 
     pub motion: EmitterMotion,
     pub nozzle: NozzleParams,
-    _padding: u32,
 }
 
 impl Default for EmitParams {
@@ -104,7 +109,6 @@ impl Default for EmitParams {
             dt: 0.0,
             motion: EmitterMotion::default(),
             nozzle: NozzleParams::default(),
-            _padding: 0,
         }
     }
 }
@@ -256,7 +260,6 @@ impl Emitter {
                 dt,
                 motion: emitter_motion,
                 nozzle: self.params.nozzle,
-                _padding: 0,
             });
 
             self.write_index = (self.write_index + num_emitted) % self.params.num_particles;
@@ -724,7 +727,9 @@ impl ParticleRenderer {
                         ty: wgpu::BindingType::Texture {
                             sample_type: wgpu::TextureSampleType::Float { filterable: true },
                             multisampled: false,
-                            view_dimension: wgpu::TextureViewDimension::D1,
+                            // TODO change to 1d texture when supported by Dawn:
+                            // https://bugs.chromium.org/p/dawn/issues/detail?id=814
+                            view_dimension: wgpu::TextureViewDimension::D2,
                         },
                         count: None,
                     },

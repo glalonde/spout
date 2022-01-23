@@ -1,6 +1,5 @@
 use wgpu::util::DeviceExt;
 
-
 #[allow(dead_code)]
 #[repr(u8)]
 #[derive(Copy, Clone)]
@@ -53,7 +52,9 @@ pub fn create_color_map(
         size: texture_extent,
         mip_level_count: 1,
         sample_count: 1,
-        dimension: wgpu::TextureDimension::D1,
+        // TODO change to 1d texture when supported by Dawn:
+        // https://bugs.chromium.org/p/dawn/issues/detail?id=814
+        dimension: wgpu::TextureDimension::D2,
         format: wgpu::TextureFormat::Rgba8UnormSrgb,
         usage: wgpu::TextureUsages::TEXTURE_BINDING
             | wgpu::TextureUsages::COPY_DST

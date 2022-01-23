@@ -68,7 +68,6 @@ pub trait Example: 'static + Sized {
     );
 }
 
-
 #[allow(dead_code)]
 struct Setup {
     window: winit::window::Window,
@@ -200,7 +199,6 @@ async fn setup<E: Example>(title: &str) -> Setup {
     }
 }
 
-
 #[allow(dead_code)]
 fn start<E: Example>(
     Setup {
@@ -320,7 +318,7 @@ fn start<E: Example>(
                     last_frame_inst = Instant::now();
                     frame_count += 1;
                     if frame_count == 100 {
-                        println!(
+                        log::info!(
                             "Avg frame time {}ms",
                             accum_time * 1000.0 / frame_count as f32
                         );
@@ -390,7 +388,6 @@ impl Spawner {
         wasm_bindgen_futures::spawn_local(future);
     }
 }
-
 
 #[allow(dead_code)]
 #[cfg(not(target_arch = "wasm32"))]

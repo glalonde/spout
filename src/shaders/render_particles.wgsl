@@ -43,7 +43,7 @@ struct DensityBuffer {
 var<storage, read> density_buffer: DensityBuffer;
 
 [[group(0), binding(2)]]
-var color_map: texture_1d<f32>;
+var color_map: texture_2d<f32>;
 
 [[group(0), binding(3)]]
 var color_map_sampler: sampler;
@@ -64,5 +64,5 @@ fn read_unsigned(tex_coord: vec2<f32>) -> f32 {
 
 [[stage(fragment)]]
 fn fs_main(in: VertexOutput) -> [[location(0)]] vec4<f32> {
-    return textureSample(color_map, color_map_sampler, read_unsigned(in.tex_coord));
+    return textureSample(color_map, color_map_sampler, vec2<f32>(read_unsigned(in.tex_coord), 0.0));
 }

@@ -12,17 +12,22 @@ struct EmitterMotion {
     angle_end: f32;
 };
 
-// Size 20, Alignment 4, no padding. 
+// Size 20, Alignment 4, Padding to 32 bytes.
 struct NozzleParams {
     speed_min: f32;
     speed_max: f32;
     angle_spread: f32;
     ttl_min: f32;
     ttl_max: f32;
+
+    // Pad out to multiple of 16 bytes. 
+    _p0: u32;
+    _p1: u32;
+    _p2: u32;
 };
 
-// Size 16 + 32 + 20 = 68
-// Alignment 8 -> padding = 72 - 68 = 4
+// Size 16 + 32 + 32 = 80
+// Alignment 8 -> No padding.
 struct EmitData {
     start_index: u32;
     num_emitted: u32;
@@ -31,7 +36,6 @@ struct EmitData {
 
     motion: EmitterMotion;
     nozzle: NozzleParams;
-    _padding: u32;
 };
 
 [[group(0), binding(0)]]
