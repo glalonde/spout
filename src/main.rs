@@ -99,16 +99,16 @@ struct Spout {
 }
 
 impl Spout {
-    fn tick(&mut self) -> f32 {
+    fn tick(&mut self) -> (f32, f32) {
         let now = instant::Instant::now();
         let delta_t = now - self.iteration_start;
         self.iteration_start = now;
 
         if self.state.paused {
-            return 0.0;
+            return (0.0, delta_t.as_secs_f32());
         } else {
             self.game_time += delta_t;
-            return delta_t.as_secs_f32();
+            return (delta_t.as_secs_f32(), delta_t.as_secs_f32());
         }
     }
 
@@ -158,16 +158,20 @@ impl Spout {
         self.update_paused();
 
         // let target_duration = std::time::Duration::from_secs_f64(1.0 / self.game_params.fps);
-        let dt = self.tick();
+        let (game_dt, wall_dt) = self.tick();
 
         // Process input state integrated over passage of time.
         let prev_ship = self.state.ship_state;
-        self.update_ship(dt);
+        self.update_ship(game_dt);
 
-        self.update_particle_system(dt, &prev_ship);
+        self.update_particle_system(game_dt, &prev_ship);
 
         // Update camera state.
-        self.renderer.update_state(dt, &self.state.input_state, &self.state.prev_input_state);
+        self.renderer.update_state(
+            wall_dt,
+            &self.state.input_state,
+            &self.state.prev_input_state,
+        );
 
         // Finished processing input, set previous input state.
         self.state.prev_input_state = self.state.input_state;

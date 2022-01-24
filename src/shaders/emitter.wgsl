@@ -1,5 +1,7 @@
 {% include "particle.wgsl.include" %}
 {% include "grid.wgsl.include" %}
+{% include "hash.wgsl.include" %}
+{% include "noise.wgsl.include" %}
 
 let PI: f32 = 3.14159265358979323846;
 
@@ -88,22 +90,34 @@ fn main([[builtin(global_invocation_id)]] global_id: vec3<u32>, [[builtin(num_wo
         return;
     } 
 
+
+    let emit_p = f32(emit_index) / f32(emit_data.num_emitted);
+
     let num_passes_per_iteration: u32 = 5u;
     let emits_per_pass = u32(ceil(f32(emit_data.num_emitted) / f32(num_passes_per_iteration)));
     
     // The 'time' interpolation because we're approximating a continous stream with discrete time processing.
     let t_interp = f32(emit_index % emits_per_pass) / f32(emits_per_pass); 
 
+
+    // let interp_time = t_interp * emit_data.dt + emit_data.time;
+
+    let smooth_interp_time = emit_p * emit_data.dt + emit_data.time;
+    let rand1 = (hash11(10000.0*smooth_interp_time) - .5) * 2.0; 
+
     let local_emit_angle: f32 = 0.0;
     let unit_emit_rotation = vec2<f32>(cos(local_emit_angle), sin(local_emit_angle)); 
-    let local_emit_speed = mix(emit_data.nozzle.speed_min, emit_data.nozzle.speed_max, .5);
+
+    let speed_noise_magnitude = 0.1;
+    let speed_noise = rand1 * speed_noise_magnitude; 
+    let local_emit_speed = mix(emit_data.nozzle.speed_min, emit_data.nozzle.speed_max, .5 + speed_noise);
     let local_emit_velocity = unit_emit_rotation * local_emit_speed;
 
 
     // Get the global frame of the ship. 
     let angle_delta = angle_difference(emit_data.motion.angle_end, emit_data.motion.angle_start); 
-    let ship_angle = mix(emit_data.motion.angle_start + angle_delta, emit_data.motion.angle_start, t_interp);
-    let ship_position = mix(emit_data.motion.position_end, emit_data.motion.position_start, t_interp); 
+    let ship_angle = mix(emit_data.motion.angle_start + angle_delta, emit_data.motion.angle_start, emit_p);
+    let ship_position = mix(emit_data.motion.position_end, emit_data.motion.position_start, emit_p); 
 
     let local_rotate_global = rotate2d(ship_angle);
 
