@@ -11,24 +11,59 @@ pub struct Render {
 
     draw_pipeline: wgpu::RenderPipeline,
 
+    pub show_demo_texture: bool,
     model: textured_quad::TexturedQuad,
+    demo_model: Option<textured_quad::TexturedQuad>,
 
     frame_num: i64,
     staging_belt: wgpu::util::StagingBelt,
 }
 
 impl Render {
-    pub fn update_state(&mut self, dt: f32, input_state: &crate::InputState) {
+    pub fn reset_camera(
+        target: &crate::textured_quad::TexturedQuad,
+        camera: &mut crate::camera::Camera,
+    ) {
+        let target_width: f32 = target.width as _;
+        let target_height: f32 = target.height as _;
+        let center_point = [target_width / 2.0, target_height / 2.0];
+        camera.ortho_look_at(center_point, target_width, target_height, true);
+    }
+
+    pub fn update_state(
+        &mut self,
+        dt: f32,
+        input_state: &crate::InputState,
+        prev_input_state: &crate::InputState,
+    ) {
+        let target_width: f32 = self.model.width as _;
+        let target_height: f32 = self.model.height as _;
         self.camera.update_state(dt, input_state);
+        if input_state.cam_perspective && !prev_input_state.cam_perspective {
+            let center_point = [target_width / 2.0, target_height / 2.0];
+            // Toggle cam perspective:
+            if self.camera.state.ortho.is_none() {
+                self.camera
+                    .ortho_look_at(center_point, target_width, target_height, false);
+            } else {
+                self.camera
+                    .perspective_look_at(center_point, target_width, target_height, false);
+            }
+        }
+
+        if input_state.cam_reset {
+            Render::reset_camera(&self.model, &mut self.camera);
+        }
     }
 
     pub fn init(
         config: &wgpu::SurfaceConfiguration,
         _adapter: &wgpu::Adapter,
         device: &wgpu::Device,
+        queue: &wgpu::Queue,
         texture_view: &wgpu::TextureView,
     ) -> Self {
-        let camera = camera::Camera {
+        let mut camera = camera::Camera {
             screen_size: (config.width, config.height),
             ..Default::default()
         };
@@ -81,7 +116,7 @@ impl Render {
                 targets: &[config.format.into()],
             }),
             primitive: wgpu::PrimitiveState {
-                // cull_mode: Some(wgpu::Face::Back),
+                cull_mode: Some(wgpu::Face::Back),
                 ..Default::default()
             },
             depth_stencil: None,
@@ -104,14 +139,37 @@ impl Render {
             device,
             draw_pipeline.get_bind_group_layout(1),
             texture_view,
+            640,
+            360,
         );
+
+        let maybe_demo_texture = crate::load_image::load_image_to_texture(device, queue);
+        let maybe_demo_quad = match maybe_demo_texture {
+            Ok(demo_texture) => Some(textured_quad::TexturedQuad::init(
+                device,
+                draw_pipeline.get_bind_group_layout(1),
+                &demo_texture,
+                640,
+                360,
+            )),
+            Err(e) => {
+                log::error!("Couldn't load demo texture: {:?}", e);
+                None
+            }
+        };
+
+        // Aim the camera at the quad to start with.
+        Render::reset_camera(&textured_quad, &mut camera);
 
         Render {
             camera,
             camera_bind_group,
             camera_uniform_buf,
             draw_pipeline,
+
+            show_demo_texture: false,
             model: textured_quad,
+            demo_model: maybe_demo_quad,
 
             frame_num: 0,
             staging_belt: wgpu::util::StagingBelt::new(0x100),
@@ -168,7 +226,16 @@ impl Render {
                 // Bind camera data.
                 rpass.set_bind_group(0, &self.camera_bind_group, &[]);
 
-                self.model.render(&mut rpass);
+                // Show the quad.
+                if !self.show_demo_texture {
+                    self.model.render(&mut rpass);
+                } else {
+                    if let Some(quad) = &self.demo_model {
+                        quad.render(&mut rpass);
+                    } else {
+                        self.model.render(&mut rpass);
+                    }
+                }
             }
         }
 

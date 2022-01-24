@@ -4,6 +4,7 @@ mod emitter;
 #[path = "../examples/framework.rs"]
 mod framework;
 mod game_params;
+mod load_image;
 mod render;
 mod shader_util;
 mod ship;
@@ -166,7 +167,7 @@ impl Spout {
         self.update_particle_system(dt, &prev_ship);
 
         // Update camera state.
-        self.renderer.update_state(dt, &self.state.input_state);
+        self.renderer.update_state(dt, &self.state.input_state, &self.state.prev_input_state);
 
         // Finished processing input, set previous input state.
         self.state.prev_input_state = self.state.input_state;
@@ -209,10 +210,11 @@ impl framework::Example for Spout {
         let mut init_encoder =
             device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
 
-        let renderer = render::Render::init(config, adapter, device, &game_view_texture);
+        let renderer = render::Render::init(config, adapter, device, queue, &game_view_texture);
+
+        // renderer.show_demo_texture = true;
 
         // TODO load params from config.
-        // TODO render to game texture view.
         let particle_system = emitter::ParticleSystem::new(device, &game_params, &mut init_encoder);
 
         queue.submit(Some(init_encoder.finish()));
@@ -239,7 +241,7 @@ impl framework::Example for Spout {
                                 state,
                                 ..
                             } => match state {
-                                winit::event::ElementState::Pressed =>  $result = true,
+                                winit::event::ElementState::Pressed => $result = true,
                                 winit::event::ElementState::Released => $result = false,
                             }
                         ),*

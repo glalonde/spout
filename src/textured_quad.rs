@@ -8,20 +8,23 @@ pub struct Vertex {
     _tex_coord: [f32; 2],
 }
 
-fn vertex(pos: [i8; 3], tc: [i8; 2]) -> Vertex {
+fn vertex(pos: [u32; 3], tc: [u32; 2]) -> Vertex {
     Vertex {
         _pos: [pos[0] as f32, pos[1] as f32, pos[2] as f32, 1.0],
         _tex_coord: [tc[0] as f32, tc[1] as f32],
     }
 }
 
-fn create_vertices() -> (Vec<Vertex>, Vec<u16>) {
+fn create_vertices(width: u32, height: u32) -> (Vec<Vertex>, Vec<u16>) {
     let vertex_data = [
-        // top (0, 0, 1)
-        vertex([-1, -1, 0], [0, 1]),
-        vertex([1, -1, 0], [1, 1]),
-        vertex([1, 1, 0], [1, 0]),
-        vertex([-1, 1, 0], [0, 0]),
+        // Bottom left on the quad. We want this to be the same as the "top left" in UV coordinates.
+        vertex([0, 0, 0], [0, 0]),
+        // Bottom right on the quad. We want this to be the same as the "top right" in UV coordinates.
+        vertex([width, 0, 0], [1, 0]),
+        // Top right on the quad. We want this to be the same as the "bottom right" in UV coordinates.
+        vertex([width, height, 0], [1, 1]),
+        // Top left on the quad. We want this to be the same as the "bottom left" in UV coordinates.
+        vertex([0, height, 0], [0, 1]),
     ];
     let index_data: &[u16] = &[
         0, 1, 2, 2, 3, 0, // top
@@ -35,6 +38,9 @@ pub struct TexturedQuad {
     index_buf: wgpu::Buffer,
     index_count: usize,
     bind_group: wgpu::BindGroup,
+
+    pub width: u32,
+    pub height: u32,
 }
 
 impl TexturedQuad {
@@ -42,9 +48,11 @@ impl TexturedQuad {
         device: &wgpu::Device,
         bind_group_layout: wgpu::BindGroupLayout,
         texture_view: &wgpu::TextureView,
+        width: u32,
+        height: u32,
     ) -> Self {
         // Create the vertex and index buffers
-        let (vertex_data, index_data) = create_vertices();
+        let (vertex_data, index_data) = create_vertices(width, height);
         let vertex_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Vertex buffer"),
             contents: bytemuck::cast_slice(&vertex_data),
@@ -105,6 +113,8 @@ impl TexturedQuad {
             index_buf,
             index_count: index_data.len(),
             bind_group,
+            width,
+            height,
         }
     }
 
