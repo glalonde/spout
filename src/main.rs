@@ -27,6 +27,8 @@ pub struct InputState {
 
     cam_perspective: bool,
     cam_reset: bool,
+
+    fullscreen: bool,
 }
 impl Default for InputState {
     fn default() -> Self {
@@ -45,6 +47,8 @@ impl Default for InputState {
 
             cam_perspective: false,
             cam_reset: false,
+
+            fullscreen: false,
         }
     }
 }
@@ -176,6 +180,35 @@ impl Spout {
         // Finished processing input, set previous input state.
         self.state.prev_input_state = self.state.input_state;
     }
+
+    fn select_fullscreen_video_mode(
+        window: &winit::window::Window,
+    ) -> Option<winit::monitor::VideoMode> {
+        let mut video_mode: Option<winit::monitor::VideoMode> = None;
+        match window.primary_monitor() {
+            Some(monitor) => {
+                for mode in monitor.video_modes() {
+                    if let Some(best_mode) = &video_mode {
+                        if mode.refresh_rate() > best_mode.refresh_rate() {
+                            video_mode = Some(mode);
+                        } else if mode.refresh_rate() == best_mode.refresh_rate() {
+                            let best_area = best_mode.size().width * best_mode.size().height;
+                            let current_area = mode.size().width * mode.size().height;
+                            if best_area < current_area {
+                                video_mode = Some(mode);
+                            }
+                        }
+                    } else {
+                        video_mode = Some(mode);
+                    }
+                }
+            }
+            None => {
+                log::info!("No primary monitor detected.");
+            }
+        };
+        video_mode
+    }
 }
 
 impl framework::Example for Spout {
@@ -190,12 +223,19 @@ impl framework::Example for Spout {
         }
     }
 
+    fn get_default_screen_size() -> winit::dpi::LogicalSize<u32> {
+        let game_params = game_params::get_game_config_from_default_file();
+        winit::dpi::LogicalSize::new(game_params.viewport_width, game_params.viewport_height)
+    }
+
     fn init(
         config: &wgpu::SurfaceConfiguration,
         adapter: &wgpu::Adapter,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
+        window: &mut winit::window::Window,
     ) -> Self {
+        window.set_cursor_visible(false);
         let game_params = game_params::get_game_config_from_default_file();
         let game_state = GameState {
             ship_state: ship::ShipState {
@@ -214,7 +254,14 @@ impl framework::Example for Spout {
         let mut init_encoder =
             device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
 
-        let renderer = render::Render::init(config, adapter, device, queue, &game_view_texture);
+        let renderer = render::Render::init(
+            config,
+            &game_params,
+            adapter,
+            device,
+            queue,
+            &game_view_texture,
+        );
 
         // renderer.show_demo_texture = true;
 
@@ -269,7 +316,10 @@ impl framework::Example for Spout {
                 winit::event::VirtualKeyCode::J => self.state.input_state.cam_left,
                 winit::event::VirtualKeyCode::L => self.state.input_state.cam_right,
                 winit::event::VirtualKeyCode::N => self.state.input_state.cam_perspective,
-                winit::event::VirtualKeyCode::M => self.state.input_state.cam_reset
+                winit::event::VirtualKeyCode::M => self.state.input_state.cam_reset,
+
+                // Full screen
+                winit::event::VirtualKeyCode::F => self.state.input_state.fullscreen
             ),
             _ => (),
         }
@@ -290,7 +340,28 @@ impl framework::Example for Spout {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         spawner: &framework::Spawner,
+        window: &mut winit::window::Window,
     ) {
+        {
+        if !self.state.prev_input_state.fullscreen && self.state.input_state.fullscreen {
+            if let Some(_) = window.fullscreen() {
+                // Set unfullscreen.
+                log::info!("Setting windowed mode.");
+                window.set_fullscreen(None);
+            } else {
+                if let Some(best_mode) = Spout::select_fullscreen_video_mode(&window) {
+                    log::info!("Setting exclusive fullscreen with mode: {}", best_mode);
+                    window.set_fullscreen(Some(winit::window::Fullscreen::Exclusive(best_mode)));
+                    // window.set_fullscreen(Some(winit::window::Fullscreen::Borderless(None)));
+                } else {
+                    window.set_fullscreen(Some(winit::window::Fullscreen::Borderless(None)));
+                }
+            }
+        }
+
+        }
+
+
         let mut encoder =
             device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
 

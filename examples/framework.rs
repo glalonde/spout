@@ -51,6 +51,7 @@ pub trait Example: 'static + Sized {
         adapter: &wgpu::Adapter,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
+        window: &mut winit::window::Window,
     ) -> Self;
     fn resize(
         &mut self,
@@ -65,7 +66,11 @@ pub trait Example: 'static + Sized {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         spawner: &Spawner,
+        window: &mut winit::window::Window,
     );
+    fn get_default_screen_size() -> winit::dpi::LogicalSize<u32> {
+        winit::dpi::LogicalSize::new(640, 360)
+    }
 }
 
 #[allow(dead_code)]
@@ -104,7 +109,9 @@ async fn setup<E: Example>(title: &str) -> Setup {
 
     let event_loop = EventLoop::new();
     let mut builder = winit::window::WindowBuilder::new();
-    builder = builder.with_title(title);
+    builder = builder
+        .with_title(title)
+        .with_inner_size(E::get_default_screen_size());
     #[cfg(windows_OFF)] // TODO
     {
         use winit::platform::windows::WindowBuilderExtWindows;
@@ -202,7 +209,7 @@ async fn setup<E: Example>(title: &str) -> Setup {
 #[allow(dead_code)]
 fn start<E: Example>(
     Setup {
-        window,
+        mut window,
         event_loop,
         instance,
         size,
@@ -223,7 +230,7 @@ fn start<E: Example>(
     surface.configure(&device, &config);
 
     log::info!("Initializing the example...");
-    let mut example = E::init(&config, &adapter, &device, &queue);
+    let mut example = E::init(&config, &adapter, &device, &queue, &mut window);
 
     #[cfg(not(target_arch = "wasm32"))]
     let mut last_update_inst = Instant::now();
@@ -250,7 +257,7 @@ fn start<E: Example>(
                     // winit has window.current_monitor().video_modes() but that is a list of all full screen video modes.
                     // So without extra dependencies it's a bit tricky to get the max refresh rate we can run the window on.
                     // Therefore we just go with 60fps - sorry 120hz+ folks!
-                    let target_frametime = Duration::from_secs_f64(1.0 / 60.0);
+                    let target_frametime = Duration::from_secs_f64(1.0 / 144.0);
                     let time_since_last_frame = last_update_inst.elapsed();
                     if time_since_last_frame >= target_frametime {
                         window.request_redraw();
@@ -340,7 +347,7 @@ fn start<E: Example>(
                     .texture
                     .create_view(&wgpu::TextureViewDescriptor::default());
 
-                example.render(&view, &device, &queue, &spawner);
+                example.render(&view, &device, &queue, &spawner, &mut window);
 
                 frame.present();
             }

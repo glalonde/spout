@@ -1,3 +1,4 @@
+# Viewport size is the shape of the view into the game world in game units (not necessarily the size of the window/canvas)
 viewport_width = 640 
 viewport_height = 360
 level_width = 640

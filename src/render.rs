@@ -58,6 +58,7 @@ impl Render {
 
     pub fn init(
         config: &wgpu::SurfaceConfiguration,
+        game_params: &crate::game_params::GameParams,
         _adapter: &wgpu::Adapter,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
@@ -139,8 +140,8 @@ impl Render {
             device,
             draw_pipeline.get_bind_group_layout(1),
             texture_view,
-            640,
-            360,
+            game_params.viewport_width,
+            game_params.viewport_height,
         );
 
         let maybe_demo_texture = crate::load_image::load_image_to_texture(device, queue);
@@ -149,8 +150,8 @@ impl Render {
                 device,
                 draw_pipeline.get_bind_group_layout(1),
                 &demo_texture,
-                640,
-                360,
+                game_params.viewport_width,
+                game_params.viewport_height,
             )),
             Err(e) => {
                 log::error!("Couldn't load demo texture: {:?}", e);
