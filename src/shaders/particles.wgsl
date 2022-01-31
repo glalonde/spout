@@ -4,6 +4,7 @@
 // This shader module handles particle update and aggregation.
 // It could possibly be combined with the emitter module... but for now it takes the particle_buffer, updates it, then aggregates particle densities into the density_buffer.
 
+// IN:
 struct UniformData {
     dt: f32;
     viewport_width: u32;
@@ -13,16 +14,27 @@ struct UniformData {
 [[group(0), binding(0)]]
 var<uniform> uniforms: UniformData;
 
+// IN OUT:
 struct Particles {
     data: [[stride(24)]] array<Particle>;
 };
 [[group(0), binding(1)]]
 var<storage, read_write> particle_buffer: Particles;
 
+// IN OUT:
+struct TerrainBuffer {
+    data: [[stride(4)]] array<atomic<i32>>;
+};
+[[group(0), binding(2)]]
+var<storage, read_write> terrain_buffer_top: TerrainBuffer;
+[[group(0), binding(3)]]
+var<storage, read_write> terrain_buffer_bottom: TerrainBuffer;
+
+// OUTPUT:
 struct DensityBuffer {
     data: [[stride(4)]] array<atomic<u32>>;
 };
-[[group(0), binding(2)]]
+[[group(0), binding(4)]]
 var<storage, read_write> density_buffer: DensityBuffer;
 
 fn IncrementCell(cell_in: vec2<i32>) {

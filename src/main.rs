@@ -4,11 +4,13 @@ mod emitter;
 #[path = "../examples/framework.rs"]
 mod framework;
 mod game_params;
+mod level_manager;
 mod load_image;
 mod render;
 mod shader_util;
 mod ship;
 mod textured_quad;
+mod buffer_util;
 
 #[derive(Debug, Copy, Clone)]
 pub struct InputState {
@@ -76,7 +78,7 @@ impl Default for GameState {
 struct Spout {
     _game_params: game_params::GameParams,
     state: GameState,
-    // level_manager: level_manager::LevelManager,
+    level_manager: level_manager::LevelManager,
     game_time: std::time::Duration,
     iteration_start: instant::Instant,
     game_view_texture: wgpu::TextureView,
@@ -160,6 +162,9 @@ impl Spout {
     /// Mostly responsible for updating superficial state based on new inputs.
     fn update_state(&mut self) {
         self.update_paused();
+
+        let level_budget = std::time::Duration::from_secs_f64(1.0 / 300.0);
+        self.level_manager.level_maker.work_until(instant::Instant::now() + level_budget);
 
         // let target_duration = std::time::Duration::from_secs_f64(1.0 / self.game_params.fps);
         let (game_dt, wall_dt) = self.tick();
@@ -254,6 +259,9 @@ impl framework::Example for Spout {
         let mut init_encoder =
             device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
 
+        let level_manager =
+            level_manager::LevelManager::init(device, &game_params, 0, &mut init_encoder);
+
         let renderer = render::Render::init(
             config,
             &game_params,
@@ -266,13 +274,15 @@ impl framework::Example for Spout {
         // renderer.show_demo_texture = true;
 
         // TODO load params from config.
-        let particle_system = emitter::ParticleSystem::new(device, &game_params, &mut init_encoder);
+        let particle_system =
+            emitter::ParticleSystem::new(device, &game_params, &mut init_encoder, &level_manager);
 
         queue.submit(Some(init_encoder.finish()));
 
         Spout {
             _game_params: game_params,
             state: game_state,
+            level_manager,
             game_time: std::time::Duration::default(),
             iteration_start: instant::Instant::now(),
             game_view_texture,
@@ -343,24 +353,23 @@ impl framework::Example for Spout {
         window: &mut winit::window::Window,
     ) {
         {
-        if !self.state.prev_input_state.fullscreen && self.state.input_state.fullscreen {
-            if let Some(_) = window.fullscreen() {
-                // Set unfullscreen.
-                log::info!("Setting windowed mode.");
-                window.set_fullscreen(None);
-            } else {
-                if let Some(best_mode) = Spout::select_fullscreen_video_mode(&window) {
-                    log::info!("Setting exclusive fullscreen with mode: {}", best_mode);
-                    window.set_fullscreen(Some(winit::window::Fullscreen::Exclusive(best_mode)));
-                    // window.set_fullscreen(Some(winit::window::Fullscreen::Borderless(None)));
+            if !self.state.prev_input_state.fullscreen && self.state.input_state.fullscreen {
+                if let Some(_) = window.fullscreen() {
+                    // Set unfullscreen.
+                    log::info!("Setting windowed mode.");
+                    window.set_fullscreen(None);
                 } else {
-                    window.set_fullscreen(Some(winit::window::Fullscreen::Borderless(None)));
+                    if let Some(best_mode) = Spout::select_fullscreen_video_mode(&window) {
+                        log::info!("Setting exclusive fullscreen with mode: {}", best_mode);
+                        window
+                            .set_fullscreen(Some(winit::window::Fullscreen::Exclusive(best_mode)));
+                        // window.set_fullscreen(Some(winit::window::Fullscreen::Borderless(None)));
+                    } else {
+                        window.set_fullscreen(Some(winit::window::Fullscreen::Borderless(None)));
+                    }
                 }
             }
         }
-
-        }
-
 
         let mut encoder =
             device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
@@ -368,8 +377,12 @@ impl framework::Example for Spout {
         self.update_state();
 
         // Run compute pipeline(s).
-        self.particle_system
-            .run_compute(device, &self.game_view_texture, &mut encoder);
+        self.particle_system.run_compute(
+            &self.level_manager,
+            device,
+            &self.game_view_texture,
+            &mut encoder,
+        );
 
         // Run render pipeline.
         self.renderer.render(view, device, &mut encoder);

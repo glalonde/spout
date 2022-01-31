@@ -1,3 +1,4 @@
+use crate::buffer_util::{self, SizedBuffer};
 use wgpu::util::DeviceExt;
 
 // This should match the struct defined in the relevant compute shader.
@@ -111,11 +112,6 @@ impl Default for EmitParams {
             nozzle: NozzleParams::default(),
         }
     }
-}
-
-pub struct SizedBuffer {
-    buffer: wgpu::Buffer,
-    size: wgpu::BufferAddress,
 }
 
 impl Emitter {
@@ -319,7 +315,7 @@ pub struct ParticleSystem {
 
     update_particles_work_groups: u32,
     update_particles_pipeline: wgpu::ComputePipeline,
-    update_particles_bind_group: wgpu::BindGroup,
+    pub update_particles_bind_groups: std::vec::Vec<wgpu::BindGroup>,
 
     clear_work_groups: u32,
     clear_pipeline: wgpu::ComputePipeline,
@@ -348,21 +344,6 @@ impl Default for ParticleSystemUniforms {
 }
 
 impl ParticleSystem {
-    fn make_density_buffer(device: &wgpu::Device, width: usize, height: usize) -> SizedBuffer {
-        let size = (std::mem::size_of::<u32>() * width * height) as wgpu::BufferAddress;
-        SizedBuffer {
-            buffer: device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("Density buffer"),
-                size,
-                usage: wgpu::BufferUsages::STORAGE
-                    | wgpu::BufferUsages::COPY_DST
-                    | wgpu::BufferUsages::COPY_SRC,
-                mapped_at_creation: false,
-            }),
-            size,
-        }
-    }
-
     pub fn update_state(&mut self, dt: f32, motion: Option<EmitterMotion>) {
         if let Some(motion) = motion {
             self.emitter.emit_for_period(dt, motion);
@@ -376,7 +357,8 @@ impl ParticleSystem {
         uniform_buffer: &SizedBuffer,
         density_buffer: &SizedBuffer,
         emitter: &Emitter,
-    ) -> (u32, wgpu::ComputePipeline, wgpu::BindGroup) {
+        level_manager: &crate::level_manager::LevelManager,
+    ) -> (u32, wgpu::ComputePipeline, Vec<wgpu::BindGroup>) {
         let compute_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             entries: &[
                 // Uniform inputs
@@ -401,9 +383,35 @@ impl ParticleSystem {
                     },
                     count: None,
                 },
-                // Particle density buffer
+                // Terrain buffer top
                 wgpu::BindGroupLayoutEntry {
                     binding: 2,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: false },
+                        has_dynamic_offset: false,
+                        min_binding_size: wgpu::BufferSize::new(
+                            level_manager.terrain_buffer_size() as _,
+                        ),
+                    },
+                    count: None,
+                },
+                // Terrain buffer bottom
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: false },
+                        has_dynamic_offset: false,
+                        min_binding_size: wgpu::BufferSize::new(
+                            level_manager.terrain_buffer_size() as _,
+                        ),
+                    },
+                    count: None,
+                },
+                // Particle density buffer
+                wgpu::BindGroupLayoutEntry {
+                    binding: 4,
                     visibility: wgpu::ShaderStages::COMPUTE,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Storage { read_only: false },
@@ -438,25 +446,49 @@ impl ParticleSystem {
                 entry_point: "main",
             });
 
-        // Instantiates the bind group, once again specifying the binding of buffers.
-        let update_particles_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: None,
-            layout: &compute_bgl,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: uniform_buffer.buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: emitter.particle_buffer.buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: density_buffer.buffer.as_entire_binding(),
-                },
-            ],
-        });
+        let mut update_particles_bind_groups = vec![];
+        for config in level_manager.buffer_configurations() {
+            update_particles_bind_groups.push(
+                device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: None,
+                    layout: &compute_bgl,
+                    entries: &[
+                        // Uniforms
+                        wgpu::BindGroupEntry {
+                            binding: 0,
+                            resource: uniform_buffer.buffer.as_entire_binding(),
+                        },
+                        // Particles
+                        wgpu::BindGroupEntry {
+                            binding: 1,
+                            resource: emitter.particle_buffer.buffer.as_entire_binding(),
+                        },
+                        // Two Terrain Buffers
+                        wgpu::BindGroupEntry {
+                            binding: 2,
+                            resource: wgpu::BindingResource::Buffer(
+                                level_manager.terrain_buffers()[config[0]]
+                                    .buffer
+                                    .as_entire_buffer_binding(),
+                            ),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 3,
+                            resource: wgpu::BindingResource::Buffer(
+                                level_manager.terrain_buffers()[config[1]]
+                                    .buffer
+                                    .as_entire_buffer_binding(),
+                            ),
+                        },
+                        // Particle density buffer
+                        wgpu::BindGroupEntry {
+                            binding: 4,
+                            resource: density_buffer.buffer.as_entire_binding(),
+                        },
+                    ],
+                }),
+            );
+        }
 
         // TODO keep this in sync with shader.
         let num_particles = emitter.num_particles();
@@ -466,7 +498,7 @@ impl ParticleSystem {
         (
             update_particles_work_groups,
             update_particles_pipeline,
-            update_particles_bind_group,
+            update_particles_bind_groups,
         )
     }
 
@@ -533,6 +565,7 @@ impl ParticleSystem {
         device: &wgpu::Device,
         game_params: &crate::game_params::GameParams,
         init_encoder: &mut wgpu::CommandEncoder,
+        level_manager: &super::level_manager::LevelManager,
     ) -> Self {
         let uniform_values = ParticleSystemUniforms {
             dt: 0.0,
@@ -546,10 +579,11 @@ impl ParticleSystem {
             &uniform_values,
         );
 
-        let density_buffer = ParticleSystem::make_density_buffer(
+        let density_buffer = buffer_util::make_buffer(
             device,
             game_params.viewport_width as usize,
             game_params.viewport_height as usize,
+            "Density buffer",
         );
 
         let emitter = Emitter::new(
@@ -566,12 +600,13 @@ impl ParticleSystem {
             ParticleSystem::init_clear_buffer_pipeline(device, &density_buffer);
 
         // Set up all the stuff for the particle update compute pass.
-        let (update_particles_work_groups, update_particles_pipeline, update_particles_bind_group) =
+        let (update_particles_work_groups, update_particles_pipeline, update_particles_bind_groups) =
             ParticleSystem::init_update_particles_pipeline(
                 device,
                 &uniform_buffer,
                 &density_buffer,
                 &emitter,
+                &level_manager,
             );
 
         ParticleSystem {
@@ -582,7 +617,7 @@ impl ParticleSystem {
 
             update_particles_work_groups,
             update_particles_pipeline,
-            update_particles_bind_group,
+            update_particles_bind_groups,
 
             clear_work_groups,
             clear_pipeline,
@@ -594,6 +629,7 @@ impl ParticleSystem {
 
     pub fn run_compute(
         &mut self,
+        level_manager: &crate::level_manager::LevelManager,
         device: &wgpu::Device,
         game_view_texture: &wgpu::TextureView,
         encoder: &mut wgpu::CommandEncoder,
@@ -632,7 +668,12 @@ impl ParticleSystem {
                 label: Some("Particle Emitter"),
             });
             cpass.set_pipeline(&self.update_particles_pipeline);
-            cpass.set_bind_group(0, &self.update_particles_bind_group, &[]);
+            cpass.set_bind_group(
+                0,
+                &self.update_particles_bind_groups[level_manager.buffer_config_index()],
+                &[],
+            );
+
             cpass.dispatch(self.update_particles_work_groups, 1, 1);
         }
 
