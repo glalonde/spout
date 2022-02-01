@@ -64,5 +64,10 @@ fn read_unsigned(tex_coord: vec2<f32>) -> f32 {
 
 [[stage(fragment)]]
 fn fs_main(in: VertexOutput) -> [[location(0)]] vec4<f32> {
-    return textureSample(color_map, color_map_sampler, vec2<f32>(read_unsigned(in.tex_coord), 0.0));
+    let count = read_unsigned(in.tex_coord);
+    let sample = textureSample(color_map, color_map_sampler, vec2<f32>(count, 0.0));
+    if (count <= 0.0) {
+        return vec4<f32>(0.0, 0.0, 0.0, 0.0);
+    }
+    return sample;
 }

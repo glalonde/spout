@@ -1,5 +1,4 @@
 use crate::buffer_util::{self, SizedBuffer};
-use wgpu::util::DeviceExt;
 
 // This should match the struct defined in the relevant compute shader.
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -138,8 +137,10 @@ impl Emitter {
         log::info!("Num particles: {}", max_num_particles);
         let particle_buffer = Emitter::create_particle_buffer(device, max_num_particles);
         // Initialize the uniform buffer.
-        let uniform_buffer =
-            make_default_uniform_buffer::<EmitParams>(device, "Emitter Uniform Buffer");
+        let uniform_buffer = crate::buffer_util::make_default_uniform_buffer::<EmitParams>(
+            device,
+            "Emitter Uniform Buffer",
+        );
 
         // This needs to match the layout size in the the particle compute shader. Maybe
         // an equivalent to "specialization constants" will come out and allow us to
@@ -573,7 +574,7 @@ impl ParticleSystem {
             viewport_height: game_params.viewport_height,
             viewport_bottom_height: 0,
         };
-        let uniform_buffer = make_uniform_buffer::<ParticleSystemUniforms>(
+        let uniform_buffer = crate::buffer_util::make_uniform_buffer::<ParticleSystemUniforms>(
             device,
             "Particle System Uniform Buffer",
             &uniform_values,
@@ -631,7 +632,6 @@ impl ParticleSystem {
         &mut self,
         level_manager: &crate::level_manager::LevelManager,
         device: &wgpu::Device,
-        game_view_texture: &wgpu::TextureView,
         encoder: &mut wgpu::CommandEncoder,
     ) {
         self.emitter.run_compute(device, encoder);
@@ -676,10 +676,14 @@ impl ParticleSystem {
 
             cpass.dispatch(self.update_particles_work_groups, 1, 1);
         }
+    }
 
-        {
-            self.renderer.render(encoder, game_view_texture);
-        }
+    pub fn render(
+        &self,
+        game_view_texture: &wgpu::TextureView,
+        encoder: &mut wgpu::CommandEncoder,
+    ) {
+        self.renderer.render(encoder, game_view_texture);
     }
 
     pub fn after_queue_submission(&mut self, spawner: &crate::framework::Spawner) {
@@ -688,6 +692,13 @@ impl ParticleSystem {
         let belt_future = self.staging_belt.recall();
         spawner.spawn_local(belt_future);
     }
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+struct ParticleRendererUniforms {
+    pub width: u32,
+    pub height: u32,
 }
 
 struct ParticleRenderer {
@@ -718,7 +729,7 @@ impl ParticleRenderer {
             width: game_params.viewport_width,
             height: game_params.viewport_height,
         };
-        let uniform_buffer = make_uniform_buffer::<ParticleRendererUniforms>(
+        let uniform_buffer = crate::buffer_util::make_uniform_buffer::<ParticleRendererUniforms>(
             device,
             "Particle Renderer Uniform Buffer",
             &fragment_uniforms,
@@ -832,13 +843,15 @@ impl ParticleRenderer {
                 entry_point: "fs_main",
                 targets: &[wgpu::ColorTargetState {
                     format: wgpu::TextureFormat::Bgra8UnormSrgb,
-                    blend: None,
+                    blend: Some(wgpu::BlendState {
+                        color: wgpu::BlendComponent::OVER,
+                        alpha: wgpu::BlendComponent::OVER,
+                    }),
                     write_mask: wgpu::ColorWrites::all(),
                 }],
             }),
             primitive: wgpu::PrimitiveState {
                 topology: wgpu::PrimitiveTopology::TriangleStrip,
-                // cull_mode: Some(wgpu::Face::Back),
                 ..Default::default()
             },
             depth_stencil: None,
@@ -873,36 +886,5 @@ impl ParticleRenderer {
         rpass.set_pipeline(&self.render_pipeline);
         rpass.set_bind_group(0, &self.render_bind_group, &[]);
         rpass.draw(0..4 as u32, 0..1);
-    }
-}
-
-#[repr(C)]
-#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-struct ParticleRendererUniforms {
-    pub width: u32,
-    pub height: u32,
-}
-
-fn make_default_uniform_buffer<T: std::default::Default + bytemuck::Pod>(
-    device: &wgpu::Device,
-    label: &str,
-) -> SizedBuffer {
-    let uniforms = T::default();
-    make_uniform_buffer::<T>(device, label, &uniforms)
-}
-
-fn make_uniform_buffer<T: bytemuck::Pod>(
-    device: &wgpu::Device,
-    label: &str,
-    data: &T,
-) -> SizedBuffer {
-    let bytes = bytemuck::bytes_of(data);
-    SizedBuffer {
-        buffer: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some(label),
-            contents: bytes,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        }),
-        size: bytes.len() as _,
     }
 }

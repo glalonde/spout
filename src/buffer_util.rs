@@ -1,3 +1,5 @@
+use wgpu::util::DeviceExt;
+
 pub struct SizedBuffer {
     pub buffer: wgpu::Buffer,
     pub size: wgpu::BufferAddress,
@@ -16,4 +18,28 @@ pub fn make_buffer(device: &wgpu::Device, width: usize, height: usize, label: &s
         }),
         size,
     }
+}
+
+pub fn make_uniform_buffer<T: bytemuck::Pod>(
+    device: &wgpu::Device,
+    label: &str,
+    data: &T,
+) -> SizedBuffer {
+    let bytes = bytemuck::bytes_of(data);
+    SizedBuffer {
+        buffer: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some(label),
+            contents: bytes,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        }),
+        size: bytes.len() as _,
+    }
+}
+
+pub fn make_default_uniform_buffer<T: std::default::Default + bytemuck::Pod>(
+    device: &wgpu::Device,
+    label: &str,
+) -> SizedBuffer {
+    let uniforms = T::default();
+    make_uniform_buffer::<T>(device, label, &uniforms)
 }

@@ -1,16 +1,16 @@
+mod buffer_util;
 mod camera;
 mod color_maps;
-mod emitter;
 #[path = "../examples/framework.rs"]
 mod framework;
 mod game_params;
 mod level_manager;
 mod load_image;
+mod particles;
 mod render;
 mod shader_util;
 mod ship;
 mod textured_quad;
-mod buffer_util;
 
 #[derive(Debug, Copy, Clone)]
 pub struct InputState {
@@ -84,7 +84,7 @@ struct Spout {
     game_view_texture: wgpu::TextureView,
     renderer: render::Render,
     // emitter: emitter::Emitter,
-    particle_system: emitter::ParticleSystem,
+    particle_system: particles::ParticleSystem,
     // staging_belt: wgpu::util::StagingBelt,
 
     // fps: fps_estimator::FpsEstimator,
@@ -146,7 +146,7 @@ impl Spout {
     fn update_particle_system(&mut self, dt: f32, prev_ship: &ship::ShipState) {
         let current_ship = &self.state.ship_state;
         let maybe_motion = if self.state.input_state.forward {
-            Some(emitter::EmitterMotion {
+            Some(particles::EmitterMotion {
                 position_start: prev_ship.position,
                 position_end: current_ship.position,
                 velocity: current_ship.velocity,
@@ -164,7 +164,9 @@ impl Spout {
         self.update_paused();
 
         let level_budget = std::time::Duration::from_secs_f64(1.0 / 300.0);
-        self.level_manager.level_maker.work_until(instant::Instant::now() + level_budget);
+        self.level_manager
+            .level_maker
+            .work_until(instant::Instant::now() + level_budget);
 
         // let target_duration = std::time::Duration::from_secs_f64(1.0 / self.game_params.fps);
         let (game_dt, wall_dt) = self.tick();
@@ -275,7 +277,7 @@ impl framework::Example for Spout {
 
         // TODO load params from config.
         let particle_system =
-            emitter::ParticleSystem::new(device, &game_params, &mut init_encoder, &level_manager);
+            particles::ParticleSystem::new(device, &game_params, &mut init_encoder, &level_manager);
 
         queue.submit(Some(init_encoder.finish()));
 
@@ -377,19 +379,27 @@ impl framework::Example for Spout {
         self.update_state();
 
         // Run compute pipeline(s).
-        self.particle_system.run_compute(
+        self.particle_system
+            .run_compute(&self.level_manager, device, &mut encoder);
+
+        // Render terrain.
+        self.level_manager.terrain_renderer.render(
             &self.level_manager,
-            device,
             &self.game_view_texture,
             &mut encoder,
         );
 
-        // Run render pipeline.
+        // Render particles.
+        self.particle_system
+            .render(&self.game_view_texture, &mut encoder);
+
+        // Run render the game view quad.
         self.renderer.render(view, device, &mut encoder);
 
         queue.submit(Some(encoder.finish()));
         self.particle_system.after_queue_submission(spawner);
         self.renderer.after_queue_submission(spawner);
+        self.level_manager.after_queue_submission(spawner);
     }
 }
 

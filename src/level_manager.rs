@@ -154,6 +154,8 @@ pub struct LevelManager {
     buffer_levels: Vec<i32>,
 
     pub level_maker: LevelMaker,
+
+    pub terrain_renderer: TerrainRenderer,
 }
 
 impl LevelManager {
@@ -210,6 +212,13 @@ impl LevelManager {
 
         let staging_belt = wgpu::util::StagingBelt::new((terrain_buffers[0].size / 2) as u64);
 
+        let renderer = TerrainRenderer::init(
+            device,
+            game_params,
+            &buffer_configurations,
+            &terrain_buffers,
+        );
+
         let mut lm = LevelManager {
             level_width: game_params.level_width,
             level_height: game_params.level_height,
@@ -222,9 +231,10 @@ impl LevelManager {
             staging_belt,
             buffer_levels,
             level_maker: LevelMaker::init(level_width, level_height),
+            terrain_renderer: renderer,
         };
 
-        lm.sync_height(device, height_of_viewport, init_encoder);
+        lm.sync_height(device, height_of_viewport, init_encoder, game_params);
         lm
     }
 
@@ -233,6 +243,7 @@ impl LevelManager {
         device: &wgpu::Device,
         height_of_viewport: i32,
         encoder: &mut wgpu::CommandEncoder,
+        game_params: &crate::game_params::GameParams,
     ) {
         let current_bottom_level = height_of_viewport / (self.level_height as i32);
         let current_top_level = current_bottom_level + 1;
@@ -266,6 +277,17 @@ impl LevelManager {
         }
 
         self.height_of_viewport = height_of_viewport;
+
+        let height_of_bottom_buffer = self.buffer_height(0);
+        let height_of_top_buffer = self.buffer_height(1);
+        self.terrain_renderer.update_render_state(
+            device,
+            &game_params,
+            height_of_viewport,
+            height_of_bottom_buffer,
+            height_of_top_buffer,
+            encoder,
+        );
     }
 
     fn sync_buffers(
@@ -318,5 +340,239 @@ impl LevelManager {
             staging_belt.finish();
         };
         level_maker.use_level(level_num, copy_func)
+    }
+
+    pub fn after_queue_submission(&mut self, spawner: &crate::framework::Spawner) {
+        self.terrain_renderer.after_queue_submission(spawner);
+        let belt_future = self.staging_belt.recall();
+        spawner.spawn_local(belt_future);
+    }
+}
+
+/*
+*
+* TERRAIN RENDERER
+*
+*
+*/
+
+// Keep track of the rendering members and logic to turn the integer particle
+// density texture into a colormapped texture ready to be visualized.
+pub struct TerrainRenderer {
+    pub render_bind_groups: std::vec::Vec<wgpu::BindGroup>,
+    pub render_pipeline: wgpu::RenderPipeline,
+    pub uniform_buf: SizedBuffer,
+    staging_belt: wgpu::util::StagingBelt,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct FragmentUniforms {
+    pub viewport_width: u32,
+    pub viewport_height: u32,
+
+    pub height_of_viewport: i32,
+    pub height_of_bottom_buffer: i32,
+    pub height_of_top_buffer: i32,
+}
+
+impl TerrainRenderer {
+    pub fn update_render_state(
+        &mut self,
+        device: &wgpu::Device,
+        game_params: &super::game_params::GameParams,
+        height_of_viewport: i32,
+        height_of_bottom_buffer: i32,
+        height_of_top_buffer: i32,
+        encoder: &mut wgpu::CommandEncoder,
+    ) {
+        let uniforms = FragmentUniforms {
+            viewport_width: game_params.level_width,
+            viewport_height: game_params.viewport_height,
+            height_of_viewport,
+            height_of_bottom_buffer,
+            height_of_top_buffer,
+        };
+
+        // Update uniforms
+        self.staging_belt
+            .write_buffer(
+                encoder,
+                &self.uniform_buf.buffer,
+                0,
+                wgpu::BufferSize::new(self.uniform_buf.size as _).unwrap(),
+                device,
+            )
+            .copy_from_slice(bytemuck::bytes_of(&uniforms));
+        self.staging_belt.finish();
+    }
+
+    pub fn init(
+        device: &wgpu::Device,
+        // compute_locals: &super::particle_system::ComputeLocals,
+        game_params: &super::game_params::GameParams,
+        buffer_configurations: &Vec<[usize; 2]>,
+        terrain_buffers: &Vec<SizedBuffer>,
+    ) -> Self {
+        let shader_module = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
+            label: None,
+            source: wgpu::ShaderSource::Wgsl(crate::include_shader!("terrain.wgsl")),
+        });
+
+        let fragment_uniforms = FragmentUniforms {
+            viewport_width: game_params.viewport_width,
+            viewport_height: game_params.viewport_height,
+            height_of_viewport: 0,
+            height_of_bottom_buffer: 0,
+            height_of_top_buffer: 0,
+        };
+        let uniform_buf =
+            crate::buffer_util::make_uniform_buffer(device, "Uniform buffer", &fragment_uniforms);
+
+        // Create pipeline layout
+        let render_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                entries: &[
+                    // Uniform inputs
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: wgpu::BufferSize::new(uniform_buf.size as _),
+                        },
+                        count: None,
+                    },
+                    // Bottom terrain buffer
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            // TODO fill out min binding size
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    // Top terrain buffer
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            // TODO fill out min binding size
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                ],
+                label: None,
+            });
+
+        let mut render_bind_groups = vec![];
+        for config in buffer_configurations {
+            render_bind_groups.push(device.create_bind_group(&wgpu::BindGroupDescriptor {
+                layout: &render_bind_group_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::Buffer(
+                            uniform_buf.buffer.as_entire_buffer_binding(),
+                        ),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::Buffer(
+                            terrain_buffers[config[0]].buffer.as_entire_buffer_binding(),
+                        ),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: wgpu::BindingResource::Buffer(
+                            terrain_buffers[config[1]].buffer.as_entire_buffer_binding(),
+                        ),
+                    },
+                ],
+                label: None,
+            }));
+        }
+
+        let render_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                bind_group_layouts: &[&render_bind_group_layout],
+                label: None,
+                push_constant_ranges: &[],
+            });
+
+        let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("Terrain render pipeline"),
+            layout: Some(&render_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &shader_module,
+                entry_point: "vs_main",
+                buffers: &[],
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader_module,
+                entry_point: "fs_main",
+                targets: &[wgpu::ColorTargetState {
+                    format: wgpu::TextureFormat::Bgra8UnormSrgb,
+                    blend: None,
+                    write_mask: wgpu::ColorWrites::all(),
+                }],
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleStrip,
+                ..Default::default()
+            },
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            multiview: None,
+        });
+
+        let staging_belt = wgpu::util::StagingBelt::new(uniform_buf.size);
+
+        TerrainRenderer {
+            render_bind_groups,
+            render_pipeline,
+            uniform_buf,
+            staging_belt,
+        }
+    }
+
+    pub fn render(
+        &self,
+        level_manager: &super::level_manager::LevelManager,
+        output_texture_view: &wgpu::TextureView,
+        encoder: &mut wgpu::CommandEncoder,
+    ) {
+        // Render the density texture.
+        let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: None,
+            color_attachments: &[wgpu::RenderPassColorAttachment {
+                view: output_texture_view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                    store: true,
+                },
+            }],
+            depth_stencil_attachment: None,
+        });
+        rpass.set_pipeline(&self.render_pipeline);
+        rpass.set_bind_group(
+            0,
+            &self.render_bind_groups[level_manager.buffer_config_index()],
+            &[],
+        );
+        rpass.draw(0..4 as u32, 0..1);
+    }
+
+    pub fn after_queue_submission(&mut self, spawner: &crate::framework::Spawner) {
+        let belt_future = self.staging_belt.recall();
+        spawner.spawn_local(belt_future);
     }
 }
