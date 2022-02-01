@@ -1,3 +1,5 @@
+[![Build Status](https://github.com/glalonde/spout/workflows/CI/badge.svg)[https://github.com/glalonde/spout/actions]
+
 # Spout Web version
 
 Live streaming some of the programming ony my youtube channel: [https://youtu.be/QauR0n0V48M](https://youtu.be/QauR0n0V48M) 
