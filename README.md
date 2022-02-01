@@ -1,6 +1,8 @@
 # Spout Web version
 
-Live streaming some of the programming ony my youtube channel: [https://www.youtube.com/watch?v=OZZ5brzOenM](https://www.youtube.com/watch?v=OZZ5brzOenM) 
+Live streaming some of the programming ony my youtube channel: [https://youtu.be/QauR0n0V48M](https://youtu.be/QauR0n0V48M) 
+
+Legacy version is in branch `legacy_wgpu`. It's actually in a more complete state, but is based on older libraries. I'm in the process of getting back to the same functionality now.
 
 ## Web Dev Notes
 
