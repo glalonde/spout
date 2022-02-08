@@ -10,32 +10,36 @@ struct UniformData {
     viewport_width: u32;
     viewport_height: u32;
     viewport_bottom_height: i32;
+
+    // level_width and viewport_width should be the same.
+    /*
+    level_width: u32;
+    level_height: u32;
+    bottom_level_height: u32;
+    middle_level_height: u32;
+    top_level_height: u32;
+
+    damage_rate: f32;
+    gravity: f32;
+    elasticity: f32;
+    */
 };
-[[group(0), binding(0)]]
+@group(0) @binding(0)
 var<uniform> uniforms: UniformData;
 
 // IN OUT:
-struct Particles {
-    data: [[stride(24)]] array<Particle>;
-};
-[[group(0), binding(1)]]
-var<storage, read_write> particle_buffer: Particles;
+@group(0) @binding(1)
+var<storage, read_write> particle_buffer: array<Particle>;
 
 // IN OUT:
-struct TerrainBuffer {
-    data: [[stride(4)]] array<atomic<i32>>;
-};
-[[group(0), binding(2)]]
-var<storage, read_write> terrain_buffer_top: TerrainBuffer;
-[[group(0), binding(3)]]
-var<storage, read_write> terrain_buffer_bottom: TerrainBuffer;
+@group(0) @binding(2)
+var<storage, read_write> terrain_buffer_top: array<atomic<i32>>;
+@group(0) @binding(3)
+var<storage, read_write> terrain_buffer_bottom: array<atomic<i32>>;
 
 // OUTPUT:
-struct DensityBuffer {
-    data: [[stride(4)]] array<atomic<u32>>;
-};
-[[group(0), binding(4)]]
-var<storage, read_write> density_buffer: DensityBuffer;
+@group(0) @binding(4)
+var<storage, read_write> density_buffer: array<atomic<u32>>;
 
 fn IncrementCell(cell_in: vec2<i32>) {
   var cell = cell_in;
@@ -47,21 +51,46 @@ fn IncrementCell(cell_in: vec2<i32>) {
 
   // Unfortunately, can't currently use non atomic ops here... 
   // https://github.com/gpuweb/gpuweb/issues/2377
-  atomicAdd(&density_buffer.data[index], 1u);
+  atomicAdd(&density_buffer[index], 1u);
 }
 
 fn on_level_buffers(cell: vec2<i32>) -> bool {
   return cell.x >= 0 && cell.x < i32(uniforms.viewport_width) && cell.y >= 0 && cell.y < i32(uniforms.viewport_height);
 }
 
+
+// Returns true if bounce occurred.
+/*
+fn try_erode(cell: vec2<i32>, speed: f32) -> bool {
+  cell.y -= int(bottom_level_height);
+  if (cell.y < level_height) {
+    // Bottom buffer
+    if (terrain_texture_bottom[GetBufferOffset(cell)] > 0) {
+      int dmg_amt = int(damage_rate * speed);
+      int actual_value = atomicAdd(terrain_texture_bottom[GetBufferOffset(cell)], -dmg_amt);
+      return actual_value > 0;
+    }
+  } else {
+    // Top buffer
+    cell.y -= int(level_height);
+    if (terrain_texture_top[GetBufferOffset(cell)] > 0) {
+      int dmg_amt = i32(damage_rate * speed);
+      int actual_value = atomicAdd(terrain_texture_top[GetBufferOffset(cell)], -dmg_amt);
+      return actual_value > 0;
+    }
+  }
+  return false;
+}
+*/
+
 let PI: f32 = 3.14159265358979323846;
 
-[[stage(compute), workgroup_size(256)]]
-fn main([[builtin(global_invocation_id)]] global_id: vec3<u32>,  [[builtin(num_workgroups)]] num_workgroups: vec3<u32>) {
+@stage(compute) @workgroup_size(256)
+fn main(@builtin(global_invocation_id) global_id: vec3<u32>, @builtin(num_workgroups) num_workgroups: vec3<u32>) {
   let total_particles = num_workgroups[0] * 256u;
   let gid = global_id[0];
 
-  let particle = &(particle_buffer.data[gid]);
+  let particle = &(particle_buffer[gid]);
   if ((*particle).ttl <= 0.0) {
    return;
   } 

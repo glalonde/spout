@@ -332,6 +332,18 @@ struct ParticleSystemUniforms {
     viewport_width: u32,
     viewport_height: u32,
     viewport_bottom_height: i32,
+
+    /*
+    level_width: u32,
+    level_height: u32,
+    bottom_level_height: u32,
+    middle_level_height: u32,
+    top_level_height: u32,
+
+    damage_rate: f32,
+    gravity: f32,
+    elasticity: f32,
+    */
 }
 impl Default for ParticleSystemUniforms {
     fn default() -> Self {
@@ -340,6 +352,16 @@ impl Default for ParticleSystemUniforms {
             viewport_width: 0,
             viewport_height: 0,
             viewport_bottom_height: 0,
+            /*
+            level_width: 0,
+            level_height: 0,
+            bottom_level_height: 0,
+            middle_level_height: 0,
+            top_level_height: 0,
+            damage_rate: 0.0,
+            gravity: 0.0,
+            elasticity: 0.0,
+            */
         }
     }
 }
@@ -351,6 +373,26 @@ impl ParticleSystem {
         }
 
         self.uniform_values.dt = dt;
+        /*
+        let system_params = &game_params.particle_system_params;
+        let compute_uniforms = ComputeUniforms {
+            dt,
+            level_width: game_params.level_width,
+            level_height: game_params.level_height,
+            bottom_level_height: level_manager.buffer_height(0) as u32,
+            middle_level_height: level_manager.buffer_height(1) as u32,
+            top_level_height: level_manager.buffer_height(1) as u32 + game_params.level_height,
+            viewport_height: game_params.viewport_height,
+            viewport_bottom_height: level_manager.height_of_viewport() as u32,
+            damage_rate: system_params.damage_rate,
+            gravity: system_params.gravity,
+            elasticity: system_params.elasticity,
+        };
+        // self.set_uniforms(device, encoder, &compute_uniforms);
+        */
+
+
+
     }
 
     fn init_update_particles_pipeline(
@@ -573,6 +615,16 @@ impl ParticleSystem {
             viewport_width: game_params.level_width,
             viewport_height: game_params.viewport_height,
             viewport_bottom_height: 0,
+            /*
+            level_width: todo!(),
+            level_height: todo!(),
+            bottom_level_height: todo!(),
+            middle_level_height: todo!(),
+            top_level_height: todo!(),
+            damage_rate: game_params.particle_system_params.damage_rate,
+            gravity: game_params.particle_system_params.gravity,
+            elasticity: game_params.particle_system_params.elasticity,
+            */
         };
         let uniform_buffer = crate::buffer_util::make_uniform_buffer::<ParticleSystemUniforms>(
             device,

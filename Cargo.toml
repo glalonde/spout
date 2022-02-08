@@ -14,8 +14,6 @@ default = []
 [dependencies]
 winit = "0.26" 
 log = "0.4"
-# wgpu = { version = "0.12", features = ["webgl"]}
-wgpu = "0.12"
 pollster = "0.2"
 scrub_log = "0.2"
 bytemuck = { version = "1.4", features = ["derive"] }
@@ -31,6 +29,12 @@ lazy_static = "1"
 scarlet = "1"
 image = "0.23"
 fastrand = "1.7"
+
+
+# wgpu = { version = "0.12", features = ["webgl"]}
+[dependencies.wgpu]
+git = "https://github.com/gfx-rs/wgpu"
+rev = "6b4f1b8"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 instant = { version = "0.1", features = [ "stdweb" ] }

@@ -1,6 +1,6 @@
 struct VertexOutput {
-    [[builtin(position)]] position: vec4<f32>;
-    [[location(0)]] tex_coord: vec2<f32>;
+    @builtin(position) position: vec4<f32>;
+    @location(0) tex_coord: vec2<f32>;
 };
 
 // This maps a texture onto a quad such that the 0,0 cell of the texture is at the top left corner of the quad, and when rendered, will end up back at 0,0 in the output buffer.
@@ -19,8 +19,8 @@ var<private> tex_coord: array<vec2<f32>, 4> = array<vec2<f32>, 4>(vec2<f32>(0.0,
                                       vec2<f32>(1.0, 1.0),
                                       vec2<f32>(1.0, 0.0));
 
-[[stage(vertex)]]
-fn vs_main([[builtin(vertex_index)]] vertex_index: u32,) -> VertexOutput {
+@stage(vertex)
+fn vs_main(@builtin(vertex_index) vertex_index: u32,) -> VertexOutput {
     let pos2d = vertex_positions[vertex_index];
 
     var out: VertexOutput;
@@ -33,19 +33,16 @@ struct ViewData {
     width: u32;
     height: u32;
 };
-[[group(0), binding(0)]]
+@group(0) @binding(0)
 var<uniform> view_data: ViewData;
 
-struct DensityBuffer {
-    data: [[stride(4)]] array<u32>;
-};
-[[group(0), binding(1)]]
-var<storage, read> density_buffer: DensityBuffer;
+@group(0) @binding(1)
+var<storage, read> density_buffer: array<u32>;
 
-[[group(0), binding(2)]]
+@group(0) @binding(2)
 var color_map: texture_2d<f32>;
 
-[[group(0), binding(3)]]
+@group(0) @binding(3)
 var color_map_sampler: sampler;
 
 
@@ -53,7 +50,7 @@ let MAX_DENSITY_VALUE: u32 = 10u;
 
 fn get_cell(tex_coord: vec2<f32>) -> u32 {
     let cell_f: vec2<f32> = tex_coord * vec2<f32>(f32(view_data.width), f32(view_data.height));
-    return density_buffer.data[i32(cell_f.y) * i32(view_data.width) + i32(cell_f.x)];
+    return density_buffer[i32(cell_f.y) * i32(view_data.width) + i32(cell_f.x)];
 }
 
 // Returns the color map texture coordinate 
@@ -62,8 +59,8 @@ fn read_unsigned(tex_coord: vec2<f32>) -> f32 {
   return f32(count) / f32(MAX_DENSITY_VALUE);
 }
 
-[[stage(fragment)]]
-fn fs_main(in: VertexOutput) -> [[location(0)]] vec4<f32> {
+@stage(fragment)
+fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let count = read_unsigned(in.tex_coord);
     let sample = textureSample(color_map, color_map_sampler, vec2<f32>(count, 0.0));
     if (count <= 0.0) {

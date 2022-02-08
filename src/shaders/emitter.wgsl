@@ -40,14 +40,11 @@ struct EmitData {
     nozzle: NozzleParams;
 };
 
-[[group(0), binding(0)]]
+@group(0) @binding(0)
 var<uniform> emit_data: EmitData;
 
-struct Particles {
-    data: [[stride(24)]] array<Particle>;
-};
-[[group(0), binding(1)]]
-var<storage, read_write> particle_buffer: Particles;
+@group(0) @binding(1)
+var<storage, read_write> particle_buffer: array<Particle>;
 
 // a % b
 fn signed_mod(a: f32, b: f32) -> f32 {
@@ -79,11 +76,11 @@ fn get_emit_index(global_id: u32, total_particles: u32) -> u32 {
     return emit_index;
 }
 
-[[stage(compute), workgroup_size(256)]]
-fn main([[builtin(global_invocation_id)]] global_id: vec3<u32>, [[builtin(num_workgroups)]] num_workgroups: vec3<u32>) {
+@stage(compute) @workgroup_size(256)
+fn main(@builtin(global_invocation_id) global_id: vec3<u32>, @builtin(num_workgroups) num_workgroups: vec3<u32>) {
     let total_particles = num_workgroups[0] * 256u;
     let gid = global_id[0];
-    let particle = &(particle_buffer.data[gid]);
+    let particle = &(particle_buffer[gid]);
 
     let emit_index = get_emit_index(gid, total_particles);
     if (emit_index >= emit_data.num_emitted) {

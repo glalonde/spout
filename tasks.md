@@ -1,26 +1,26 @@
 # MVP Tasks
 ## Easy/Straightforward
-- [x] ship rendering
-- [x] gravity
-- [x] ship position rendering 
+- [ ] ship rendering
+- [ ] gravity
+- [ ] ship position rendering 
 - [x] ship motion
 - [ ] ship collision detection 
-- [x] text rendering
-- [x] terrain collision capabilities
+- [ ] text rendering
+- [ ] terrain collision capabilities
 - [ ] resolution selection
 - [ ] window aspect ratio
 - [x] set fullscreen 
-- [x] show score 
+- [ ] show score 
 - [x] pausing 
-- [x] music
+- [ ] music
 - [ ] Game over screen 
 ---
 ## Medium
 - [x] level generation
-- [x] progressive level generation
+- [ ] progressive level generation
 ---
 ## Hard
-- [x] scrolling behavior
+- [ ] scrolling behavior
 - [ ] progressive game mechanics
 ---
 
@@ -40,8 +40,8 @@
 - [ ] Find long pole in compilation
 ---
 ## Hard
-- [x] cross platform (windows and mac os)
-- [x] CI builds linux binaries
+- [ ] cross platform (windows and mac os)
+- [ ] CI builds linux binaries
 - [ ] CI builds macOS binaries
 - [ ] CI builds Windows binaries
 - [ ] 2d fluid sim
