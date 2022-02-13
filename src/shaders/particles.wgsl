@@ -33,12 +33,10 @@ var<storage, read_write> particle_buffer: array<Particle>;
 
 // IN OUT:
 @group(0) @binding(2)
-var<storage, read_write> terrain_buffer_top: array<atomic<i32>>;
-@group(0) @binding(3)
-var<storage, read_write> terrain_buffer_bottom: array<atomic<i32>>;
+var<storage, read_write> terrain_buffer: array<atomic<i32>>;
 
 // OUTPUT:
-@group(0) @binding(4)
+@group(0) @binding(3)
 var<storage, read_write> density_buffer: array<atomic<u32>>;
 
 fn IncrementCell(cell_in: vec2<i32>) {

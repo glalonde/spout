@@ -1,6 +1,6 @@
 use crate::buffer_util::{self, SizedBuffer};
 
-pub struct RectangleLevel {
+pub struct WIPRectangleLevel {
     width: u32,
     height: u32,
     data: Vec<i32>,
@@ -11,7 +11,7 @@ pub struct RectangleLevel {
     completed_vacancies: u32,
 }
 
-impl RectangleLevel {
+impl WIPRectangleLevel {
     fn init(level_index: u32, level_width: u32, level_height: u32) -> Self {
         let level_num = level_index + 1;
         let max_dimension = (level_width / level_num as u32) / 2;
@@ -22,7 +22,7 @@ impl RectangleLevel {
 
         // Start with a solid buffer
         let data: Vec<i32> = vec![1000; (level_width * level_height) as usize];
-        RectangleLevel {
+        WIPRectangleLevel {
             width: level_width,
             height: level_height,
             data,
@@ -66,8 +66,11 @@ impl RectangleLevel {
 pub struct LevelMaker {
     level_width: u32,
     level_height: u32,
+
+    // Finished levels, indexed by level index.
     levels: Vec<Vec<i32>>,
-    wip_levels: std::collections::BTreeMap<u32, RectangleLevel>,
+    // WIP levels, indexed by level index.
+    wip_levels: std::collections::BTreeMap<u32, WIPRectangleLevel>,
 }
 
 impl LevelMaker {
@@ -85,7 +88,7 @@ impl LevelMaker {
             if !self.wip_levels.contains_key(&level_index) {
                 self.wip_levels.insert(
                     level_index,
-                    RectangleLevel::init(level_index, self.level_width, self.level_height),
+                    WIPRectangleLevel::init(level_index, self.level_width, self.level_height),
                 );
             }
         }
@@ -94,6 +97,7 @@ impl LevelMaker {
     pub fn work_until(&mut self, deadline: instant::Instant) {
         while instant::Instant::now() < deadline {
             let mut to_remove = Vec::new();
+            // Generate levels in order of level index.
             for (key, value) in &mut self.wip_levels {
                 if value.done() {
                     log::info!("Finished generating level: {}", key);
@@ -110,10 +114,7 @@ impl LevelMaker {
         }
     }
 
-    pub fn use_level<F>(&mut self, i: i32, mut action: F)
-    where
-        F: FnMut(&Vec<i32>),
-    {
+    pub fn finish_through_level(&mut self, i: i32) {
         // Resolve all futures up to the requested one.
         self.prefetch_up_to_level(i);
 
@@ -124,34 +125,95 @@ impl LevelMaker {
             }
             self.wip_levels.remove(&level_index);
         }
-        action(&self.levels[i as usize]);
     }
 }
+
+#[derive(Debug, Copy, Clone)]
+pub struct Interval {
+    pub start: i32,
+    pub end: i32,
+}
+
+impl Interval {
+    pub fn intersection(&self, other: &Interval) -> Interval {
+        Interval {
+            start: core::cmp::max(self.start, other.start),
+            end: core::cmp::min(self.end, other.end),
+        }
+    }
+    pub fn empty(&self) -> bool {
+        self.end <= self.start
+    }
+
+    pub fn intersects(&self, other: &Interval) -> bool {
+        self.intersection(other).empty()
+    }
+
+    pub fn size(&self) -> i32 {
+        self.end - self.start
+    }
+}
+
+pub struct TerrainTile {
+    // Shape of this `tile`: a 1d interval in units of rows from the start of the game.
+    pub shape: Interval,
+    pub buffer: SizedBuffer,
+}
+
+impl TerrainTile {
+    // Returns true if there is overlap.
+    pub fn copy_to_tile(
+        &self,
+        other: &TerrainTile,
+        bytes_per_row: u64,
+        encoder: &mut wgpu::CommandEncoder,
+    ) -> bool {
+        let intersection = self.shape.intersection(&other.shape);
+        if intersection.empty() {
+            return false;
+        }
+        let src_row_offset = (intersection.start - self.shape.start) as u64;
+        let src_byte_offset = src_row_offset * bytes_per_row;
+        let dst_row_offset = (intersection.start - other.shape.start) as u64;
+        let dst_byte_offset = dst_row_offset * bytes_per_row;
+        let copy_row_size = intersection.size() as u64;
+        let copy_byte_size = copy_row_size * bytes_per_row;
+        encoder.copy_buffer_to_buffer(
+            &self.buffer.buffer,
+            src_byte_offset,
+            &other.buffer.buffer,
+            dst_byte_offset,
+            copy_byte_size,
+        );
+        return true;
+    }
+}
+
+// For N levels above the current height, have level tiles ready.
+// For the current level height, compute the 'active' tiles. This is the set of tiles that can interact with the particles according to some limit above and below.
+// Render the 'interactive tile' by copying buffers into it.
+// Run particle system on the interactive tile
+// Copy the results back into the respective tiles.
 
 pub struct LevelManager {
     // Static params
     pub level_width: u32,
     pub level_height: u32,
-    pub viewport_height: u32,
-
-    // Output index -> Buffer index
-    pub buffer_configurations: Vec<[usize; 2]>,
+    pub active_extent_below_viewport: u32,
+    pub active_extent_above_viewport: u32,
 
     // State
-    pub height_of_viewport: i32,
-    // Output index -> Buffer height
-    buffer_heights: Vec<i32>,
+    // pub visible_interval: Interval,
+    pub active_interval: Interval,
 
-    buffer_config_index: usize,
+    loaded_tiles: std::collections::BTreeMap<i32, TerrainTile>,
 
-    // Buffer index -> Buffer. (This doesn't change after init)
-    terrain_buffers: Vec<SizedBuffer>,
+    // This tile is composed of the above tiles. Each iteration, it is composited, then used, and then the results are copied out.
+    composite_tile: TerrainTile,
+
+    unused_buffers: Vec<SizedBuffer>,
 
     staging_belt: wgpu::util::StagingBelt,
-    // staged_level: Vec<i32>,
-
-    // Buffer index -> level number
-    buffer_levels: Vec<i32>,
 
     pub level_maker: LevelMaker,
 
@@ -159,29 +221,32 @@ pub struct LevelManager {
 }
 
 impl LevelManager {
-    pub fn buffer_config_index(&self) -> usize {
-        self.buffer_config_index
+    fn active_tiles(&self) -> impl Iterator<Item = &TerrainTile> {
+        let active_interval = self.active_interval;
+        self.loaded_tiles
+            .iter()
+            .map(move |pair| pair.1)
+            .filter(move |tile| tile.shape.intersects(&active_interval))
     }
-    pub fn terrain_buffer_size(&self) -> usize {
-        self.terrain_buffers[0].size as usize
+
+    pub fn compose_tiles(&self, encoder: &mut wgpu::CommandEncoder) {
+        let BYTES_PER_ELEMENT = std::mem::size_of::<u32>() as u64;
+        let bytes_per_row = self.level_width as u64 * BYTES_PER_ELEMENT;
+        self.active_tiles().for_each(|f| {
+            f.copy_to_tile(&self.composite_tile, bytes_per_row, encoder);
+        })
     }
-    #[allow(dead_code)]
-    pub fn current_configuration(&self) -> &[usize; 2] {
-        &self.buffer_configurations[self.buffer_config_index]
+
+    pub fn decompose_tiles(&self, encoder: &mut wgpu::CommandEncoder) {
+        let BYTES_PER_ELEMENT = std::mem::size_of::<u32>() as u64;
+        let bytes_per_row = self.level_width as u64 * BYTES_PER_ELEMENT;
+        self.active_tiles().for_each(|f| {
+            self.composite_tile.copy_to_tile(&f, bytes_per_row, encoder);
+        })
     }
-    pub fn buffer_configurations(&self) -> &std::vec::Vec<[usize; 2]> {
-        &self.buffer_configurations
-    }
-    pub fn terrain_buffers(&self) -> &std::vec::Vec<SizedBuffer> {
-        &self.terrain_buffers
-    }
-    #[allow(dead_code)]
-    pub fn height_of_viewport(&self) -> i32 {
-        self.height_of_viewport
-    }
-    #[allow(dead_code)]
-    pub fn buffer_height(&self, position_index: usize) -> i32 {
-        self.buffer_heights[self.current_configuration()[position_index]]
+
+    pub fn terrain_buffer(&self) -> &SizedBuffer {
+        &self.composite_tile.buffer
     }
 
     pub fn init(
@@ -192,44 +257,52 @@ impl LevelManager {
     ) -> Self {
         let level_width = game_params.level_width;
         let level_height = game_params.level_height;
-        let mut buffer_configurations = vec![];
-        buffer_configurations.push([0, 1]);
-        buffer_configurations.push([1, 0]);
 
-        let mut terrain_buffers = Vec::<SizedBuffer>::new();
-        let mut buffer_levels = Vec::<i32>::new();
-        let mut buffer_heights = Vec::<i32>::new();
-        for _ in 0..2 {
-            buffer_levels.push(-1);
-            buffer_heights.push(0);
-            terrain_buffers.push(buffer_util::make_buffer(
-                device,
-                level_width as usize,
-                level_height as usize,
-                "Terrain",
-            ));
-        }
-
-        let staging_belt = wgpu::util::StagingBelt::new((terrain_buffers[0].size / 2) as u64);
-
-        let renderer = TerrainRenderer::init(
+        let composite_tile_buffer = buffer_util::make_buffer(
             device,
-            game_params,
-            &buffer_configurations,
-            &terrain_buffers,
+            level_width as usize,
+            level_height as usize,
+            "CompositeTerrainBuffer",
+        );
+
+        let unused_buffers = vec![buffer_util::make_buffer(
+            device,
+            level_width as usize,
+            level_height as usize,
+            "Terrain",
+        )];
+
+        let staging_belt = wgpu::util::StagingBelt::new((unused_buffers[0].size / 2) as u64);
+
+        let renderer = TerrainRenderer::init(device, game_params, &composite_tile_buffer);
+
+        let active_extent_below = (game_params.level_height as f64 * 0.25) as u32;
+        let active_extent_above = (game_params.level_height as f64 * 0.25) as u32;
+        let active_interval = LevelManager::get_active_interval(
+            0,
+            game_params.viewport_height as i32,
+            active_extent_below as i32,
+            active_extent_above as i32,
         );
 
         let mut lm = LevelManager {
             level_width: game_params.level_width,
             level_height: game_params.level_height,
-            viewport_height: game_params.viewport_height,
-            buffer_configurations,
-            height_of_viewport: -1,
-            buffer_heights,
-            buffer_config_index: 1,
-            terrain_buffers,
+            active_extent_below_viewport: active_extent_below,
+            active_extent_above_viewport: active_extent_above,
+
+            active_interval: active_interval,
+            loaded_tiles: std::collections::BTreeMap::new(),
+            composite_tile: TerrainTile {
+                shape: Interval {
+                    start: 0,
+                    end: level_height as i32,
+                },
+                buffer: composite_tile_buffer,
+            },
+
+            unused_buffers: unused_buffers,
             staging_belt,
-            buffer_levels,
             level_maker: LevelMaker::init(level_width, level_height),
             terrain_renderer: renderer,
         };
@@ -238,48 +311,127 @@ impl LevelManager {
         lm
     }
 
-    pub fn sync_height(
+    pub fn block_on_levels(&mut self, active_levels: Interval) {
+        for check_level_index in active_levels.start..active_levels.end {
+            if check_level_index >= self.level_maker.levels.len() as i32 {
+                log::warn!("Level {} not finished!", check_level_index);
+                // Block until finished.
+                self.level_maker.finish_through_level(check_level_index);
+            }
+        }
+    }
+
+    pub fn get_unused_tile_buffer(&mut self, device: &wgpu::Device) -> SizedBuffer {
+        if let Some(buffer) = self.unused_buffers.pop() {
+            return buffer;
+        }
+        buffer_util::make_buffer(
+            device,
+            self.level_width as usize,
+            self.level_height as usize,
+            "Terrain",
+        )
+    }
+
+    pub fn load_active_levels(
         &mut self,
         device: &wgpu::Device,
-        height_of_viewport: i32,
         encoder: &mut wgpu::CommandEncoder,
-        game_params: &crate::game_params::GameParams,
+        active_levels: Interval,
     ) {
-        let current_bottom_level = height_of_viewport / (self.level_height as i32);
-        let current_top_level = current_bottom_level + 1;
+        for level_index in active_levels.start..active_levels.end {
+            assert!(level_index < self.level_maker.levels.len() as i32);
+            // Check if this level has a buffer, if not, find it one.
+            // self.level_maker.use_level(check_level_index, action);
+            if !self.loaded_tiles.contains_key(&level_index) {
+                // Tile isn't loaded, find a buffer.
+                let buffer = self.get_unused_tile_buffer(device);
+                let level_data = &self.level_maker.levels[level_index as usize];
 
-        // self.make_levels_through(current_top_level);
-        // Async request levels
-        self.level_maker.prefetch_up_to_level(current_top_level + 3);
-
-        // Update the assignment of levels to buffers.
-        let new_buffer_config_index = (current_bottom_level % 2) as usize;
-        if new_buffer_config_index != self.buffer_config_index {
-            log::info!("New Buffer config: {}", new_buffer_config_index);
-            // New configuration: We're rearranging the buffers. Need to update all of the state.
-            let mut new_buffer_levels = self.buffer_levels.clone();
-
-            // Update the buffer index to level mapping:
-            for i in 0..self.buffer_levels.len() {
-                let level_number = current_bottom_level
-                    + ((i + new_buffer_config_index) % self.buffer_levels.len()) as i32;
-                log::info!("Buffer index {} has level {}", i, level_number);
-                new_buffer_levels[i] = level_number;
-            }
-
-            self.sync_buffers(device, &new_buffer_levels, encoder);
-            self.buffer_config_index = new_buffer_config_index;
-            self.buffer_levels = new_buffer_levels;
-
-            for i in 0..self.buffer_levels.len() {
-                self.buffer_heights[i] = self.buffer_levels[i] * self.level_height as i32;
+                // Request data copy.
+                self.staging_belt
+                    .write_buffer(
+                        encoder,
+                        &buffer.buffer,
+                        0,
+                        wgpu::BufferSize::new(buffer.size as _).unwrap(),
+                        device,
+                    )
+                    .copy_from_slice(bytemuck::cast_slice(level_data));
+                let level_start = level_index * self.level_height as i32;
+                let unused_buffer = self.get_unused_tile_buffer(device);
+                self.loaded_tiles.insert(
+                    level_index,
+                    TerrainTile {
+                        shape: Interval {
+                            start: level_start,
+                            end: level_start + self.level_height as i32,
+                        },
+                        buffer: unused_buffer,
+                    },
+                );
             }
         }
 
-        self.height_of_viewport = height_of_viewport;
+        self.staging_belt.finish();
+    }
 
-        let height_of_bottom_buffer = self.buffer_height(0);
-        let height_of_top_buffer = self.buffer_height(1);
+    pub fn get_active_interval(
+        viewport_offset: i32,
+        viewport_height: i32,
+        active_extent_below: i32,
+        active_extent_above: i32,
+    ) -> Interval {
+        let viewport_bottom = viewport_offset;
+        let viewport_top = viewport_bottom + viewport_height;
+        Interval {
+            start: viewport_bottom - active_extent_below,
+            end: viewport_top + active_extent_above,
+        }
+    }
+
+    pub fn update_active_interval(
+        &mut self,
+        viewport_offset: i32,
+        game_params: &crate::game_params::GameParams,
+    ) {
+        self.active_interval = LevelManager::get_active_interval(
+            viewport_offset,
+            game_params.viewport_height as i32,
+            self.active_extent_below_viewport as i32,
+            self.active_extent_above_viewport as i32,
+        );
+    }
+
+    pub fn sync_height(
+        &mut self,
+        device: &wgpu::Device,
+        viewport_offset: i32,
+        encoder: &mut wgpu::CommandEncoder,
+        game_params: &crate::game_params::GameParams,
+    ) {
+        log::info!("Syncing to height: {}", viewport_offset);
+        self.update_active_interval(viewport_offset, game_params);
+
+        // Find all level indices corresponding to active interval.
+        let active_levels = Interval {
+            start: std::cmp::min(self.active_interval.start / self.level_height as i32, 0),
+            end: std::cmp::min(self.active_interval.end / self.level_height as i32, 0),
+        };
+        let on_deck_levels = Interval {
+            start: active_levels.start,
+            end: active_levels.end + 3,
+        };
+
+        // Start making the upcoming levels.
+        self.level_maker.prefetch_up_to_level(on_deck_levels.end);
+
+        // Find levels we need, make sure they're done (blocking) and loaded into the gpu(blocking)
+        self.load_active_levels(device, encoder, active_levels);
+
+        // TODO when a level is no longer needed, recycle the buffer.
+
+        /*
         self.terrain_renderer.update_render_state(
             device,
             &game_params,
@@ -288,58 +440,7 @@ impl LevelManager {
             height_of_top_buffer,
             encoder,
         );
-    }
-
-    fn sync_buffers(
-        &mut self,
-        device: &wgpu::Device,
-        new_level_assignment: &std::vec::Vec<i32>,
-        encoder: &mut wgpu::CommandEncoder,
-    ) {
-        // Find which buffer(s) has a new level, and load it.
-        assert_eq!(self.buffer_levels.len(), new_level_assignment.len());
-        let it = self.buffer_levels.iter().zip(new_level_assignment.iter());
-
-        for (buffer_index, (old, new)) in it.enumerate() {
-            if old != new {
-                // Drop the old level, and load in a new level
-                LevelManager::copy_level_to_buffer(
-                    &mut self.staging_belt,
-                    &mut self.level_maker,
-                    device,
-                    *new,
-                    &self.terrain_buffers[buffer_index],
-                    encoder,
-                );
-            }
-        }
-    }
-
-    fn copy_level_to_buffer(
-        staging_belt: &mut wgpu::util::StagingBelt,
-        level_maker: &mut LevelMaker,
-        device: &wgpu::Device,
-        level_num: i32,
-        terrain_buffer: &SizedBuffer,
-        encoder: &mut wgpu::CommandEncoder,
-    ) {
-        if level_num < 0 {
-            panic!("Need a positive level num. Requested: {}", level_num);
-        }
-
-        let copy_func = |level_data: &Vec<i32>| {
-            staging_belt
-                .write_buffer(
-                    encoder,
-                    &terrain_buffer.buffer,
-                    0,
-                    wgpu::BufferSize::new(terrain_buffer.size as _).unwrap(),
-                    device,
-                )
-                .copy_from_slice(bytemuck::cast_slice(level_data));
-            staging_belt.finish();
-        };
-        level_maker.use_level(level_num, copy_func)
+        */
     }
 
     pub fn after_queue_submission(&mut self, spawner: &crate::framework::Spawner) {
@@ -359,7 +460,7 @@ impl LevelManager {
 // Keep track of the rendering members and logic to turn the integer particle
 // density texture into a colormapped texture ready to be visualized.
 pub struct TerrainRenderer {
-    pub render_bind_groups: std::vec::Vec<wgpu::BindGroup>,
+    pub render_bind_group: wgpu::BindGroup,
     pub render_pipeline: wgpu::RenderPipeline,
     pub uniform_buf: SizedBuffer,
     staging_belt: wgpu::util::StagingBelt,
@@ -409,10 +510,8 @@ impl TerrainRenderer {
 
     pub fn init(
         device: &wgpu::Device,
-        // compute_locals: &super::particle_system::ComputeLocals,
         game_params: &super::game_params::GameParams,
-        buffer_configurations: &Vec<[usize; 2]>,
-        terrain_buffers: &Vec<SizedBuffer>,
+        composite_terrain_buffer: &SizedBuffer,
     ) -> Self {
         let shader_module = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
             label: None,
@@ -451,20 +550,9 @@ impl TerrainRenderer {
                         ty: wgpu::BindingType::Buffer {
                             ty: wgpu::BufferBindingType::Storage { read_only: true },
                             has_dynamic_offset: false,
-                            // TODO fill out min binding size
-                            min_binding_size: None,
-                        },
-                        count: None,
-                    },
-                    // Top terrain buffer
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 2,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Storage { read_only: true },
-                            has_dynamic_offset: false,
-                            // TODO fill out min binding size
-                            min_binding_size: None,
+                            min_binding_size: std::num::NonZeroU64::new(
+                                composite_terrain_buffer.size,
+                            ),
                         },
                         count: None,
                     },
@@ -472,38 +560,29 @@ impl TerrainRenderer {
                 label: None,
             });
 
-        let mut render_bind_groups = vec![];
-        for config in buffer_configurations {
-            render_bind_groups.push(device.create_bind_group(&wgpu::BindGroupDescriptor {
-                layout: &render_bind_group_layout,
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: wgpu::BindingResource::Buffer(
-                            uniform_buf.buffer.as_entire_buffer_binding(),
-                        ),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: wgpu::BindingResource::Buffer(
-                            terrain_buffers[config[0]].buffer.as_entire_buffer_binding(),
-                        ),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 2,
-                        resource: wgpu::BindingResource::Buffer(
-                            terrain_buffers[config[1]].buffer.as_entire_buffer_binding(),
-                        ),
-                    },
-                ],
-                label: None,
-            }));
-        }
+        let render_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &render_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::Buffer(
+                        uniform_buf.buffer.as_entire_buffer_binding(),
+                    ),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Buffer(
+                        composite_terrain_buffer.buffer.as_entire_buffer_binding(),
+                    ),
+                },
+            ],
+            label: None,
+        });
 
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 bind_group_layouts: &[&render_bind_group_layout],
-                label: None,
+                label: Some("Terrain render pipeline layout"),
                 push_constant_ranges: &[],
             });
 
@@ -536,7 +615,7 @@ impl TerrainRenderer {
         let staging_belt = wgpu::util::StagingBelt::new(uniform_buf.size);
 
         TerrainRenderer {
-            render_bind_groups,
+            render_bind_group,
             render_pipeline,
             uniform_buf,
             staging_belt,
@@ -563,11 +642,7 @@ impl TerrainRenderer {
             depth_stencil_attachment: None,
         });
         rpass.set_pipeline(&self.render_pipeline);
-        rpass.set_bind_group(
-            0,
-            &self.render_bind_groups[level_manager.buffer_config_index()],
-            &[],
-        );
+        rpass.set_bind_group(0, &self.render_bind_group, &[]);
         rpass.draw(0..4 as u32, 0..1);
     }
 

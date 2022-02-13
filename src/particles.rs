@@ -316,7 +316,7 @@ pub struct ParticleSystem {
 
     update_particles_work_groups: u32,
     update_particles_pipeline: wgpu::ComputePipeline,
-    pub update_particles_bind_groups: std::vec::Vec<wgpu::BindGroup>,
+    pub update_particles_bind_group: wgpu::BindGroup,
 
     clear_work_groups: u32,
     clear_pipeline: wgpu::ComputePipeline,
@@ -332,7 +332,6 @@ struct ParticleSystemUniforms {
     viewport_width: u32,
     viewport_height: u32,
     viewport_bottom_height: i32,
-
     /*
     level_width: u32,
     level_height: u32,
@@ -390,9 +389,6 @@ impl ParticleSystem {
         };
         // self.set_uniforms(device, encoder, &compute_uniforms);
         */
-
-
-
     }
 
     fn init_update_particles_pipeline(
@@ -401,7 +397,7 @@ impl ParticleSystem {
         density_buffer: &SizedBuffer,
         emitter: &Emitter,
         level_manager: &crate::level_manager::LevelManager,
-    ) -> (u32, wgpu::ComputePipeline, Vec<wgpu::BindGroup>) {
+    ) -> (u32, wgpu::ComputePipeline, wgpu::BindGroup) {
         let compute_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             entries: &[
                 // Uniform inputs
@@ -426,7 +422,7 @@ impl ParticleSystem {
                     },
                     count: None,
                 },
-                // Terrain buffer top
+                // Terrain buffer
                 wgpu::BindGroupLayoutEntry {
                     binding: 2,
                     visibility: wgpu::ShaderStages::COMPUTE,
@@ -434,27 +430,14 @@ impl ParticleSystem {
                         ty: wgpu::BufferBindingType::Storage { read_only: false },
                         has_dynamic_offset: false,
                         min_binding_size: wgpu::BufferSize::new(
-                            level_manager.terrain_buffer_size() as _,
-                        ),
-                    },
-                    count: None,
-                },
-                // Terrain buffer bottom
-                wgpu::BindGroupLayoutEntry {
-                    binding: 3,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: false },
-                        has_dynamic_offset: false,
-                        min_binding_size: wgpu::BufferSize::new(
-                            level_manager.terrain_buffer_size() as _,
+                            level_manager.terrain_buffer().size as _,
                         ),
                     },
                     count: None,
                 },
                 // Particle density buffer
                 wgpu::BindGroupLayoutEntry {
-                    binding: 4,
+                    binding: 3,
                     visibility: wgpu::ShaderStages::COMPUTE,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Storage { read_only: false },
@@ -489,49 +472,37 @@ impl ParticleSystem {
                 entry_point: "main",
             });
 
-        let mut update_particles_bind_groups = vec![];
-        for config in level_manager.buffer_configurations() {
-            update_particles_bind_groups.push(
-                device.create_bind_group(&wgpu::BindGroupDescriptor {
-                    label: None,
-                    layout: &compute_bgl,
-                    entries: &[
-                        // Uniforms
-                        wgpu::BindGroupEntry {
-                            binding: 0,
-                            resource: uniform_buffer.buffer.as_entire_binding(),
-                        },
-                        // Particles
-                        wgpu::BindGroupEntry {
-                            binding: 1,
-                            resource: emitter.particle_buffer.buffer.as_entire_binding(),
-                        },
-                        // Two Terrain Buffers
-                        wgpu::BindGroupEntry {
-                            binding: 2,
-                            resource: wgpu::BindingResource::Buffer(
-                                level_manager.terrain_buffers()[config[0]]
-                                    .buffer
-                                    .as_entire_buffer_binding(),
-                            ),
-                        },
-                        wgpu::BindGroupEntry {
-                            binding: 3,
-                            resource: wgpu::BindingResource::Buffer(
-                                level_manager.terrain_buffers()[config[1]]
-                                    .buffer
-                                    .as_entire_buffer_binding(),
-                            ),
-                        },
-                        // Particle density buffer
-                        wgpu::BindGroupEntry {
-                            binding: 4,
-                            resource: density_buffer.buffer.as_entire_binding(),
-                        },
-                    ],
-                }),
-            );
-        }
+        let update_particles_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: None,
+            layout: &compute_bgl,
+            entries: &[
+                // Uniforms
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: uniform_buffer.buffer.as_entire_binding(),
+                },
+                // Particles
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: emitter.particle_buffer.buffer.as_entire_binding(),
+                },
+                // Terrain Buffer
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::Buffer(
+                        level_manager
+                            .terrain_buffer()
+                            .buffer
+                            .as_entire_buffer_binding(),
+                    ),
+                },
+                // Particle density buffer
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: density_buffer.buffer.as_entire_binding(),
+                },
+            ],
+        });
 
         // TODO keep this in sync with shader.
         let num_particles = emitter.num_particles();
@@ -541,7 +512,7 @@ impl ParticleSystem {
         (
             update_particles_work_groups,
             update_particles_pipeline,
-            update_particles_bind_groups,
+            update_particles_bind_group,
         )
     }
 
@@ -653,7 +624,7 @@ impl ParticleSystem {
             ParticleSystem::init_clear_buffer_pipeline(device, &density_buffer);
 
         // Set up all the stuff for the particle update compute pass.
-        let (update_particles_work_groups, update_particles_pipeline, update_particles_bind_groups) =
+        let (update_particles_work_groups, update_particles_pipeline, update_particles_bind_group) =
             ParticleSystem::init_update_particles_pipeline(
                 device,
                 &uniform_buffer,
@@ -670,7 +641,7 @@ impl ParticleSystem {
 
             update_particles_work_groups,
             update_particles_pipeline,
-            update_particles_bind_groups,
+            update_particles_bind_group,
 
             clear_work_groups,
             clear_pipeline,
@@ -702,6 +673,9 @@ impl ParticleSystem {
             cpass.set_bind_group(0, &self.clear_bind_group, &[]);
             cpass.dispatch(self.clear_work_groups, 1, 1);
         }
+        {
+            // Consolidate terrain buffers?
+        }
 
         {
             // Update uniforms
@@ -717,14 +691,10 @@ impl ParticleSystem {
             self.staging_belt.finish();
 
             let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                label: Some("Particle Emitter"),
+                label: Some("Particle System"),
             });
             cpass.set_pipeline(&self.update_particles_pipeline);
-            cpass.set_bind_group(
-                0,
-                &self.update_particles_bind_groups[level_manager.buffer_config_index()],
-                &[],
-            );
+            cpass.set_bind_group(0, &self.update_particles_bind_group, &[]);
 
             cpass.dispatch(self.update_particles_work_groups, 1, 1);
         }

@@ -32,32 +32,22 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
 struct Uniforms {
     viewport_width: u32;
     viewport_height: u32;
-    height_of_viewport: u32;
-    height_of_bottom_buffer: u32;
-    height_of_top_buffer: u32;
+    viewport_offset: u32;
+    terrain_buffer_offset: u32;
 };
 @group(0) @binding(0)
 var<uniform> uniforms: Uniforms;
 
 @group(0) @binding(1)
-var<storage, read> terrain_buffer_top: array<i32>;
-@group(0) @binding(2)
-var<storage, read> terrain_buffer_bottom: array<i32>;
+var<storage, read> terrain_buffer: array<i32>;
 
-// This could probably be simplified to drawing two textured quads with a color map.
 fn get_cell(tex_coord: vec2<f32>) -> i32 {
   let cell = vec2<i32>(tex_coord * vec2<f32>(f32(uniforms.viewport_width), f32(uniforms.viewport_height)));
-  let absolute_height = i32(uniforms.height_of_viewport) + cell.y;
-
-  var buffer_height = absolute_height;
-  let use_bottom_buffer = (absolute_height < i32(uniforms.height_of_top_buffer));
-  if (use_bottom_buffer) {
-    let offset = (buffer_height - i32(uniforms.height_of_bottom_buffer)) * i32(uniforms.viewport_width) + cell.x;
-    return terrain_buffer_bottom[offset];
-  } else {
-    let offset = (buffer_height - i32(uniforms.height_of_top_buffer)) * i32(uniforms.viewport_width) + cell.x;
-    return terrain_buffer_top[offset];
-  }
+  let absolute_height = i32(uniforms.viewport_offset) + cell.y;
+  let row_in_terrain_buffer = (absolute_height - i32(uniforms.terrain_buffer_offset));
+  let cells_per_row = i32(uniforms.viewport_width);
+  let cell_offset = row_in_terrain_buffer * cells_per_row + cell.x;
+  return terrain_buffer[cell_offset];
 }
 
 @stage(fragment)
