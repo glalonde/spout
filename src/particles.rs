@@ -331,18 +331,15 @@ struct ParticleSystemUniforms {
     dt: f32,
     viewport_width: u32,
     viewport_height: u32,
-    viewport_bottom_height: i32,
-    /*
+    viewport_offset: i32,
     level_width: u32,
     level_height: u32,
-    bottom_level_height: u32,
-    middle_level_height: u32,
-    top_level_height: u32,
+    terrain_buffer_offset: i32,
+    terrain_buffer_height: u32,
 
     damage_rate: f32,
     gravity: f32,
     elasticity: f32,
-    */
 }
 impl Default for ParticleSystemUniforms {
     fn default() -> Self {
@@ -350,17 +347,15 @@ impl Default for ParticleSystemUniforms {
             dt: 0.0,
             viewport_width: 0,
             viewport_height: 0,
-            viewport_bottom_height: 0,
-            /*
+            viewport_offset: 0,
             level_width: 0,
             level_height: 0,
-            bottom_level_height: 0,
-            middle_level_height: 0,
-            top_level_height: 0,
+            terrain_buffer_offset: 0,
+            terrain_buffer_height: 0,
+
             damage_rate: 0.0,
             gravity: 0.0,
             elasticity: 0.0,
-            */
         }
     }
 }
@@ -430,7 +425,7 @@ impl ParticleSystem {
                         ty: wgpu::BufferBindingType::Storage { read_only: false },
                         has_dynamic_offset: false,
                         min_binding_size: wgpu::BufferSize::new(
-                            level_manager.terrain_buffer().size as _,
+                            level_manager.terrain_buffer().buffer.size as _,
                         ),
                     },
                     count: None,
@@ -492,6 +487,7 @@ impl ParticleSystem {
                     resource: wgpu::BindingResource::Buffer(
                         level_manager
                             .terrain_buffer()
+                            .buffer
                             .buffer
                             .as_entire_buffer_binding(),
                     ),
@@ -585,17 +581,15 @@ impl ParticleSystem {
             dt: 0.0,
             viewport_width: game_params.level_width,
             viewport_height: game_params.viewport_height,
-            viewport_bottom_height: 0,
-            /*
-            level_width: todo!(),
-            level_height: todo!(),
-            bottom_level_height: todo!(),
-            middle_level_height: todo!(),
-            top_level_height: todo!(),
+            viewport_offset: 0,
+            level_width: game_params.level_width,
+            level_height: game_params.level_height,
+            terrain_buffer_offset: level_manager.terrain_buffer().shape.start,
+            terrain_buffer_height: level_manager.terrain_buffer().shape.size() as u32,
+
             damage_rate: game_params.particle_system_params.damage_rate,
             gravity: game_params.particle_system_params.gravity,
             elasticity: game_params.particle_system_params.elasticity,
-            */
         };
         let uniform_buffer = crate::buffer_util::make_uniform_buffer::<ParticleSystemUniforms>(
             device,
@@ -865,10 +859,7 @@ impl ParticleRenderer {
                 entry_point: "fs_main",
                 targets: &[wgpu::ColorTargetState {
                     format: wgpu::TextureFormat::Bgra8UnormSrgb,
-                    blend: Some(wgpu::BlendState {
-                        color: wgpu::BlendComponent::OVER,
-                        alpha: wgpu::BlendComponent::OVER,
-                    }),
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
                     write_mask: wgpu::ColorWrites::all(),
                 }],
             }),

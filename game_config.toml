@@ -11,6 +11,6 @@ render_ship = false
 [particle_system_params]
 emission_rate = 100000
 max_particle_life = 3.0
-damage_rate = 0.0001
+damage_rate = 0.1
 gravity = -5.0
 elasticity = 0.5

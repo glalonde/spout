@@ -379,15 +379,14 @@ impl framework::Example for Spout {
         self.update_state();
 
         // Run compute pipeline(s).
+        self.level_manager.compose_tiles(&mut encoder);
         self.particle_system
             .run_compute(&self.level_manager, device, &mut encoder);
 
         // Render terrain.
-        self.level_manager.terrain_renderer.render(
-            &self.level_manager,
-            &self.game_view_texture,
-            &mut encoder,
-        );
+        self.level_manager
+            .terrain_renderer
+            .render(&self.game_view_texture, &mut encoder);
 
         // Render particles.
         self.particle_system
@@ -395,11 +394,21 @@ impl framework::Example for Spout {
 
         // Run render the game view quad.
         self.renderer.render(view, device, &mut encoder);
+        self.level_manager.decompose_tiles(&mut encoder);
 
         queue.submit(Some(encoder.finish()));
         self.particle_system.after_queue_submission(spawner);
         self.renderer.after_queue_submission(spawner);
         self.level_manager.after_queue_submission(spawner);
+
+        {
+            // After rendering, do some "async" work:
+            let level_budget = std::time::Duration::from_secs_f64(1.0 / 300.0);
+            let deadline = self.iteration_start + level_budget;
+            self.level_manager
+                .level_maker
+                .work_until(deadline);
+        }
     }
 }
 

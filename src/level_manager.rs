@@ -13,8 +13,8 @@ pub struct WIPRectangleLevel {
 
 impl WIPRectangleLevel {
     fn init(level_index: u32, level_width: u32, level_height: u32) -> Self {
-        let level_num = level_index + 1;
-        let max_dimension = (level_width / level_num as u32) / 2;
+        let level_num = level_index + 10;
+        let max_dimension = std::cmp::max((level_width / level_num as u32) / 2, 1);
         let num_vacancies = (level_height as f64 * (level_num as f64).sqrt()).ceil() as u32;
 
         // Maximum dimension of any of the vacancies(should be a function of level_num).
@@ -61,6 +61,20 @@ impl WIPRectangleLevel {
         }
         return self.done();
     }
+}
+
+pub fn make_stripe_level(width: u32, height: u32) -> Vec<i32> {
+    let mut data: Vec<i32> = vec![0; (width * height) as usize];
+    let mut i = 0;
+    for _ in 0..height {
+        for x in 0..width {
+            if x % 2 == 0 {
+                data[i] = 1000;
+            }
+            i += 1;
+        }
+    }
+    data
 }
 
 pub struct LevelMaker {
@@ -146,7 +160,7 @@ impl Interval {
     }
 
     pub fn intersects(&self, other: &Interval) -> bool {
-        self.intersection(other).empty()
+        !self.intersection(other).empty()
     }
 
     pub fn size(&self) -> i32 {
@@ -199,13 +213,11 @@ pub struct LevelManager {
     // Static params
     pub level_width: u32,
     pub level_height: u32,
+    stripe_level: Vec<i32>,
+    pub active_interval_height: u32,
     pub active_extent_below_viewport: u32,
-    pub active_extent_above_viewport: u32,
 
     // State
-    // pub visible_interval: Interval,
-    pub active_interval: Interval,
-
     loaded_tiles: std::collections::BTreeMap<i32, TerrainTile>,
 
     // This tile is composed of the above tiles. Each iteration, it is composited, then used, and then the results are copied out.
@@ -222,31 +234,47 @@ pub struct LevelManager {
 
 impl LevelManager {
     fn active_tiles(&self) -> impl Iterator<Item = &TerrainTile> {
-        let active_interval = self.active_interval;
         self.loaded_tiles
             .iter()
             .map(move |pair| pair.1)
-            .filter(move |tile| tile.shape.intersects(&active_interval))
+            .filter(move |tile| {
+                let active = self.composite_tile.shape;
+                let intersects = tile.shape.intersects(&self.composite_tile.shape);
+                log::info!(
+                    "Tile with shape [{}, {}) vs. interval with shape: [{}, {}), intersects? {}",
+                    tile.shape.start,
+                    tile.shape.end,
+                    active.start,
+                    active.end,
+                    intersects
+                );
+                return intersects;
+            })
     }
 
     pub fn compose_tiles(&self, encoder: &mut wgpu::CommandEncoder) {
-        let BYTES_PER_ELEMENT = std::mem::size_of::<u32>() as u64;
-        let bytes_per_row = self.level_width as u64 * BYTES_PER_ELEMENT;
+        let bytes_per_element = std::mem::size_of::<u32>() as u64;
+        let bytes_per_row = self.level_width as u64 * bytes_per_element;
         self.active_tiles().for_each(|f| {
+            log::info!(
+                "Composing active tile with shape: [{}, {})",
+                f.shape.start,
+                f.shape.end
+            );
             f.copy_to_tile(&self.composite_tile, bytes_per_row, encoder);
         })
     }
 
     pub fn decompose_tiles(&self, encoder: &mut wgpu::CommandEncoder) {
-        let BYTES_PER_ELEMENT = std::mem::size_of::<u32>() as u64;
-        let bytes_per_row = self.level_width as u64 * BYTES_PER_ELEMENT;
+        let bytes_per_element = std::mem::size_of::<u32>() as u64;
+        let bytes_per_row = self.level_width as u64 * bytes_per_element;
         self.active_tiles().for_each(|f| {
             self.composite_tile.copy_to_tile(&f, bytes_per_row, encoder);
         })
     }
 
-    pub fn terrain_buffer(&self) -> &SizedBuffer {
-        &self.composite_tile.buffer
+    pub fn terrain_buffer(&self) -> &TerrainTile {
+        &self.composite_tile
     }
 
     pub fn init(
@@ -258,11 +286,15 @@ impl LevelManager {
         let level_width = game_params.level_width;
         let level_height = game_params.level_height;
 
-        let composite_tile_buffer = buffer_util::make_buffer(
-            device,
-            level_width as usize,
-            level_height as usize,
-            "CompositeTerrainBuffer",
+        let active_interval_height = std::cmp::max(
+            level_height,
+            (game_params.viewport_height as f32 * 1.5) as u32,
+        );
+        let active_extent_below_viewport = game_params.viewport_height / 4;
+        let active_interval = LevelManager::get_active_interval(
+            0,
+            active_interval_height as i32,
+            active_extent_below_viewport as i32,
         );
 
         let unused_buffers = vec![buffer_util::make_buffer(
@@ -271,33 +303,25 @@ impl LevelManager {
             level_height as usize,
             "Terrain",
         )];
-
-        let staging_belt = wgpu::util::StagingBelt::new((unused_buffers[0].size / 2) as u64);
-
-        let renderer = TerrainRenderer::init(device, game_params, &composite_tile_buffer);
-
-        let active_extent_below = (game_params.level_height as f64 * 0.25) as u32;
-        let active_extent_above = (game_params.level_height as f64 * 0.25) as u32;
-        let active_interval = LevelManager::get_active_interval(
-            0,
-            game_params.viewport_height as i32,
-            active_extent_below as i32,
-            active_extent_above as i32,
+        let composite_tile_buffer = buffer_util::make_buffer(
+            device,
+            level_width as usize,
+            active_interval_height as usize,
+            "CompositeTerrainBuffer",
         );
+        let staging_belt = wgpu::util::StagingBelt::new((unused_buffers[0].size / 2) as u64);
+        let renderer = TerrainRenderer::init(device, game_params, &composite_tile_buffer);
 
         let mut lm = LevelManager {
             level_width: game_params.level_width,
             level_height: game_params.level_height,
-            active_extent_below_viewport: active_extent_below,
-            active_extent_above_viewport: active_extent_above,
+            stripe_level: make_stripe_level(game_params.level_width, game_params.level_height),
+            active_interval_height,
+            active_extent_below_viewport,
 
-            active_interval: active_interval,
             loaded_tiles: std::collections::BTreeMap::new(),
             composite_tile: TerrainTile {
-                shape: Interval {
-                    start: 0,
-                    end: level_height as i32,
-                },
+                shape: active_interval,
                 buffer: composite_tile_buffer,
             },
 
@@ -345,8 +369,10 @@ impl LevelManager {
             // self.level_maker.use_level(check_level_index, action);
             if !self.loaded_tiles.contains_key(&level_index) {
                 // Tile isn't loaded, find a buffer.
+                log::info!("Loading level {} to gpu", level_index);
                 let buffer = self.get_unused_tile_buffer(device);
                 let level_data = &self.level_maker.levels[level_index as usize];
+                // let level_data = &self.stripe_level;
 
                 // Request data copy.
                 self.staging_belt
@@ -359,7 +385,6 @@ impl LevelManager {
                     )
                     .copy_from_slice(bytemuck::cast_slice(level_data));
                 let level_start = level_index * self.level_height as i32;
-                let unused_buffer = self.get_unused_tile_buffer(device);
                 self.loaded_tiles.insert(
                     level_index,
                     TerrainTile {
@@ -367,7 +392,7 @@ impl LevelManager {
                             start: level_start,
                             end: level_start + self.level_height as i32,
                         },
-                        buffer: unused_buffer,
+                        buffer: buffer,
                     },
                 );
             }
@@ -378,29 +403,29 @@ impl LevelManager {
 
     pub fn get_active_interval(
         viewport_offset: i32,
-        viewport_height: i32,
+        active_interval_height: i32,
         active_extent_below: i32,
-        active_extent_above: i32,
     ) -> Interval {
         let viewport_bottom = viewport_offset;
-        let viewport_top = viewport_bottom + viewport_height;
+        let start = std::cmp::max(viewport_bottom - active_extent_below, 0);
         Interval {
-            start: viewport_bottom - active_extent_below,
-            end: viewport_top + active_extent_above,
+            start,
+            end: start + active_interval_height,
         }
     }
 
-    pub fn update_active_interval(
-        &mut self,
-        viewport_offset: i32,
-        game_params: &crate::game_params::GameParams,
-    ) {
-        self.active_interval = LevelManager::get_active_interval(
+    pub fn update_active_interval(&mut self, viewport_offset: i32) {
+        let active_interval = LevelManager::get_active_interval(
             viewport_offset,
-            game_params.viewport_height as i32,
+            self.active_interval_height as i32,
             self.active_extent_below_viewport as i32,
-            self.active_extent_above_viewport as i32,
         );
+        log::info!(
+            "Active interval [{}, {})",
+            active_interval.start,
+            active_interval.end
+        );
+        self.composite_tile.shape = active_interval;
     }
 
     pub fn sync_height(
@@ -411,13 +436,21 @@ impl LevelManager {
         game_params: &crate::game_params::GameParams,
     ) {
         log::info!("Syncing to height: {}", viewport_offset);
-        self.update_active_interval(viewport_offset, game_params);
+        self.update_active_interval(viewport_offset);
 
         // Find all level indices corresponding to active interval.
         let active_levels = Interval {
-            start: std::cmp::min(self.active_interval.start / self.level_height as i32, 0),
-            end: std::cmp::min(self.active_interval.end / self.level_height as i32, 0),
+            start: std::cmp::max(
+                self.composite_tile.shape.start / self.level_height as i32,
+                0,
+            ),
+            end: std::cmp::max(self.composite_tile.shape.end / self.level_height as i32, 0),
         };
+        log::info!(
+            "Active levels [{}, {})",
+            active_levels.start,
+            active_levels.end
+        );
         let on_deck_levels = Interval {
             start: active_levels.start,
             end: active_levels.end + 3,
@@ -427,20 +460,18 @@ impl LevelManager {
         self.level_maker.prefetch_up_to_level(on_deck_levels.end);
 
         // Find levels we need, make sure they're done (blocking) and loaded into the gpu(blocking)
+        self.block_on_levels(active_levels);
         self.load_active_levels(device, encoder, active_levels);
 
         // TODO when a level is no longer needed, recycle the buffer.
 
-        /*
         self.terrain_renderer.update_render_state(
             device,
             &game_params,
-            height_of_viewport,
-            height_of_bottom_buffer,
-            height_of_top_buffer,
+            viewport_offset,
+            self.composite_tile.shape.start,
             encoder,
         );
-        */
     }
 
     pub fn after_queue_submission(&mut self, spawner: &crate::framework::Spawner) {
@@ -472,9 +503,8 @@ struct FragmentUniforms {
     pub viewport_width: u32,
     pub viewport_height: u32,
 
-    pub height_of_viewport: i32,
-    pub height_of_bottom_buffer: i32,
-    pub height_of_top_buffer: i32,
+    pub viewport_offset: i32,
+    pub terrain_buffer_offset: i32,
 }
 
 impl TerrainRenderer {
@@ -482,17 +512,15 @@ impl TerrainRenderer {
         &mut self,
         device: &wgpu::Device,
         game_params: &super::game_params::GameParams,
-        height_of_viewport: i32,
-        height_of_bottom_buffer: i32,
-        height_of_top_buffer: i32,
+        viewport_offset: i32,
+        terrain_buffer_offset: i32,
         encoder: &mut wgpu::CommandEncoder,
     ) {
         let uniforms = FragmentUniforms {
             viewport_width: game_params.level_width,
             viewport_height: game_params.viewport_height,
-            height_of_viewport,
-            height_of_bottom_buffer,
-            height_of_top_buffer,
+            viewport_offset,
+            terrain_buffer_offset,
         };
 
         // Update uniforms
@@ -521,9 +549,8 @@ impl TerrainRenderer {
         let fragment_uniforms = FragmentUniforms {
             viewport_width: game_params.viewport_width,
             viewport_height: game_params.viewport_height,
-            height_of_viewport: 0,
-            height_of_bottom_buffer: 0,
-            height_of_top_buffer: 0,
+            viewport_offset: 0,
+            terrain_buffer_offset: 0,
         };
         let uniform_buf =
             crate::buffer_util::make_uniform_buffer(device, "Uniform buffer", &fragment_uniforms);
@@ -543,7 +570,7 @@ impl TerrainRenderer {
                         },
                         count: None,
                     },
-                    // Bottom terrain buffer
+                    // Terrain buffer
                     wgpu::BindGroupLayoutEntry {
                         binding: 1,
                         visibility: wgpu::ShaderStages::FRAGMENT,
@@ -599,7 +626,7 @@ impl TerrainRenderer {
                 entry_point: "fs_main",
                 targets: &[wgpu::ColorTargetState {
                     format: wgpu::TextureFormat::Bgra8UnormSrgb,
-                    blend: None,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
                     write_mask: wgpu::ColorWrites::all(),
                 }],
             }),
@@ -624,7 +651,6 @@ impl TerrainRenderer {
 
     pub fn render(
         &self,
-        level_manager: &super::level_manager::LevelManager,
         output_texture_view: &wgpu::TextureView,
         encoder: &mut wgpu::CommandEncoder,
     ) {
