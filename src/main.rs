@@ -60,6 +60,7 @@ struct GameState {
     input_state: InputState,
     prev_input_state: InputState,
     ship_state: ship::ShipState,
+    viewport_offset: i32,
     _score: i32,
     paused: bool,
 }
@@ -69,6 +70,7 @@ impl Default for GameState {
             input_state: InputState::default(),
             prev_input_state: InputState::default(),
             ship_state: ship::ShipState::default(),
+            viewport_offset: 0,
             _score: 0,
             paused: false,
         }
@@ -76,7 +78,7 @@ impl Default for GameState {
 }
 
 struct Spout {
-    _game_params: game_params::GameParams,
+    game_params: game_params::GameParams,
     state: GameState,
     level_manager: level_manager::LevelManager,
     game_time: std::time::Duration,
@@ -85,6 +87,7 @@ struct Spout {
     renderer: render::Render,
     // emitter: emitter::Emitter,
     particle_system: particles::ParticleSystem,
+    ship_renderer: ship::ShipRenderer,
     // staging_belt: wgpu::util::StagingBelt,
 
     // fps: fps_estimator::FpsEstimator,
@@ -146,12 +149,14 @@ impl Spout {
     fn update_particle_system(&mut self, dt: f32, prev_ship: &ship::ShipState) {
         let current_ship = &self.state.ship_state;
         let maybe_motion = if self.state.input_state.forward {
+            let start_emitter = prev_ship.get_emitter_state();
+            let end_emitter = current_ship.get_emitter_state();
             Some(particles::EmitterMotion {
-                position_start: prev_ship.position,
-                position_end: current_ship.position,
+                position_start: start_emitter.0,
+                position_end: end_emitter.0,
                 velocity: current_ship.velocity,
-                angle_start: prev_ship.orientation,
-                angle_end: current_ship.orientation,
+                angle_start: start_emitter.1,
+                angle_end: end_emitter.1,
             })
         } else {
             None
@@ -279,10 +284,12 @@ impl framework::Example for Spout {
         let particle_system =
             particles::ParticleSystem::new(device, &game_params, &mut init_encoder, &level_manager);
 
+        let ship_renderer = ship::ShipRenderer::init(device);
+
         queue.submit(Some(init_encoder.finish()));
 
         Spout {
-            _game_params: game_params,
+            game_params,
             state: game_state,
             level_manager,
             game_time: std::time::Duration::default(),
@@ -290,6 +297,7 @@ impl framework::Example for Spout {
             game_view_texture,
             renderer,
             particle_system,
+            ship_renderer,
         }
     }
 
@@ -392,11 +400,22 @@ impl framework::Example for Spout {
         self.particle_system
             .render(&self.game_view_texture, &mut encoder);
 
+        // Render ship
+        self.ship_renderer.render(
+            &self.state.ship_state,
+            &self.game_params,
+            self.state.viewport_offset,
+            device,
+            &self.game_view_texture,
+            &mut encoder,
+        );
+
         // Run render the game view quad.
         self.renderer.render(view, device, &mut encoder);
         self.level_manager.decompose_tiles(&mut encoder);
 
         queue.submit(Some(encoder.finish()));
+        self.ship_renderer.after_queue_submission(spawner);
         self.particle_system.after_queue_submission(spawner);
         self.renderer.after_queue_submission(spawner);
         self.level_manager.after_queue_submission(spawner);
@@ -405,9 +424,7 @@ impl framework::Example for Spout {
             // After rendering, do some "async" work:
             let level_budget = std::time::Duration::from_secs_f64(1.0 / 300.0);
             let deadline = self.iteration_start + level_budget;
-            self.level_manager
-                .level_maker
-                .work_until(deadline);
+            self.level_manager.level_maker.work_until(deadline);
         }
     }
 }
