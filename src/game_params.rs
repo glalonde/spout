@@ -15,6 +15,9 @@ pub struct GameParams {
 
     #[serde(default)]
     pub particle_system_params: ParticleSystemParams,
+
+    #[serde(default)]
+    pub ship_params: ShipParams,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy)]
@@ -34,6 +37,23 @@ impl Default for ParticleSystemParams {
             damage_rate: 0.00001,
             gravity: -5.0,
             elasticity: 0.5,
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Copy)]
+pub struct ShipParams {
+    pub acceleration: f32,
+    pub rotation_rate: f32,
+    pub max_speed: f32,
+}
+
+impl Default for ShipParams {
+    fn default() -> Self {
+        ShipParams {
+            acceleration: 50.0,
+            rotation_rate: 15.0,
+            max_speed: 100.0,
         }
     }
 }
@@ -58,6 +78,7 @@ impl Default for GameParams {
             enable_glow_pass: true,
             render_ship: false,
             particle_system_params: ParticleSystemParams::default(),
+            ship_params: ShipParams::default(),
         }
     }
 }
@@ -93,6 +114,7 @@ mod tests {
             enable_glow_pass: false,
             render_ship: true,
             particle_system_params: ParticleSystemParams::default(),
+            ship_params: ShipParams::default(),
         };
         let serialized = toml::to_string(&params).unwrap();
         println!("serialized = {}", serialized);

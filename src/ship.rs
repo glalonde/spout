@@ -1,4 +1,7 @@
-use crate::{buffer_util::{self, SizedBuffer}, game_params};
+use crate::{
+    buffer_util::{self, SizedBuffer},
+    game_params,
+};
 
 #[repr(i8)]
 #[derive(Copy, Clone)]
@@ -16,8 +19,9 @@ pub struct ShipState {
     pub orientation: f32,
 
     // The ship's control variables.
-    pub rotation_rate: f32,
     pub acceleration: f32,
+    pub rotation_rate: f32,
+    pub max_speed: f32,
 }
 impl Default for ShipState {
     fn default() -> Self {
@@ -25,13 +29,24 @@ impl Default for ShipState {
             position: [0.0, 0.0],
             velocity: [0.0, 0.0],
             orientation: 0.0,
-            rotation_rate: 15.0,
             acceleration: 10.0,
+            rotation_rate: 15.0,
+            max_speed: 10000.0,
         }
     }
 }
 
 impl ShipState {
+    pub fn init(ship_params: &game_params::ShipParams, init_pos: [f32; 2]) -> Self {
+        ShipState {
+            position: init_pos,
+            acceleration: ship_params.acceleration,
+            rotation_rate: ship_params.rotation_rate,
+            max_speed: ship_params.max_speed,
+            ..Default::default()
+        }
+    }
+
     pub fn update(&mut self, dt: f32, accelerate: bool, rotation: RotationDirection) {
         self.position[0] += dt * self.velocity[0];
         self.position[1] += dt * self.velocity[1];
@@ -39,6 +54,14 @@ impl ShipState {
         if accelerate {
             self.velocity[0] += dt * self.acceleration * self.orientation.cos();
             self.velocity[1] += dt * self.acceleration * self.orientation.sin();
+        }
+        {
+            let speed = (self.velocity[0] * self.velocity[0] + self.velocity[1] * self.velocity[1]).sqrt();
+            let speed_ratio = speed / self.max_speed;
+            if speed_ratio > 1.0 {
+                self.velocity[0] /= speed_ratio;
+                self.velocity[1] /= speed_ratio;
+            }
         }
 
         let angle_delta = dt * (rotation as i8 as f32) * self.rotation_rate;

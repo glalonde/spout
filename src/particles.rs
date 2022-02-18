@@ -670,7 +670,7 @@ impl ParticleSystem {
         }
         {
             // Consolidate terrain buffers?
-            log::info!(
+            log::debug!(
                 "Terrain Buffer. Offset: {}, Height: {}",
                 level_manager.terrain_buffer().shape.start,
                 level_manager.terrain_buffer().shape.size() as u32

@@ -14,3 +14,8 @@ max_particle_life = 3.0
 damage_rate = 0.1
 gravity = -2.0
 elasticity = 0.5
+
+[ship_params]
+acceleration = 100.0
+rotation_rate = 15.0
+max_speed = 1000.0

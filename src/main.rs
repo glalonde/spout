@@ -262,10 +262,7 @@ impl framework::Example for Spout {
         window.set_cursor_visible(false);
         let game_params = game_params::get_game_config_from_default_file();
         let game_state = GameState {
-            ship_state: ship::ShipState {
-                position: [320.0, 180.0],
-                ..Default::default()
-            },
+            ship_state: ship::ShipState::init(&game_params.ship_params, [320.0, 180.0]),
             ..Default::default()
         };
 

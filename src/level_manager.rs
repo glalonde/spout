@@ -240,7 +240,7 @@ impl LevelManager {
             .filter(move |tile| {
                 let active = self.composite_tile.shape;
                 let intersects = tile.shape.intersects(&self.composite_tile.shape);
-                log::info!(
+                log::debug!(
                     "Tile with shape [{}, {}) vs. interval with shape: [{}, {}), intersects? {}",
                     tile.shape.start,
                     tile.shape.end,
@@ -256,7 +256,7 @@ impl LevelManager {
         let bytes_per_element = std::mem::size_of::<u32>() as u64;
         let bytes_per_row = self.level_width as u64 * bytes_per_element;
         self.active_tiles().for_each(|f| {
-            log::info!(
+            log::debug!(
                 "Composing active tile with shape: [{}, {}) to [{}, {})",
                 self.composite_tile.shape.start,
                 self.composite_tile.shape.end,
@@ -271,7 +271,7 @@ impl LevelManager {
         let bytes_per_element = std::mem::size_of::<u32>() as u64;
         let bytes_per_row = self.level_width as u64 * bytes_per_element;
         self.active_tiles().for_each(|f| {
-            log::info!(
+            log::debug!(
                 "Decomposing from [{}, {}) into -> [{}, {})",
                 self.composite_tile.shape.start,
                 self.composite_tile.shape.end,
@@ -429,7 +429,7 @@ impl LevelManager {
             self.active_interval_height as i32,
             self.active_extent_below_viewport as i32,
         );
-        log::info!(
+        log::debug!(
             "Active interval [{}, {})",
             active_interval.start,
             active_interval.end
@@ -444,7 +444,7 @@ impl LevelManager {
         encoder: &mut wgpu::CommandEncoder,
         game_params: &crate::game_params::GameParams,
     ) {
-        log::info!("Syncing to height: {}", viewport_offset);
+        log::debug!("Syncing to height: {}", viewport_offset);
         self.update_active_interval(viewport_offset);
 
         // Find all level indices corresponding to active interval.
@@ -458,7 +458,7 @@ impl LevelManager {
                 0,
             ),
         };
-        log::info!(
+        log::debug!(
             "Active levels [{}, {})",
             active_levels.start,
             active_levels.end
