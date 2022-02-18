@@ -51,8 +51,16 @@ fn increment_cell(global_cell: vec2<i32>) {
   atomicAdd(&density_buffer[index], 1u);
 }
 
-fn to_terrain_buffer(cell: vec2<i32>) -> vec2<i32> {
+fn global_to_terrain_buffer(cell: vec2<i32>) -> vec2<i32> {
   return vec2<i32>(cell.x, cell.y - uniforms.terrain_buffer_offset);
+}
+
+fn global_to_terrain_buffer_f32(pos: vec2<f32>) -> vec2<f32> {
+  return vec2<f32>(pos.x, pos.y - f32(uniforms.terrain_buffer_offset));
+}
+
+fn terrain_buffer_to_global(cell: vec2<i32>) -> vec2<i32> {
+  return vec2<i32>(cell.x, cell.y + uniforms.terrain_buffer_offset);
 }
 
 fn on_terrain_buffer(terrain_cell: vec2<i32>) -> bool {
@@ -74,6 +82,14 @@ fn norm(vel: vec2<f32>) -> f32{
   return sqrt(vel.x*vel.x + vel.y * vel.y);
 }
 
+fn copysign(in: f32) -> i32 {
+  if (in >= 0.0) {
+    return 1;
+  } else {
+    return -1;
+  }
+}
+
 let PI: f32 = 3.14159265358979323846;
 
 @stage(compute) @workgroup_size(256)
@@ -86,26 +102,77 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>, @builtin(num_workgr
    return;
   } 
 
-  // TODO collisions 
-  let delta_pos = (*particle).velocity * uniforms.dt;
-  (*particle).position = (*particle).position + delta_pos;
-  (*particle).ttl = (*particle).ttl - uniforms.dt;
-
-  // let current_cell = center + vec2<i32>(radius * vec2<f32>(cos(p * 2.0 * PI), sin(p * 2.0 * PI)));
   let current_cell = vec2<i32>((*particle).position);
-
-  let terrain_cell = to_terrain_buffer(current_cell);
+  var terrain_cell = global_to_terrain_buffer(current_cell);
 
   if (!on_terrain_buffer(terrain_cell)) {
     (*particle).ttl = 0.0;
     return;
   } 
 
-  // let buffer_location = &terrain_buffer[get_buffer_offset(current_cell)];
-   // let buffer_location = &terrain_buffer[gid];
-  // terrain_buffer[get_buffer_offset(current_cell)] = 0;
-  try_erode(terrain_cell, norm((*particle).velocity));
+  // TODO collisions 
+  let signed_delta = (*particle).velocity * uniforms.dt;
+  let end_pos = (*particle).position + signed_delta;
 
-  // Draw every particle.
-  increment_cell(current_cell);
+  var delta = abs(signed_delta);
+  var step = vec2<i32>(copysign(signed_delta.x), copysign(signed_delta.y));
+
+  let end_cell = global_to_terrain_buffer(vec2<i32>(end_pos));
+  let delta_i = end_cell - terrain_cell;
+
+  // Starting cell remainder:
+  let start_remainder = (vec2<f32>(0.5, 0.5) - (global_to_terrain_buffer_f32((*particle).position) - vec2<f32>(terrain_cell))) * vec2<f32>(step);
+  var end_remainder = global_to_terrain_buffer_f32(end_pos) - vec2<f32>(end_cell);
+
+  // 'Bresenham' Error value
+  var error = delta.x * start_remainder.y - delta.y * start_remainder.x;
+  var vel_out = (*particle).velocity;
+  let speed = norm((*particle).velocity);
+
+  var num_cells = abs(delta_i.x) + abs(delta_i.y);
+
+  loop {
+    if (num_cells <= 0) {
+      break;
+    }
+    let error_horizontal = error - delta.y;
+    let error_vertical = error + delta.x;
+    if (error_vertical > -error_horizontal) {
+      // Horizontal step
+      error = error_horizontal;
+      terrain_cell.x += step.x;
+      // Check cell
+      let bounce = !on_terrain_buffer(terrain_cell) || try_erode(terrain_cell, speed);
+      if (bounce) {
+        // Bounce horizontally
+        terrain_cell.x -= step.x;
+        step.x *= -1;
+        vel_out.x = -(vel_out.x * uniforms.elasticity);
+        end_remainder.y = 1.0 - end_remainder.y;
+      }
+    } else {
+      // Vertical step
+      error = error_vertical;
+      terrain_cell.y += step.y;
+      // Check cell
+      let bounce = !on_terrain_buffer(terrain_cell) || try_erode(terrain_cell, speed);
+      if (bounce) {
+        // Bounce vertically 
+        terrain_cell.y -= step.y;
+        step.y *= -1;
+        vel_out.y = -(vel_out.y * uniforms.elasticity);
+        end_remainder.x = 1.0 - end_remainder.x;
+      }
+    }
+    num_cells -= 1;
+  }
+  vel_out.y += uniforms.gravity;
+
+  let global_output_pos = vec2<f32>(terrain_buffer_to_global(terrain_cell)) + end_remainder;
+  (*particle).position = global_output_pos;
+  (*particle).velocity = vel_out;
+  (*particle).ttl = (*particle).ttl - uniforms.dt;
+
+  // Draw particle to density buffer.
+  increment_cell(vec2<i32>(global_output_pos));
 }
