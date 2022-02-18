@@ -61,7 +61,7 @@ struct GameState {
     prev_input_state: InputState,
     ship_state: ship::ShipState,
     viewport_offset: i32,
-    _score: i32,
+    score: i32,
     paused: bool,
 }
 impl Default for GameState {
@@ -71,7 +71,7 @@ impl Default for GameState {
             prev_input_state: InputState::default(),
             ship_state: ship::ShipState::default(),
             viewport_offset: 0,
-            _score: 0,
+            score: 0,
             paused: false,
         }
     }
@@ -161,7 +161,17 @@ impl Spout {
         } else {
             None
         };
-        self.particle_system.update_state(dt, maybe_motion);
+
+        // Updates state, but doesn't run GPU just yet.
+        self.particle_system
+            .update_state(dt, self.state.viewport_offset, maybe_motion);
+    }
+
+    fn update_viewport_height(&mut self) {
+        let ship_height = self.state.ship_state.position[1] as i32;
+        self.state.score = std::cmp::max(ship_height, self.state.score as i32);
+        self.state.viewport_offset =
+            self.state.score - (self.game_params.viewport_height / 2) as i32;
     }
 
     /// Mostly responsible for updating superficial state based on new inputs.
@@ -179,6 +189,8 @@ impl Spout {
         // Process input state integrated over passage of time.
         let prev_ship = self.state.ship_state;
         self.update_ship(game_dt);
+
+        self.update_viewport_height();
 
         self.update_particle_system(game_dt, &prev_ship);
 
@@ -383,8 +395,26 @@ impl framework::Example for Spout {
 
         let mut encoder =
             device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+        /*
+          1. Grab new input events
+          2. Process particle motions (ship included)
+          3. Get data back from GPU to CPU?
+          4. Update window state based on ship motion
+          5. Render
+        */
 
         self.update_state();
+
+        // Update ship:
+        // TODO
+
+        // Update score based on new ship position:
+        self.level_manager.sync_height(
+            device,
+            self.state.viewport_offset,
+            &mut encoder,
+            &self.game_params,
+        );
 
         // Run compute pipeline(s).
         self.level_manager.compose_tiles(&mut encoder);

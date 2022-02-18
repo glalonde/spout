@@ -37,8 +37,9 @@ var<storage, read_write> terrain_buffer: array<atomic<i32>>;
 @group(0) @binding(3)
 var<storage, read_write> density_buffer: array<atomic<u32>>;
 
-fn increment_cell(cell_in: vec2<i32>) {
-  var cell = cell_in;
+// Takes cell in the global frame.
+fn increment_cell(global_cell: vec2<i32>) {
+  var cell = global_cell;
   cell.y = cell.y - i32(uniforms.viewport_offset);
   if (cell.x < 0 || cell.x >= i32(uniforms.viewport_width) || cell.y < 0 || cell.y >= i32(uniforms.viewport_height)) {
     return;
@@ -50,9 +51,12 @@ fn increment_cell(cell_in: vec2<i32>) {
   atomicAdd(&density_buffer[index], 1u);
 }
 
-fn on_level_buffers(cell: vec2<i32>) -> bool {
-  let terrain_buffer_top = uniforms.terrain_buffer_offset + i32(uniforms.terrain_buffer_height);
-  return cell.x >= i32(0) && cell.x < i32(uniforms.viewport_width) && cell.y >= uniforms.terrain_buffer_offset && cell.y < terrain_buffer_top;
+fn to_terrain_buffer(cell: vec2<i32>) -> vec2<i32> {
+  return vec2<i32>(cell.x, cell.y - uniforms.terrain_buffer_offset);
+}
+
+fn on_terrain_buffer(terrain_cell: vec2<i32>) -> bool {
+  return terrain_cell.x >= i32(0) && terrain_cell.x < i32(uniforms.viewport_width) && terrain_cell.y >= 0 && terrain_cell.y < i32(uniforms.terrain_buffer_height);
 }
 
 fn get_buffer_offset(cell: vec2<i32>) -> u32 {
@@ -60,16 +64,10 @@ fn get_buffer_offset(cell: vec2<i32>) -> u32 {
 }
 
 // Returns true if bounce occurred.
-fn try_erode(cell: vec2<i32>, speed: f32) -> bool {
+fn try_erode(terrain_cell: vec2<i32>, speed: f32) -> bool {
   let dmg_amt = i32(uniforms.damage_rate * speed);
-  var cell = cell;
-  cell.y -= uniforms.terrain_buffer_offset;
-  if (on_level_buffers(cell)) {
-    // Bottom buffer
-    let actual_value = atomicAdd(&terrain_buffer[get_buffer_offset(cell)], -dmg_amt);
-    return actual_value > 0;
-  }
-  return false;
+  let actual_value = atomicAdd(&terrain_buffer[get_buffer_offset(terrain_cell)], -dmg_amt);
+  return actual_value > 0;
 }
 
 fn norm(vel: vec2<f32>) -> f32{
@@ -96,7 +94,9 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>, @builtin(num_workgr
   // let current_cell = center + vec2<i32>(radius * vec2<f32>(cos(p * 2.0 * PI), sin(p * 2.0 * PI)));
   let current_cell = vec2<i32>((*particle).position);
 
-  if (!on_level_buffers(current_cell)) {
+  let terrain_cell = to_terrain_buffer(current_cell);
+
+  if (!on_terrain_buffer(terrain_cell)) {
     (*particle).ttl = 0.0;
     return;
   } 
@@ -104,7 +104,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>, @builtin(num_workgr
   // let buffer_location = &terrain_buffer[get_buffer_offset(current_cell)];
    // let buffer_location = &terrain_buffer[gid];
   // terrain_buffer[get_buffer_offset(current_cell)] = 0;
-  try_erode(current_cell, norm((*particle).velocity));
+  try_erode(terrain_cell, norm((*particle).velocity));
 
   // Draw every particle.
   increment_cell(current_cell);

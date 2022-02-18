@@ -257,7 +257,9 @@ impl LevelManager {
         let bytes_per_row = self.level_width as u64 * bytes_per_element;
         self.active_tiles().for_each(|f| {
             log::info!(
-                "Composing active tile with shape: [{}, {})",
+                "Composing active tile with shape: [{}, {}) to [{}, {})",
+                self.composite_tile.shape.start,
+                self.composite_tile.shape.end,
                 f.shape.start,
                 f.shape.end
             );
@@ -269,6 +271,13 @@ impl LevelManager {
         let bytes_per_element = std::mem::size_of::<u32>() as u64;
         let bytes_per_row = self.level_width as u64 * bytes_per_element;
         self.active_tiles().for_each(|f| {
+            log::info!(
+                "Decomposing from [{}, {}) into -> [{}, {})",
+                self.composite_tile.shape.start,
+                self.composite_tile.shape.end,
+                f.shape.start,
+                f.shape.end
+            );
             self.composite_tile.copy_to_tile(&f, bytes_per_row, encoder);
         })
     }
@@ -280,7 +289,7 @@ impl LevelManager {
     pub fn init(
         device: &wgpu::Device,
         game_params: &super::game_params::GameParams,
-        height_of_viewport: i32,
+        viewport_offset: i32,
         init_encoder: &mut wgpu::CommandEncoder,
     ) -> Self {
         let level_width = game_params.level_width;
@@ -331,7 +340,7 @@ impl LevelManager {
             terrain_renderer: renderer,
         };
 
-        lm.sync_height(device, height_of_viewport, init_encoder, game_params);
+        lm.sync_height(device, viewport_offset, init_encoder, game_params);
         lm
     }
 
@@ -444,7 +453,10 @@ impl LevelManager {
                 self.composite_tile.shape.start / self.level_height as i32,
                 0,
             ),
-            end: std::cmp::max(self.composite_tile.shape.end / self.level_height as i32, 0),
+            end: std::cmp::max(
+                (self.composite_tile.shape.end as f32 / self.level_height as f32).ceil() as i32,
+                0,
+            ),
         };
         log::info!(
             "Active levels [{}, {})",

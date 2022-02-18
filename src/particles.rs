@@ -361,12 +361,13 @@ impl Default for ParticleSystemUniforms {
 }
 
 impl ParticleSystem {
-    pub fn update_state(&mut self, dt: f32, motion: Option<EmitterMotion>) {
+    pub fn update_state(&mut self, dt: f32, viewport_offset: i32, motion: Option<EmitterMotion>) {
         if let Some(motion) = motion {
             self.emitter.emit_for_period(dt, motion);
         }
 
         self.uniform_values.dt = dt;
+        self.uniform_values.viewport_offset = viewport_offset;
         /*
         let system_params = &game_params.particle_system_params;
         let compute_uniforms = ComputeUniforms {
@@ -669,6 +670,14 @@ impl ParticleSystem {
         }
         {
             // Consolidate terrain buffers?
+            log::info!(
+                "Terrain Buffer. Offset: {}, Height: {}",
+                level_manager.terrain_buffer().shape.start,
+                level_manager.terrain_buffer().shape.size() as u32
+            );
+            self.uniform_values.terrain_buffer_offset = level_manager.terrain_buffer().shape.start;
+            self.uniform_values.terrain_buffer_height =
+                level_manager.terrain_buffer().shape.size() as u32;
         }
 
         {
