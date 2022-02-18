@@ -1,12 +1,12 @@
 # MVP Tasks
 ## Easy/Straightforward
-- [ ] ship rendering
-- [ ] gravity
-- [ ] ship position rendering 
+- [x] ship rendering
+- [x] gravity
+- [x] ship position rendering 
 - [x] ship motion
 - [ ] ship collision detection 
 - [ ] text rendering
-- [ ] terrain collision capabilities
+- [x] terrain collision capabilities
 - [ ] resolution selection
 - [ ] window aspect ratio
 - [x] set fullscreen 
@@ -17,10 +17,10 @@
 ---
 ## Medium
 - [x] level generation
-- [ ] progressive level generation
+- [x] progressive level generation
 ---
 ## Hard
-- [ ] scrolling behavior
+- [x] scrolling behavior
 - [ ] progressive game mechanics
 ---
 
