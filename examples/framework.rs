@@ -257,7 +257,7 @@ fn start<E: Example>(
                     // winit has window.current_monitor().video_modes() but that is a list of all full screen video modes.
                     // So without extra dependencies it's a bit tricky to get the max refresh rate we can run the window on.
                     // Therefore we just go with 60fps - sorry 120hz+ folks!
-                    let target_frametime = Duration::from_secs_f64(1.0 / 144.0);
+                    let target_frametime = Duration::from_secs_f64(1.0 / 120.0);
                     let time_since_last_frame = last_update_inst.elapsed();
                     if time_since_last_frame >= target_frametime {
                         window.request_redraw();

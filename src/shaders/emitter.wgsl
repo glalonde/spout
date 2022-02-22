@@ -9,7 +9,8 @@ let PI: f32 = 3.14159265358979323846;
 struct EmitterMotion {
     position_start: vec2<f32>;
     position_end: vec2<f32>;
-    velocity: vec2<f32>;
+    velocity_start: vec2<f32>;
+    velocity_end: vec2<f32>;
     angle_start: f32;
     angle_end: f32;
 };
@@ -63,8 +64,9 @@ fn rotate2d(a: f32) -> mat2x2<f32> {
     return mat2x2<f32>(c,s,-s,c);
 }
 
+// "progress" in terms of number of emitted particles, the interval [0, num_emitted).
+// Distinct from global_id, which is index in the 'circular' buffer of particles.
 fn get_emit_index(global_id: u32, total_particles: u32) -> u32 {
-    // "progress" in terms of number of emitted particles, the interval [0, num_emitted).
     var signed_emit_index = i32(global_id) - i32(emit_data.start_index);
     var emit_index: u32;
     if (signed_emit_index < 0) {
@@ -74,6 +76,12 @@ fn get_emit_index(global_id: u32, total_particles: u32) -> u32 {
         emit_index = u32(signed_emit_index);
     }
     return emit_index;
+}
+
+// The x shape of the wing
+fn nozzle_shape(interp: f32) -> vec2<f32> {
+  let rocket_width: f32 = 10.0;
+  return vec2<f32>(0.0, mix(-rocket_width / 2.0, rocket_width / 2.0, interp));
 }
 
 @stage(compute) @workgroup_size(256)
@@ -87,40 +95,49 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>, @builtin(num_workgr
         return;
     } 
 
-
     let emit_p = f32(emit_index) / f32(emit_data.num_emitted);
+    let smooth_interp_time = emit_p * emit_data.dt + emit_data.time;
+    let rand1 = (hash11(10000.0*smooth_interp_time) - 0.5) * 2.0; 
 
-    let num_passes_per_iteration: u32 = 5u;
-    let emits_per_pass = u32(ceil(f32(emit_data.num_emitted) / f32(num_passes_per_iteration)));
+    let emits_per_pass = 11u;
+
+    let num_passes_per_iteration: u32 = u32(ceil(f32(emit_data.num_emitted) / f32(emits_per_pass)));
     
     // The 'time' interpolation because we're approximating a continous stream with discrete time processing.
-    let t_interp = f32(emit_index % emits_per_pass) / f32(emits_per_pass); 
+    // let t_interp = f32(emit_index) / f32(emit_data.num_emitted); 
 
+    let pass_index = emit_index / emits_per_pass; 
+    let pass_t_interp = f32(pass_index) / f32(num_passes_per_iteration);
+    let pass_time = pass_t_interp * emit_data.dt;
 
-    // let interp_time = t_interp * emit_data.dt + emit_data.time;
+    // Local position interpolation to approximate emitting over a line rather than a point.
+    let x_interp_step = 1.0 / f32(emits_per_pass - 1u);
+    let x_interp = f32(emit_index % emits_per_pass) / f32(emits_per_pass) + x_interp_step * rand1;
 
-    let smooth_interp_time = emit_p * emit_data.dt + emit_data.time;
-    let rand1 = (hash11(10000.0*smooth_interp_time) - .5) * 2.0; 
+    let interp_time = pass_time + emit_data.time;
 
-    let local_emit_angle: f32 = 0.0;
+    // Do all of the math as if the ship were at the origin oriented down the X axis, and then transform at the end.
+    let tentacle_frequency = 5.0;
+    let local_emit_angle = noise2d(vec2<f32>(x_interp * tentacle_frequency, interp_time)) - .5;
     let unit_emit_rotation = vec2<f32>(cos(local_emit_angle), sin(local_emit_angle)); 
 
-    let speed_noise_magnitude = 0.1;
-    let speed_noise = rand1 * speed_noise_magnitude; 
-    let local_emit_speed = mix(emit_data.nozzle.speed_min, emit_data.nozzle.speed_max, .5 + speed_noise);
+    // let speed_noise_magnitude = 0.0;
+    // let speed_noise = rand1 * speed_noise_magnitude; 
+    let local_emit_speed = mix(emit_data.nozzle.speed_min, emit_data.nozzle.speed_max, 0.5);
     let local_emit_velocity = unit_emit_rotation * local_emit_speed;
+
+    let local_emit_position = nozzle_shape(x_interp) + local_emit_velocity * (1.0 - pass_t_interp) * emit_data.dt;
 
 
     // Get the global frame of the ship. 
     let angle_delta = angle_difference(emit_data.motion.angle_end, emit_data.motion.angle_start); 
-    let ship_angle = mix(emit_data.motion.angle_start + angle_delta, emit_data.motion.angle_start, emit_p);
-    let ship_position = mix(emit_data.motion.position_end, emit_data.motion.position_start, emit_p); 
+    let ship_angle = mix(emit_data.motion.angle_start, emit_data.motion.angle_start + angle_delta, pass_t_interp);
+    let ship_position = mix(emit_data.motion.position_start, emit_data.motion.position_end, pass_t_interp); 
+    let ship_velocity = mix(emit_data.motion.velocity_start, emit_data.motion.velocity_end, pass_t_interp); 
 
     let local_rotate_global = rotate2d(ship_angle);
 
-    let center  = vec2<f32>(vec2<u32>(640u / 2u, 360u / 2u));
-
-    (*particle).position = ship_position; 
-    (*particle).velocity = local_rotate_global * local_emit_velocity + emit_data.motion.velocity;
+    (*particle).position = ship_position + local_rotate_global * local_emit_position; 
+    (*particle).velocity = local_rotate_global * local_emit_velocity;
     (*particle).ttl = 3.0;//mix(emit_data.nozzle.ttl_min, emit_data.nozzle.ttl_max, .5); 
 }

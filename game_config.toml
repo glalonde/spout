@@ -1,21 +1,22 @@
 # Viewport size is the shape of the view into the game world in game units (not necessarily the size of the window/canvas)
-viewport_width = 640 
-viewport_height = 360
-level_width = 640
+viewport_width = 480 
+viewport_height = 270
+level_width = 480
 level_height = 960
 fps = 60.0
 music_starts_on = true 
 enable_glow_pass = true 
 render_ship = false 
+color_map = 1
 
 [particle_system_params]
-emission_rate = 100000
+emission_rate = 1000000
 max_particle_life = 3.0
 damage_rate = 0.1
-gravity = -2.0
-elasticity = 0.5
+gravity = -0.0
+elasticity = 1.0
 
 [ship_params]
-acceleration = 100.0
-rotation_rate = 15.0
+acceleration = 10.0
+rotation_rate = 10.0
 max_speed = 1000.0

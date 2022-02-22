@@ -12,6 +12,7 @@ pub struct GameParams {
     pub music_starts_on: bool,
     pub enable_glow_pass: bool,
     pub render_ship: bool,
+    pub color_map: i32,
 
     #[serde(default)]
     pub particle_system_params: ParticleSystemParams,
@@ -77,6 +78,7 @@ impl Default for GameParams {
             music_starts_on: false,
             enable_glow_pass: true,
             render_ship: false,
+            color_map: 0,
             particle_system_params: ParticleSystemParams::default(),
             ship_params: ShipParams::default(),
         }
@@ -113,6 +115,7 @@ mod tests {
             music_starts_on: false,
             enable_glow_pass: false,
             render_ship: true,
+            color_map: 0,
             particle_system_params: ParticleSystemParams::default(),
             ship_params: ShipParams::default(),
         };

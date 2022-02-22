@@ -154,7 +154,8 @@ impl Spout {
             Some(particles::EmitterMotion {
                 position_start: start_emitter.0,
                 position_end: end_emitter.0,
-                velocity: current_ship.velocity,
+                velocity_start: prev_ship.velocity,
+                velocity_end: current_ship.velocity,
                 angle_start: start_emitter.1,
                 angle_end: end_emitter.1,
             })
@@ -428,6 +429,7 @@ impl framework::Example for Spout {
             .render(&self.game_view_texture, &mut encoder);
 
         // Render ship
+        /*
         self.ship_renderer.render(
             &self.state.ship_state,
             &self.game_params,
@@ -436,6 +438,7 @@ impl framework::Example for Spout {
             &self.game_view_texture,
             &mut encoder,
         );
+        */
 
         // Run render the game view quad.
         self.renderer.render(view, device, &mut encoder);

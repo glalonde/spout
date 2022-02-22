@@ -43,7 +43,8 @@ pub struct EmitterMotion {
     // Boundary values for the emitter base
     pub position_start: [f32; 2],
     pub position_end: [f32; 2],
-    pub velocity: [f32; 2],
+    pub velocity_start: [f32; 2],
+    pub velocity_end: [f32; 2],
     pub angle_start: f32,
     pub angle_end: f32,
 }
@@ -52,7 +53,8 @@ impl Default for EmitterMotion {
         EmitterMotion {
             position_start: [0.0, 0.0],
             position_end: [0.0, 0.0],
-            velocity: [0.0, 0.0],
+            velocity_start: [0.0, 0.0],
+            velocity_end: [0.0, 0.0],
             angle_start: 0.0,
             angle_end: 0.0,
         }
@@ -75,8 +77,8 @@ pub struct NozzleParams {
 impl Default for NozzleParams {
     fn default() -> Self {
         NozzleParams {
-            speed_min: 10.0,
-            speed_max: 100.0,
+            speed_min: 150.0,
+            speed_max: 300.0,
             angle_spread: 0.0,
             ttl_min: 0.0,
             ttl_max: 0.0,
@@ -287,7 +289,9 @@ impl Emitter {
                 cpass.set_pipeline(&self.compute_pipeline);
                 cpass.set_bind_group(0, &self.compute_bind_group, &[]);
                 log::info!(
-                    "Emitter dispatching {} work groups, emit angle: {}, {}",
+                    "TIME {}, DT: {}, Emitter dispatching {} work groups, emit angle: {}, {}",
+                    emit_params.time,
+                    emit_params.dt,
                     self.compute_work_groups,
                     emit_params.motion.angle_start,
                     emit_params.motion.angle_end
@@ -746,7 +750,7 @@ impl ParticleRenderer {
         let cm_texture = crate::color_maps::create_color_map(
             256,
             device,
-            super::color_maps::get_color_map_from_index(0),
+            super::color_maps::get_color_map_from_index(game_params.color_map as _),
             init_encoder,
         );
 

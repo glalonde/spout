@@ -5,6 +5,7 @@
 - [x] ship position rendering 
 - [x] ship motion
 - [ ] ship collision detection 
+- [x] interesting nozzle spray pattern
 - [ ] text rendering
 - [x] terrain collision capabilities
 - [ ] resolution selection
@@ -12,6 +13,7 @@
 - [x] set fullscreen 
 - [ ] show score 
 - [x] pausing 
+- [ ] pausing particle travel bug.
 - [ ] music
 - [ ] Game over screen 
 ---

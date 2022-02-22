@@ -45,8 +45,7 @@ var color_map: texture_2d<f32>;
 @group(0) @binding(3)
 var color_map_sampler: sampler;
 
-
-let MAX_DENSITY_VALUE: u32 = 10u;
+let MAX_DENSITY_VALUE: u32 = 100u;
 
 fn get_cell(tex_coord: vec2<f32>) -> u32 {
     let cell_f: vec2<f32> = tex_coord * vec2<f32>(f32(view_data.width), f32(view_data.height));
@@ -56,15 +55,18 @@ fn get_cell(tex_coord: vec2<f32>) -> u32 {
 // Returns the color map texture coordinate 
 fn read_unsigned(tex_coord: vec2<f32>) -> f32 {
   let count = get_cell(tex_coord);
-  return f32(count) / f32(MAX_DENSITY_VALUE);
+  return f32(count);
+}
+
+// Sigmoid to give an asymptotic approach to the maximum color.
+fn sigmoid(x: f32) -> f32 {
+  return x / sqrt(1.0 + x * x);
 }
 
 @stage(fragment)
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    let count = read_unsigned(in.tex_coord);
-    let sample = textureSample(color_map, color_map_sampler, vec2<f32>(count, 0.0));
-    if (count <= 0.0) {
-        return vec4<f32>(0.0, 0.0, 0.0, 0.0);
-    }
-    return sample;
+  let count = read_unsigned(in.tex_coord);
+  let rescaled = sigmoid(1.0 / f32(MAX_DENSITY_VALUE) * count);
+  let sample = textureSample(color_map, color_map_sampler, vec2<f32>(rescaled, 0.0));
+  return vec4<f32>(sample.xyz, count);
 }
