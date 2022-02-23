@@ -110,8 +110,15 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>, @builtin(num_workgr
     return;
   } 
 
+  // To get smooth positioning between iterations, some newly emitted particles will have less than the uniform time delta.
+  var dt = uniforms.dt;
+  if ((*particle).local_dt >= 0.0) {
+    dt = (*particle).local_dt;
+    (*particle).local_dt = -1.0;
+  }
+
   // TODO collisions 
-  let signed_delta = (*particle).velocity * uniforms.dt;
+  let signed_delta = (*particle).velocity * dt;
   let end_pos = (*particle).position + signed_delta;
 
   var delta = abs(signed_delta);
@@ -166,12 +173,12 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>, @builtin(num_workgr
     }
     num_cells -= 1;
   }
-  vel_out.y += uniforms.gravity;
+  vel_out.y += uniforms.gravity * dt;
 
   let global_output_pos = vec2<f32>(terrain_buffer_to_global(terrain_cell)) + end_remainder;
   (*particle).position = global_output_pos;
   (*particle).velocity = vel_out;
-  (*particle).ttl = (*particle).ttl - uniforms.dt;
+  (*particle).ttl = (*particle).ttl - dt;
 
   // Draw particle to density buffer.
   increment_cell(vec2<i32>(global_output_pos));

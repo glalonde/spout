@@ -24,6 +24,7 @@ pub struct GameParams {
 #[derive(Debug, Serialize, Deserialize, Clone, Copy)]
 pub struct ParticleSystemParams {
     pub emission_rate: f32,
+    pub emission_speed: f32,
     pub max_particle_life: f32,
     pub damage_rate: f32,
     pub gravity: f32,
@@ -34,6 +35,7 @@ impl Default for ParticleSystemParams {
     fn default() -> Self {
         ParticleSystemParams {
             emission_rate: 100000.0,
+            emission_speed: 500.0,
             max_particle_life: 2.0,
             damage_rate: 0.00001,
             gravity: -5.0,

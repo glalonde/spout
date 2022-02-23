@@ -11,12 +11,13 @@ color_map = 0
 
 [particle_system_params]
 emission_rate = 1000000
-max_particle_life = 1.0
-damage_rate = 0.1
-gravity = -1.0
+emission_speed = 300.0 
+max_particle_life = 3.0
+damage_rate = 0.01
+gravity = -200.0
 elasticity = 0.5
 
 [ship_params]
 acceleration = 100.0
 rotation_rate = 10.0
-max_speed = 300.0
+max_speed = 600.0

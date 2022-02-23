@@ -3,5 +3,5 @@ struct Particle {
   position: vec2<f32>;
   velocity: vec2<f32>;
   ttl: f32;
-  _padding: u32;
+  local_dt: f32;
 };

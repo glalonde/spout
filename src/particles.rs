@@ -134,7 +134,10 @@ impl Emitter {
         }
     }
 
-    pub fn new(device: &wgpu::Device, emission_frequency: f32, max_particle_life: f32) -> Self {
+    pub fn new(device: &wgpu::Device, game_params: &crate::game_params::GameParams) -> Self {
+        let emission_frequency = game_params.particle_system_params.emission_rate;
+        let max_particle_life = game_params.particle_system_params.max_particle_life;
+
         let max_num_particles = (emission_frequency * max_particle_life).ceil() as u32;
         log::info!("Num particles: {}", max_num_particles);
         let particle_buffer = Emitter::create_particle_buffer(device, max_num_particles);
@@ -226,7 +229,13 @@ impl Emitter {
             params: EmitterParams {
                 num_particles: max_num_particles,
                 emit_period: 1.0 / emission_frequency,
-                nozzle: NozzleParams::default(),
+                nozzle: NozzleParams {
+                    speed_min: game_params.particle_system_params.emission_speed,
+                    speed_max: game_params.particle_system_params.emission_speed,
+                    ttl_min: game_params.particle_system_params.max_particle_life,
+                    ttl_max: game_params.particle_system_params.max_particle_life,
+                    ..Default::default()
+                },
             },
             time: 0.0,
             dt: 0.0,
@@ -245,6 +254,7 @@ impl Emitter {
 
     pub fn emit_for_period(&mut self, dt: f32, emitter_motion: EmitterMotion) {
         // Update the emitter state and prepare all the necessary inputs to run compute, but don't actually run the compute yet.
+        let start_time = self.time;
         self.time += dt;
         self.dt = dt;
         self.emit_progress += dt;
@@ -255,7 +265,7 @@ impl Emitter {
             self.emit_params = Some(EmitParams {
                 start_index: self.write_index,
                 num_emitted,
-                time: self.time,
+                time: start_time,
                 dt,
                 motion: emitter_motion,
                 nozzle: self.params.nozzle,
@@ -609,11 +619,7 @@ impl ParticleSystem {
             "Density buffer",
         );
 
-        let emitter = Emitter::new(
-            device,
-            game_params.particle_system_params.emission_rate,
-            game_params.particle_system_params.max_particle_life,
-        );
+        let emitter = Emitter::new(device, &game_params);
 
         let staging_belt = wgpu::util::StagingBelt::new(uniform_buffer.size);
         let renderer = ParticleRenderer::init(device, game_params, &density_buffer, init_encoder);

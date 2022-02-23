@@ -325,6 +325,9 @@ fn start<E: Example>(
                     last_frame_inst = Instant::now();
                     frame_count += 1;
                     if frame_count == 100 {
+                        // Fake frame drops
+                        // let ten_millis = std::time::Duration::from_millis(100);
+                        // std::thread::sleep(ten_millis);
                         log::info!(
                             "Avg frame time {}ms",
                             accum_time * 1000.0 / frame_count as f32

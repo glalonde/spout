@@ -213,6 +213,7 @@ pub struct LevelManager {
     // Static params
     pub level_width: u32,
     pub level_height: u32,
+    #[allow(dead_code)]
     stripe_level: Vec<i32>,
     pub active_interval_height: u32,
     pub active_extent_below_viewport: u32,

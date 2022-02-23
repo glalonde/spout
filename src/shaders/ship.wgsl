@@ -2,10 +2,10 @@ struct VertexOutput {
     @builtin(position) position: vec4<f32>;
 };
 
-var<private> ship_vertices: array<vec2<f32>, 4> = array<vec2<f32>, 4>(vec2<f32>(-10.0, 5.0),
+var<private> ship_vertices: array<vec2<f32>, 4> = array<vec2<f32>, 4>(vec2<f32>(-10.0, 6.0),
     vec2<f32>(0.0, 0.0),
     vec2<f32>(-10.0, 0.0),
-    vec2<f32>(-10.0, -5.0));
+    vec2<f32>(-10.0, -6.0));
 
 
 struct Uniforms {

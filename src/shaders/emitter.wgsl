@@ -97,7 +97,9 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>, @builtin(num_workgr
 
     let emit_p = f32(emit_index) / f32(emit_data.num_emitted);
     let smooth_interp_time = emit_p * emit_data.dt + emit_data.time;
-    let rand1 = (hash11(10000.0*smooth_interp_time) - 0.5) * 2.0; 
+
+    // Rand number in interval [0, 1]
+    let rand1 = hash11(10000.0*smooth_interp_time); 
 
     let emits_per_pass = 11u;
 
@@ -126,7 +128,8 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>, @builtin(num_workgr
     let local_emit_speed = mix(emit_data.nozzle.speed_min, emit_data.nozzle.speed_max, 0.5);
     let local_emit_velocity = unit_emit_rotation * local_emit_speed;
 
-    let local_emit_position = nozzle_shape(x_interp) + local_emit_velocity * (1.0 - pass_t_interp) * emit_data.dt;
+    // The delta from iteration start to when this particle was emitted.
+    let local_emit_position = nozzle_shape(x_interp);
 
 
     // Get the global frame of the ship. 
@@ -139,5 +142,6 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>, @builtin(num_workgr
 
     (*particle).position = ship_position + local_rotate_global * local_emit_position; 
     (*particle).velocity = local_rotate_global * local_emit_velocity;
-    (*particle).ttl = 3.0;//mix(emit_data.nozzle.ttl_min, emit_data.nozzle.ttl_max, .5); 
+    (*particle).ttl = mix(emit_data.nozzle.ttl_min, emit_data.nozzle.ttl_max, .5); 
+    (*particle).local_dt = emit_data.dt - pass_time;
 }

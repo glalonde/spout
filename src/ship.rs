@@ -1,7 +1,4 @@
-use crate::{
-    buffer_util::{self, SizedBuffer},
-    game_params,
-};
+use crate::{buffer_util::SizedBuffer, game_params};
 
 #[repr(i8)]
 #[derive(Copy, Clone)]
@@ -56,7 +53,8 @@ impl ShipState {
             self.velocity[1] += dt * self.acceleration * self.orientation.sin();
         }
         {
-            let speed = (self.velocity[0] * self.velocity[0] + self.velocity[1] * self.velocity[1]).sqrt();
+            let speed =
+                (self.velocity[0] * self.velocity[0] + self.velocity[1] * self.velocity[1]).sqrt();
             let speed_ratio = speed / self.max_speed;
             if speed_ratio > 1.0 {
                 self.velocity[0] /= speed_ratio;

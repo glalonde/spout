@@ -266,8 +266,8 @@ impl framework::Example for Spout {
             ship_state: ship::ShipState::init(
                 &game_params.ship_params,
                 [
-                    (game_params.viewport_width / 2) as f32,
-                    (game_params.viewport_height / 2) as f32,
+                    (game_params.viewport_width / 2) as f32 + 0.5,
+                    (game_params.viewport_height / 2) as f32 + 0.5,
                 ],
             ),
             ..Default::default()
