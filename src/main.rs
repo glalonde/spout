@@ -263,7 +263,13 @@ impl framework::Example for Spout {
         window.set_cursor_visible(false);
         let game_params = game_params::get_game_config_from_default_file();
         let game_state = GameState {
-            ship_state: ship::ShipState::init(&game_params.ship_params, [320.0, 180.0]),
+            ship_state: ship::ShipState::init(
+                &game_params.ship_params,
+                [
+                    (game_params.viewport_width / 2) as f32,
+                    (game_params.viewport_height / 2) as f32,
+                ],
+            ),
             ..Default::default()
         };
 
@@ -429,16 +435,16 @@ impl framework::Example for Spout {
             .render(&self.game_view_texture, &mut encoder);
 
         // Render ship
-        /*
-        self.ship_renderer.render(
-            &self.state.ship_state,
-            &self.game_params,
-            self.state.viewport_offset,
-            device,
-            &self.game_view_texture,
-            &mut encoder,
-        );
-        */
+        if self.game_params.render_ship {
+            self.ship_renderer.render(
+                &self.state.ship_state,
+                &self.game_params,
+                self.state.viewport_offset,
+                device,
+                &self.game_view_texture,
+                &mut encoder,
+            );
+        }
 
         // Run render the game view quad.
         self.renderer.render(view, device, &mut encoder);

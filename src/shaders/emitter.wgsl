@@ -80,7 +80,7 @@ fn get_emit_index(global_id: u32, total_particles: u32) -> u32 {
 
 // The x shape of the wing
 fn nozzle_shape(interp: f32) -> vec2<f32> {
-  let rocket_width: f32 = 10.0;
+  let rocket_width: f32 = 8.0;
   return vec2<f32>(0.0, mix(-rocket_width / 2.0, rocket_width / 2.0, interp));
 }
 
@@ -117,7 +117,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>, @builtin(num_workgr
     let interp_time = pass_time + emit_data.time;
 
     // Do all of the math as if the ship were at the origin oriented down the X axis, and then transform at the end.
-    let tentacle_frequency = 5.0;
+    let tentacle_frequency = 25.0;
     let local_emit_angle = noise2d(vec2<f32>(x_interp * tentacle_frequency, interp_time)) - .5;
     let unit_emit_rotation = vec2<f32>(cos(local_emit_angle), sin(local_emit_angle)); 
 

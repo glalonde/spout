@@ -68,5 +68,5 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
   let count = read_unsigned(in.tex_coord);
   let rescaled = sigmoid(1.0 / f32(MAX_DENSITY_VALUE) * count);
   let sample = textureSample(color_map, color_map_sampler, vec2<f32>(rescaled, 0.0));
-  return vec4<f32>(sample.xyz, count);
+  return vec4<f32>(sample.xyz, rescaled);
 }

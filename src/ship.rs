@@ -69,7 +69,7 @@ impl ShipState {
     }
 
     pub fn get_emitter_state(&self) -> ([f32; 2], f32) {
-        let emitter_offset = 0.0;
+        let emitter_offset = 8.0;
         let emitter_orientation = self.orientation + std::f32::consts::PI;
         let (mut y, mut x) = emitter_orientation.sin_cos();
         x = x * emitter_offset + self.position[0];

@@ -148,7 +148,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>, @builtin(num_workgr
         terrain_cell.x -= step.x;
         step.x *= -1;
         vel_out.x = -(vel_out.x * uniforms.elasticity);
-        end_remainder.y = 1.0 - end_remainder.y;
+        end_remainder.x = 1.0 - end_remainder.x;
       }
     } else {
       // Vertical step
@@ -161,7 +161,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>, @builtin(num_workgr
         terrain_cell.y -= step.y;
         step.y *= -1;
         vel_out.y = -(vel_out.y * uniforms.elasticity);
-        end_remainder.x = 1.0 - end_remainder.x;
+        end_remainder.y = 1.0 - end_remainder.y;
       }
     }
     num_cells -= 1;

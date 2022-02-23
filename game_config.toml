@@ -6,17 +6,17 @@ level_height = 960
 fps = 60.0
 music_starts_on = true 
 enable_glow_pass = true 
-render_ship = false 
-color_map = 1
+render_ship = true 
+color_map = 0
 
 [particle_system_params]
 emission_rate = 1000000
-max_particle_life = 3.0
+max_particle_life = 1.0
 damage_rate = 0.1
-gravity = -0.0
-elasticity = 1.0
+gravity = -1.0
+elasticity = 0.5
 
 [ship_params]
-acceleration = 10.0
+acceleration = 100.0
 rotation_rate = 10.0
-max_speed = 1000.0
+max_speed = 300.0
