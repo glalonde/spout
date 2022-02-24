@@ -13,7 +13,7 @@
 - [x] set fullscreen 
 - [ ] show score 
 - [x] pausing 
-- [ ] pausing particle travel bug.
+- [x] pausing particle travel bug.
 - [ ] music
 - [ ] Game over screen 
 ---
