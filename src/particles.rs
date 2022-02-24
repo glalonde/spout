@@ -95,7 +95,6 @@ pub struct EmitParams {
     pub dt: f32,
 
     pub motion: EmitterMotion,
-    pub _p0: u32,
     pub nozzle: NozzleParams,
 }
 
@@ -107,7 +106,6 @@ impl Default for EmitParams {
             time: 0.0,
             dt: 0.0,
             motion: EmitterMotion::default(),
-            _p0: 0,
             nozzle: NozzleParams::default(),
         }
     }
@@ -266,7 +264,6 @@ impl Emitter {
                 time: start_time,
                 dt,
                 motion: emitter_motion,
-                _p0: 0,
                 nozzle: self.params.nozzle,
             });
 
