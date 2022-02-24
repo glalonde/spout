@@ -147,33 +147,33 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>, @builtin(num_workgr
     if (error_vertical > -error_horizontal) {
       // Horizontal step
       error = error_horizontal;
-      terrain_cell.x += step.x;
+      terrain_cell.x = terrain_cell.x + step.x;
       // Check cell
       let bounce = !on_terrain_buffer(terrain_cell) || try_erode(terrain_cell, speed);
       if (bounce) {
         // Bounce horizontally
-        terrain_cell.x -= step.x;
-        step.x *= -1;
+        terrain_cell.x = terrain_cell.x - step.x;
+        step.x = -1 * step.x;
         vel_out.x = -(vel_out.x * uniforms.elasticity);
         end_remainder.x = 1.0 - end_remainder.x;
       }
     } else {
       // Vertical step
       error = error_vertical;
-      terrain_cell.y += step.y;
+      terrain_cell.y = terrain_cell.y + step.y;
       // Check cell
       let bounce = !on_terrain_buffer(terrain_cell) || try_erode(terrain_cell, speed);
       if (bounce) {
         // Bounce vertically 
-        terrain_cell.y -= step.y;
-        step.y *= -1;
+        terrain_cell.y = terrain_cell.y - step.y;
+        step.y = -1 * step.y;
         vel_out.y = -(vel_out.y * uniforms.elasticity);
         end_remainder.y = 1.0 - end_remainder.y;
       }
     }
-    num_cells -= 1;
+    num_cells = num_cells - 1;
   }
-  vel_out.y += uniforms.gravity * dt;
+  vel_out.y = vel_out.y + uniforms.gravity * dt;
 
   let global_output_pos = vec2<f32>(terrain_buffer_to_global(terrain_cell)) + end_remainder;
   (*particle).position = global_output_pos;

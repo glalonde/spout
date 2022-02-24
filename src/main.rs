@@ -158,6 +158,7 @@ impl Spout {
                 velocity_end: current_ship.velocity,
                 angle_start: start_emitter.1,
                 angle_end: end_emitter.1,
+                ..Default::default()
             })
         } else {
             None

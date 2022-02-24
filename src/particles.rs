@@ -47,6 +47,8 @@ pub struct EmitterMotion {
     pub velocity_end: [f32; 2],
     pub angle_start: f32,
     pub angle_end: f32,
+    pub _p0: u32,
+    pub _p1: u32,
 }
 impl Default for EmitterMotion {
     fn default() -> Self {
@@ -57,6 +59,8 @@ impl Default for EmitterMotion {
             velocity_end: [0.0, 0.0],
             angle_start: 0.0,
             angle_end: 0.0,
+            _p0: 0,
+            _p1: 0,
         }
     }
 }
@@ -67,24 +71,16 @@ pub struct NozzleParams {
     // Boundary values for the emitter base
     pub speed_min: f32,
     pub speed_max: f32,
-    pub angle_spread: f32,
     pub ttl_min: f32,
     pub ttl_max: f32,
-    pub _p0: u32,
-    pub _p1: u32,
-    pub _p2: u32,
 }
 impl Default for NozzleParams {
     fn default() -> Self {
         NozzleParams {
             speed_min: 150.0,
             speed_max: 300.0,
-            angle_spread: 0.0,
             ttl_min: 0.0,
             ttl_max: 0.0,
-            _p0: 0,
-            _p1: 0,
-            _p2: 0,
         }
     }
 }
@@ -99,6 +95,7 @@ pub struct EmitParams {
     pub dt: f32,
 
     pub motion: EmitterMotion,
+    pub _p0: u32,
     pub nozzle: NozzleParams,
 }
 
@@ -110,6 +107,7 @@ impl Default for EmitParams {
             time: 0.0,
             dt: 0.0,
             motion: EmitterMotion::default(),
+            _p0: 0,
             nozzle: NozzleParams::default(),
         }
     }
@@ -268,6 +266,7 @@ impl Emitter {
                 time: start_time,
                 dt,
                 motion: emitter_motion,
+                _p0: 0,
                 nozzle: self.params.nozzle,
             });
 

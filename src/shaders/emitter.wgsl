@@ -5,7 +5,8 @@
 
 let PI: f32 = 3.14159265358979323846;
 
-// Size 32, Alignment 8, no padding.
+// Size 40, Alignment 8, no padding.
+// Pad out to multiple of 16 bytes.
 struct EmitterMotion {
     position_start: vec2<f32>;
     position_end: vec2<f32>;
@@ -13,23 +14,19 @@ struct EmitterMotion {
     velocity_end: vec2<f32>;
     angle_start: f32;
     angle_end: f32;
+    _p0: u32;
+    _p1: u32;
 };
 
-// Size 20, Alignment 4, Padding to 32 bytes.
+// Size 16, Alignment 4
 struct NozzleParams {
     speed_min: f32;
     speed_max: f32;
-    angle_spread: f32;
     ttl_min: f32;
     ttl_max: f32;
-
-    // Pad out to multiple of 16 bytes. 
-    _p0: u32;
-    _p1: u32;
-    _p2: u32;
 };
 
-// Size 16 + 32 + 32 = 80
+// Size 16 + 40 + 4 + 32 = 84
 // Alignment 8 -> No padding.
 struct EmitData {
     start_index: u32;
