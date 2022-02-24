@@ -12,7 +12,12 @@ pub struct WIPRectangleLevel {
 }
 
 impl WIPRectangleLevel {
-    fn init(level_index: u32, level_width: u32, level_height: u32) -> Self {
+    fn init(
+        level_index: u32,
+        level_width: u32,
+        level_height: u32,
+        starting_terrain_health: i32,
+    ) -> Self {
         let level_num = level_index + 10;
         let max_dimension = std::cmp::max((level_width / level_num as u32) / 2, 1);
         let num_vacancies = (level_height as f64 * (level_num as f64).sqrt()).ceil() as u32;
@@ -21,7 +26,7 @@ impl WIPRectangleLevel {
         let max_dimension = std::cmp::min(max_dimension, std::cmp::min(level_width, level_height));
 
         // Start with a solid buffer
-        let data: Vec<i32> = vec![1000; (level_width * level_height) as usize];
+        let data: Vec<i32> = vec![starting_terrain_health; (level_width * level_height) as usize];
         WIPRectangleLevel {
             width: level_width,
             height: level_height,
@@ -80,6 +85,7 @@ pub fn make_stripe_level(width: u32, height: u32) -> Vec<i32> {
 pub struct LevelMaker {
     level_width: u32,
     level_height: u32,
+    starting_terrain_health: i32,
 
     // Finished levels, indexed by level index.
     levels: Vec<Vec<i32>>,
@@ -88,10 +94,11 @@ pub struct LevelMaker {
 }
 
 impl LevelMaker {
-    fn init(level_width: u32, level_height: u32) -> Self {
+    fn init(level_width: u32, level_height: u32, starting_terrain_health: i32) -> Self {
         LevelMaker {
             level_width,
             level_height,
+            starting_terrain_health,
             levels: vec![],
             wip_levels: std::collections::BTreeMap::new(),
         }
@@ -102,7 +109,12 @@ impl LevelMaker {
             if !self.wip_levels.contains_key(&level_index) {
                 self.wip_levels.insert(
                     level_index,
-                    WIPRectangleLevel::init(level_index, self.level_width, self.level_height),
+                    WIPRectangleLevel::init(
+                        level_index,
+                        self.level_width,
+                        self.level_height,
+                        self.starting_terrain_health,
+                    ),
                 );
             }
         }
@@ -337,7 +349,11 @@ impl LevelManager {
 
             unused_buffers: unused_buffers,
             staging_belt,
-            level_maker: LevelMaker::init(level_width, level_height),
+            level_maker: LevelMaker::init(
+                level_width,
+                level_height,
+                game_params.level_params.starting_terrain_health,
+            ),
             terrain_renderer: renderer,
         };
 

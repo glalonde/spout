@@ -52,7 +52,7 @@ fn get_cell(tex_coord: vec2<f32>) -> i32 {
 
 @stage(fragment)
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    let max_val = 1000;
+    let max_val = 10000;
     let val = get_cell(in.tex_coord);
     let p = f32(val) / f32(max_val);
     if (val <= 0) {

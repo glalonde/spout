@@ -19,6 +19,9 @@ pub struct GameParams {
 
     #[serde(default)]
     pub ship_params: ShipParams,
+
+    #[serde(default)]
+    pub level_params: LevelParams,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy)]
@@ -61,6 +64,19 @@ impl Default for ShipParams {
     }
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone, Copy)]
+pub struct LevelParams {
+    pub starting_terrain_health: i32,
+}
+
+impl Default for LevelParams {
+    fn default() -> Self {
+        LevelParams {
+            starting_terrain_health: 100000,
+        }
+    }
+}
+
 impl std::str::FromStr for GameParams {
     type Err = toml::de::Error;
     fn from_str(serialized: &str) -> Result<Self, Self::Err> {
@@ -83,6 +99,7 @@ impl Default for GameParams {
             color_map: 0,
             particle_system_params: ParticleSystemParams::default(),
             ship_params: ShipParams::default(),
+            level_params: LevelParams::default(),
         }
     }
 }
@@ -120,6 +137,7 @@ mod tests {
             color_map: 0,
             particle_system_params: ParticleSystemParams::default(),
             ship_params: ShipParams::default(),
+            level_params: LevelParams::default(),
         };
         let serialized = toml::to_string(&params).unwrap();
         println!("serialized = {}", serialized);
