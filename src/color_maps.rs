@@ -60,6 +60,7 @@ pub fn create_color_map(
             | wgpu::TextureUsages::COPY_DST
             | wgpu::TextureUsages::COPY_SRC,
         label: None,
+        view_formats: &[],
     });
 
     // Note: we could use queue.write_texture instead, and this is what other
@@ -74,7 +75,7 @@ pub fn create_color_map(
             buffer: &temp_buf,
             layout: wgpu::ImageDataLayout {
                 offset: 0,
-                bytes_per_row: Some(std::num::NonZeroU32::new(4 * size).unwrap()),
+                bytes_per_row: Some(4 * size),
                 rows_per_image: None,
             },
         },

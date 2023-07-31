@@ -215,9 +215,9 @@ impl Spout {
             Some(monitor) => {
                 for mode in monitor.video_modes() {
                     if let Some(best_mode) = &video_mode {
-                        if mode.refresh_rate() > best_mode.refresh_rate() {
+                        if mode.refresh_rate_millihertz() > best_mode.refresh_rate_millihertz() {
                             video_mode = Some(mode);
-                        } else if mode.refresh_rate() == best_mode.refresh_rate() {
+                        } else if mode.refresh_rate_millihertz() == best_mode.refresh_rate_millihertz() {
                             let best_area = best_mode.size().width * best_mode.size().height;
                             let current_area = mode.size().width * mode.size().height;
                             if best_area < current_area {
@@ -249,10 +249,10 @@ impl framework::Example for Spout {
         }
     }
 
-    fn get_default_screen_size() -> winit::dpi::LogicalSize<u32> {
-        let game_params = game_params::get_game_config_from_default_file();
-        winit::dpi::LogicalSize::new(game_params.viewport_width, game_params.viewport_height)
-    }
+    // fn get_default_screen_size() -> winit::dpi::LogicalSize<u32> {
+    //     let game_params = game_params::get_game_config_from_default_file();
+    //     winit::dpi::LogicalSize::new(game_params.viewport_width, game_params.viewport_height)
+    // }
 
     fn init(
         config: &wgpu::SurfaceConfiguration,
@@ -376,7 +376,7 @@ impl framework::Example for Spout {
         view: &wgpu::TextureView,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        spawner: &framework::Spawner,
+        _spawner: &framework::Spawner,
         window: &mut winit::window::Window,
     ) {
         {
@@ -452,10 +452,10 @@ impl framework::Example for Spout {
         self.level_manager.decompose_tiles(&mut encoder);
 
         queue.submit(Some(encoder.finish()));
-        self.ship_renderer.after_queue_submission(spawner);
-        self.particle_system.after_queue_submission(spawner);
-        self.renderer.after_queue_submission(spawner);
-        self.level_manager.after_queue_submission(spawner);
+        self.ship_renderer.after_queue_submission();
+        self.particle_system.after_queue_submission();
+        self.renderer.after_queue_submission();
+        self.level_manager.after_queue_submission();
 
         {
             // After rendering, do some "async" work:
@@ -480,6 +480,7 @@ fn make_texture(device: &wgpu::Device, width: u32, height: u32) -> wgpu::Texture
             format: wgpu::TextureFormat::Bgra8UnormSrgb,
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::RENDER_ATTACHMENT,
             label: None,
+            view_formats: &[],
         })
         .create_view(&wgpu::TextureViewDescriptor::default())
 }

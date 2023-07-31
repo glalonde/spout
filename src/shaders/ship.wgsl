@@ -1,5 +1,5 @@
 struct VertexOutput {
-    @builtin(position) position: vec4<f32>;
+    @builtin(position) position: vec4<f32>,
 };
 
 var<private> ship_vertices: array<vec2<f32>, 4> = array<vec2<f32>, 4>(vec2<f32>(-10.0, 6.0),
@@ -9,12 +9,12 @@ var<private> ship_vertices: array<vec2<f32>, 4> = array<vec2<f32>, 4>(vec2<f32>(
 
 
 struct Uniforms {
-    position: vec2<f32>;
-    orientation: f32;
+    position: vec2<f32>,
+    orientation: f32,
 
-    viewport_width: u32;
-    viewport_height: u32;
-    viewport_offset: i32;
+    viewport_width: u32,
+    viewport_height: u32,
+    viewport_offset: i32,
 };
 @group(0) @binding(0)
 var<uniform> uniforms: Uniforms;
@@ -28,7 +28,7 @@ fn rotate2d(orientation: f32) -> mat2x2<f32> {
                        vec2<f32>(-sin(orientation),cos(orientation)));
 }
 
-@stage(vertex)
+@vertex
 fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
     let rot = rotate2d(uniforms.orientation);
     let world_pos = rot * ship_vertices[vertex_index] + uniforms.position;
@@ -38,7 +38,7 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
     return out;
 }
 
-@stage(fragment)
+@fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     return vec4<f32>(1.0, 0.0, 1.0, 1.0);
 }

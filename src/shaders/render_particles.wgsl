@@ -1,6 +1,6 @@
 struct VertexOutput {
-    @builtin(position) position: vec4<f32>;
-    @location(0) tex_coord: vec2<f32>;
+    @builtin(position) position: vec4<f32>,
+    @location(0) tex_coord: vec2<f32>,
 };
 
 // This maps a texture onto a quad such that the 0,0 cell of the texture is at the top left corner of the quad, and when rendered, will end up back at 0,0 in the output buffer.
@@ -19,7 +19,7 @@ var<private> tex_coord: array<vec2<f32>, 4> = array<vec2<f32>, 4>(vec2<f32>(0.0,
                                       vec2<f32>(1.0, 1.0),
                                       vec2<f32>(1.0, 0.0));
 
-@stage(vertex)
+@vertex
 fn vs_main(@builtin(vertex_index) vertex_index: u32,) -> VertexOutput {
     let pos2d = vertex_positions[vertex_index];
 
@@ -30,8 +30,8 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32,) -> VertexOutput {
 }
 
 struct ViewData {
-    width: u32;
-    height: u32;
+    width: u32,
+    height: u32,
 };
 @group(0) @binding(0)
 var<uniform> view_data: ViewData;
@@ -45,7 +45,7 @@ var color_map: texture_2d<f32>;
 @group(0) @binding(3)
 var color_map_sampler: sampler;
 
-let MAX_DENSITY_VALUE: u32 = 100u;
+const MAX_DENSITY_VALUE: u32 = 100u;
 
 fn get_cell(tex_coord: vec2<f32>) -> u32 {
     let cell_f: vec2<f32> = tex_coord * vec2<f32>(f32(view_data.width), f32(view_data.height));
@@ -63,7 +63,7 @@ fn sigmoid(x: f32) -> f32 {
   return x / sqrt(1.0 + x * x);
 }
 
-@stage(fragment)
+@fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
   let count = read_unsigned(in.tex_coord);
   let rescaled = sigmoid(1.0 / f32(MAX_DENSITY_VALUE) * count);

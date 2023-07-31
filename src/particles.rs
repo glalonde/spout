@@ -156,7 +156,7 @@ impl Emitter {
         );
 
         // Loads the shader from WGSL
-        let cs_module = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
+        let cs_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Emitter shader module"),
             source: wgpu::ShaderSource::Wgsl(crate::include_shader!("emitter.wgsl")),
         });
@@ -302,7 +302,7 @@ impl Emitter {
                     emit_params.motion.angle_start,
                     emit_params.motion.angle_end
                 );
-                cpass.dispatch(self.compute_work_groups, 1, 1);
+                cpass.dispatch_workgroups(self.compute_work_groups, 1, 1);
             }
 
             // Reset emit, since we processed the compute part.
@@ -310,9 +310,8 @@ impl Emitter {
         }
     }
 
-    pub fn after_queue_submission(&mut self, spawner: &crate::framework::Spawner) {
-        let belt_future = self.staging_belt.recall();
-        spawner.spawn_local(belt_future);
+    pub fn after_queue_submission(&mut self) {
+        self.staging_belt.recall();
     }
 }
 
@@ -464,7 +463,7 @@ impl ParticleSystem {
             });
 
         // Loads the shader from WGSL
-        let cs_module = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
+        let cs_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Particle system shader module"),
             source: wgpu::ShaderSource::Wgsl(crate::include_shader!("particles.wgsl")),
         });
@@ -552,7 +551,7 @@ impl ParticleSystem {
             });
 
         // Loads the shader from WGSL
-        let cs_module = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
+        let cs_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Clear density buffer shader module"),
             source: wgpu::ShaderSource::Wgsl(crate::include_shader!("clear_density_buffer.wgsl")),
         });
@@ -672,7 +671,7 @@ impl ParticleSystem {
             });
             cpass.set_pipeline(&self.clear_pipeline);
             cpass.set_bind_group(0, &self.clear_bind_group, &[]);
-            cpass.dispatch(self.clear_work_groups, 1, 1);
+            cpass.dispatch_workgroups(self.clear_work_groups, 1, 1);
         }
         {
             // Consolidate terrain buffers?
@@ -705,7 +704,7 @@ impl ParticleSystem {
             cpass.set_pipeline(&self.update_particles_pipeline);
             cpass.set_bind_group(0, &self.update_particles_bind_group, &[]);
 
-            cpass.dispatch(self.update_particles_work_groups, 1, 1);
+            cpass.dispatch_workgroups(self.update_particles_work_groups, 1, 1);
         }
     }
 
@@ -717,11 +716,9 @@ impl ParticleSystem {
         self.renderer.render(encoder, game_view_texture);
     }
 
-    pub fn after_queue_submission(&mut self, spawner: &crate::framework::Spawner) {
-        self.emitter.after_queue_submission(spawner);
-
-        let belt_future = self.staging_belt.recall();
-        spawner.spawn_local(belt_future);
+    pub fn after_queue_submission(&mut self) {
+        self.emitter.after_queue_submission();
+        self.staging_belt.recall();
     }
 }
 
@@ -744,7 +741,7 @@ impl ParticleRenderer {
         density_buffer: &SizedBuffer,
         init_encoder: &mut wgpu::CommandEncoder,
     ) -> Self {
-        let shader_module = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
+        let shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: None,
             source: wgpu::ShaderSource::Wgsl(crate::include_shader!("render_particles.wgsl")),
         });
@@ -872,11 +869,11 @@ impl ParticleRenderer {
             fragment: Some(wgpu::FragmentState {
                 module: &shader_module,
                 entry_point: "fs_main",
-                targets: &[wgpu::ColorTargetState {
+                targets: &[Some(wgpu::ColorTargetState {
                     format: wgpu::TextureFormat::Bgra8UnormSrgb,
                     blend: Some(wgpu::BlendState::ALPHA_BLENDING),
                     write_mask: wgpu::ColorWrites::all(),
-                }],
+                })],
             }),
             primitive: wgpu::PrimitiveState {
                 topology: wgpu::PrimitiveTopology::TriangleStrip,
@@ -901,14 +898,14 @@ impl ParticleRenderer {
 
         let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: None,
-            color_attachments: &[wgpu::RenderPassColorAttachment {
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                 view: output_texture_view,
                 resolve_target: None,
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Load,
                     store: true,
                 },
-            }],
+            })],
             depth_stencil_attachment: None,
         });
         rpass.set_pipeline(&self.render_pipeline);

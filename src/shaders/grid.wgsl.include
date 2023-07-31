@@ -16,16 +16,16 @@
 // Some of these should be specialization constants...
 // but WebGPU doesn't support that yet, so until then, either just real
 // constants or codegen could probably do it.
-let kInnerGridBits: u32 = {{ inner_grid_bits }}u;
-let kOuterGridBits: u32 = {{ outer_grid_bits }}u;
-let kOuterGridSize: i32 = {{ outer_grid_size }};
-let kHalfOuterGridSize: i32 = {{ half_outer_grid_size }};
-let kGridAnchor: i32 = {{ grid_anchor }};
+const kInnerGridBits: u32 = {{ inner_grid_bits }}u;
+const kOuterGridBits: u32 = {{ outer_grid_bits }}u;
+const kOuterGridSize: i32 = {{ outer_grid_size }};
+const kHalfOuterGridSize: i32 = {{ half_outer_grid_size }};
+const kGridAnchor: i32 = {{ grid_anchor }};
 
-let kGridAnchorAbsolute: u32 = {{ grid_anchor_absolute }}u;
-let kHighResMask: u32 = {{ high_res_mask }}u;
-let kInnerGridSize: i32 = {{ inner_grid_size }};
-let kHalfInnerGridSize: i32 = {{ half_inner_grid_size }};
+const kGridAnchorAbsolute: u32 = {{ grid_anchor_absolute }}u;
+const kHighResMask: u32 = {{ high_res_mask }}u;
+const kInnerGridSize: i32 = {{ inner_grid_size }};
+const kHalfInnerGridSize: i32 = {{ half_inner_grid_size }};
 
 // Get the "visible" position.
 fn GetOuterGrid(pos: vec2<u32>) -> vec2<i32> {

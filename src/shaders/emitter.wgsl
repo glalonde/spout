@@ -3,39 +3,39 @@
 {% include "hash.wgsl.include" %}
 {% include "noise.wgsl.include" %}
 
-let PI: f32 = 3.14159265358979323846;
+const PI: f32 = 3.14159265358979323846;
 
 // Size 40, Alignment 8, no padding.
 // Pad out to multiple of 16 bytes.
 struct EmitterMotion {
-    position_start: vec2<f32>;
-    position_end: vec2<f32>;
-    velocity_start: vec2<f32>;
-    velocity_end: vec2<f32>;
-    angle_start: f32;
-    angle_end: f32;
-    _p0: u32;
-    _p1: u32;
+    position_start: vec2<f32>,
+    position_end: vec2<f32>,
+    velocity_start: vec2<f32>,
+    velocity_end: vec2<f32>,
+    angle_start: f32,
+    angle_end: f32,
+    _p0: u32,
+    _p1: u32,
 };
 
 // Size 16, Alignment 4
 struct NozzleParams {
-    speed_min: f32;
-    speed_max: f32;
-    ttl_min: f32;
-    ttl_max: f32;
+    speed_min: f32,
+    speed_max: f32,
+    ttl_min: f32,
+    ttl_max: f32,
 };
 
 // Size 16 + 40 + 4 + 32 = 84
 // Alignment 8 -> No padding.
 struct EmitData {
-    start_index: u32;
-    num_emitted: u32;
-    time: f32;
-    dt: f32;
+    start_index: u32,
+    num_emitted: u32,
+    time: f32,
+    dt: f32,
 
-    motion: EmitterMotion;
-    nozzle: NozzleParams;
+    motion: EmitterMotion,
+    nozzle: NozzleParams,
 };
 
 @group(0) @binding(0)
@@ -81,7 +81,7 @@ fn nozzle_shape(interp: f32) -> vec2<f32> {
   return vec2<f32>(0.0, mix(-rocket_width / 2.0, rocket_width / 2.0, interp));
 }
 
-@stage(compute) @workgroup_size(256)
+@compute @workgroup_size(256)
 fn main(@builtin(global_invocation_id) global_id: vec3<u32>, @builtin(num_workgroups) num_workgroups: vec3<u32>) {
     let total_particles = num_workgroups[0] * 256u;
     let gid = global_id[0];

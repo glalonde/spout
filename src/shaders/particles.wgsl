@@ -6,21 +6,21 @@
 
 // IN:
 struct UniformData {
-    dt: f32;
-    viewport_width: u32;
-    viewport_height: u32;
-    viewport_offset: i32;
+    dt: f32,
+    viewport_width: u32,
+    viewport_height: u32,
+    viewport_offset: i32,
 
     // level_width and viewport_width should be the same.
-    level_width: u32;
-    level_height: u32;
+    level_width: u32,
+    level_height: u32,
 
-    terrain_buffer_offset: i32;
-    terrain_buffer_height: u32;
+    terrain_buffer_offset: i32,
+    terrain_buffer_height: u32,
 
-    damage_rate: f32;
-    gravity: f32;
-    elasticity: f32;
+    damage_rate: f32,
+    gravity: f32,
+    elasticity: f32,
 };
 @group(0) @binding(0)
 var<uniform> uniforms: UniformData;
@@ -90,9 +90,9 @@ fn copysign(in: f32) -> i32 {
   }
 }
 
-let PI: f32 = 3.14159265358979323846;
+const PI: f32 = 3.14159265358979323846;
 
-@stage(compute) @workgroup_size(256)
+@compute @workgroup_size(256)
 fn main(@builtin(global_invocation_id) global_id: vec3<u32>, @builtin(num_workgroups) num_workgroups: vec3<u32>) {
   let total_particles = num_workgroups[0] * 256u;
   let gid = global_id[0];

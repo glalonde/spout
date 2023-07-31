@@ -97,7 +97,7 @@ impl Render {
         }];
 
         // Create the render pipeline
-        let shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: None,
             source: wgpu::ShaderSource::Wgsl(crate::include_shader!("textured_model.wgsl")),
         });
@@ -114,7 +114,7 @@ impl Render {
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
                 entry_point: "fs_main",
-                targets: &[config.format.into()],
+                targets: &[Some(config.format.into())],
             }),
             primitive: wgpu::PrimitiveState {
                 cull_mode: Some(wgpu::Face::Back),
@@ -212,14 +212,14 @@ impl Render {
             {
                 let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: None,
-                    color_attachments: &[wgpu::RenderPassColorAttachment {
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                         view,
                         resolve_target: None,
                         ops: wgpu::Operations {
                             load: wgpu::LoadOp::Clear(clear_color),
                             store: true,
                         },
-                    }],
+                    })],
                     depth_stencil_attachment: None,
                 });
                 rpass.set_pipeline(&self.draw_pipeline);
@@ -243,8 +243,7 @@ impl Render {
         self.frame_num += 1;
     }
 
-    pub fn after_queue_submission(&mut self, spawner: &crate::framework::Spawner) {
-        let belt_future = self.staging_belt.recall();
-        spawner.spawn_local(belt_future);
+    pub fn after_queue_submission(&mut self) {
+        self.staging_belt.recall();
     }
 }

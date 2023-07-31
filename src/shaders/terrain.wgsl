@@ -1,6 +1,6 @@
 struct VertexOutput {
-    @builtin(position) position: vec4<f32>;
-    @location(0) tex_coord: vec2<f32>;
+    @builtin(position) position: vec4<f32>,
+    @location(0) tex_coord: vec2<f32>,
 };
 
 // This maps a texture onto a quad such that the 0,0 cell of the texture is at the top left corner of the quad, and when rendered, will end up back at 0,0 in the output buffer.
@@ -19,7 +19,7 @@ var<private> tex_coord: array<vec2<f32>, 4> = array<vec2<f32>, 4>(vec2<f32>(0.0,
                                       vec2<f32>(1.0, 1.0),
                                       vec2<f32>(1.0, 0.0));
 
-@stage(vertex)
+@vertex
 fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
     let pos2d = vertex_positions[vertex_index];
 
@@ -30,16 +30,14 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
 }
 
 struct Uniforms {
-    viewport_width: u32;
-    viewport_height: u32;
-    viewport_offset: u32;
-    terrain_buffer_offset: u32;
+    viewport_width: u32,
+    viewport_height: u32,
+    viewport_offset: u32,
+    terrain_buffer_offset: u32,
 };
-@group(0) @binding(0)
-var<uniform> uniforms: Uniforms;
+@group(0) @binding(0) var<uniform> uniforms: Uniforms;
 
-@group(0) @binding(1)
-var<storage, read> terrain_buffer: array<i32>;
+@group(0) @binding(1) var<storage, read> terrain_buffer: array<i32>;
 
 fn get_cell(tex_coord: vec2<f32>) -> i32 {
   let cell = vec2<i32>(tex_coord * vec2<f32>(f32(uniforms.viewport_width), f32(uniforms.viewport_height)));
@@ -50,7 +48,7 @@ fn get_cell(tex_coord: vec2<f32>) -> i32 {
   return terrain_buffer[cell_offset];
 }
 
-@stage(fragment)
+@fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let max_val = 10000;
     let val = get_cell(in.tex_coord);
