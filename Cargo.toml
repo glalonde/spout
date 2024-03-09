@@ -9,51 +9,31 @@ resolver = "2"
 debug = true
 
 [features]
-default = []
 
 [dependencies]
-winit = { version = "0.28.6"}
+blade-macros = { git = "https://github.com/kvark/blade.git" }
+blade-graphics = { git = "https://github.com/kvark/blade.git" }
+egui-gizmo = "0.12"
+egui_plot = "0.23"
+egui-winit = "0.23"
+env_logger = "0.10"
+del-msh = "=0.1.25"                                                             # not following semver :(
+mint = { version = "0.5", features = ["serde"] }
+nanorand = { version = "0.7", default-features = false, features = ["wyrand"] }
+ron = "0.8"
+serde = { version = "1", features = ["serde_derive"] }
+base64 = "0.21"
+bitflags = "2"
+bytemuck = { version = "1", features = ["derive"] }
+choir = "0.7"
+egui = "0.23"
+glam = { version = "0.24", features = ["mint"] }
+gltf = { version = "1.1", default-features = false }
 log = "0.4"
-pollster = "0.2"
-scrub_log = "0.2"
-bytemuck = { version = "1.4", features = ["derive"] }
-async-executor = "1.0"
-rand = "0.7.2"
-cgmath = "0.18"
-anyhow = "1.0"
-serde = { version = "1.0", features = ["derive"] }
-toml = "0.5"
-instant = "0.1"
-int_grid = {path = "int_grid"}
-lazy_static = "1"
-scarlet = "1"
-image = "0.23"
-fastrand = "1.7"
-wgpu = { version = "0.17", features = ["webgl"]}
-
-
-[target.'cfg(target_arch = "wasm32")'.dependencies]
-instant = { version = "0.1", features = [ "stdweb" ] }
-console_error_panic_hook = "0.1.6"
-console_log = { version = "0.2", features = ["color"] }
-wasm-bindgen-futures = "0.4.20"
-wasm-bindgen = "0.2.78"
-web-sys = { version = "0.3.55", features = [
-    "Document",
-    "Window",
-    "Element",
-    "Location",
-]}
-js-sys = "0.3.50"
-
-
-[dev-dependencies]
-bytemuck = { version = "1.4", features = ["derive"] }
-
-[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
-async-executor = "1.0"
-pollster = "0.2"
-
-[build-dependencies]
-tera="1"
-int_grid = {path = "int_grid"}
+naga = { version = "0.14", features = ["wgsl-in", "span", "validate"] }
+profiling = "1"
+slab = "0.4"
+strum = { version = "0.25", features = ["derive"] }
+web-sys = "0.3.60"
+winit = "0.28"
+kira = "0.8.7"

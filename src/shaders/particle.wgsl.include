@@ -1,7 +1,0 @@
-// Size 8 + 8 + 4 + 4 = 24
-struct Particle {
-  position: vec2<f32>,
-  velocity: vec2<f32>,
-  ttl: f32,
-  local_dt: f32,
-};
