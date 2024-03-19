@@ -4,7 +4,11 @@ use blade_graphics as gpu;
 use bytemuck::{Pod, Zeroable};
 use kira::{
     manager::{backend::DefaultBackend, AudioManager, AudioManagerSettings},
-    sound::static_sound::{StaticSoundData, StaticSoundHandle, StaticSoundSettings},
+    sound::{
+        static_sound::{StaticSoundData, StaticSoundHandle, StaticSoundSettings},
+        PlaybackState,
+    },
+    tween::Tween,
 };
 use std::error;
 use std::ptr;
@@ -42,10 +46,14 @@ struct Sprite {
     locals: Locals,
 }
 
+#[derive(rust_embed::RustEmbed)]
+#[folder = "assets/music/output"]
+struct OggFiles;
+
 struct Music {
     manager: AudioManager,
     sound_data: StaticSoundData,
-    handle: StaticSoundHandle,
+    sound_handle: Option<StaticSoundHandle>,
 }
 
 struct Example {
@@ -62,23 +70,16 @@ struct Example {
     music: Option<Music>,
 }
 
-fn get_music(path: impl AsRef<std::path::Path>) -> Result<Option<Music>, Box<dyn error::Error>> {
-    #[cfg(target_arch = "wasm32")]
-    {
-        return Result::Err("Music not supported on wasm.".into());
-    }
+fn get_music(path: &str) -> Result<Option<Music>, Box<dyn error::Error>> {
+    let cursor = std::io::Cursor::new(OggFiles::get(path).unwrap().data);
+    let manager = AudioManager::<DefaultBackend>::new(AudioManagerSettings::default())?;
+    let sound_data = StaticSoundData::from_cursor(cursor, StaticSoundSettings::default())?;
 
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        let mut manager = AudioManager::<DefaultBackend>::new(AudioManagerSettings::default())?;
-        let sound_data = StaticSoundData::from_file(path, StaticSoundSettings::default())?;
-        let handle = manager.play(sound_data.clone())?;
-        return Result::Ok(Some(Music {
-            manager: manager,
-            sound_data: sound_data,
-            handle: handle,
-        }));
-    }
+    return Result::Ok(Some(Music {
+        manager: manager,
+        sound_data: sound_data,
+        sound_handle: None,
+    }));
 }
 
 impl Example {
@@ -199,7 +200,6 @@ impl Example {
         context.wait_for(&sync_point, !0);
 
         context.destroy_buffer(upload_buffer);
-        let music = get_music("assets/music/output/brainless_3.ogg").unwrap_or(None);
 
         Self {
             pipeline,
@@ -212,7 +212,39 @@ impl Example {
             bunnies,
             rng: nanorand::WyRand::new_seed(73),
             context,
-            music,
+            music: None,
+        }
+    }
+
+    fn init_music(&mut self) {
+        if self.music.is_none() {
+            self.music = get_music("a_so_close.ogg").unwrap_or(None);
+        }
+    }
+    fn start_song(&mut self) {
+        if let Some(x) = &mut self.music {
+            x.sound_handle = x.manager.play(x.sound_data.clone()).ok();
+        }
+    }
+
+    fn toggle_song(&mut self) {
+        if let Some(x) = &mut self.music {
+            if let Some(h) = &mut x.sound_handle {
+                match h.state() {
+                    PlaybackState::Paused => {
+                        let _ = h.resume(Tween::default());
+                    }
+                    PlaybackState::Playing => {
+                        let _ = h.pause(Tween::default());
+                    }
+                    PlaybackState::Stopped => {
+                        self.start_song();
+                    }
+                    _ => {}
+                }
+            } else {
+                self.start_song();
+            }
         }
     }
 
@@ -356,7 +388,7 @@ fn main() {
                 window.request_redraw();
             }
             winit::event::Event::WindowEvent { event, .. } => match event {
-                #[cfg(not(target_arch = "wasm32"))]
+                // #[cfg(not(target_arch = "wasm32"))]
                 winit::event::WindowEvent::KeyboardInput {
                     input:
                         winit::event::KeyboardInput {
@@ -367,10 +399,16 @@ fn main() {
                     ..
                 } => match key_code {
                     winit::event::VirtualKeyCode::Escape => {
+                        example.init_music();
                         *control_flow = winit::event_loop::ControlFlow::Exit;
                     }
                     winit::event::VirtualKeyCode::Space => {
+                        example.init_music();
                         example.increase();
+                    }
+                    winit::event::VirtualKeyCode::M => {
+                        example.init_music();
+                        example.toggle_song();
                     }
                     _ => {}
                 },
