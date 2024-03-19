@@ -1,4 +1,4 @@
-[![Build Status](https://github.com/glalonde/spout/workflows/CI/badge.svg)](https://github.com/glalonde/spout/actions)
+[![Build Status](https://github.com/glalonde/spout/workflows/CI/badge.svg?branch=blade)](https://github.com/glalonde/spout/actions)
 
 # Spout Web version
 
