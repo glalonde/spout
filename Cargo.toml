@@ -10,12 +10,20 @@ debug = true
 
 [features]
 
+[workspace]
+members = ["run-wasm"]
+
+[workspace.dependencies]
+web-sys = "0.3.60"
+getrandom = "0.2"
+egui-winit = { version = "0.23", default-features = false }
+
 [dependencies]
 blade-macros = { git = "https://github.com/kvark/blade.git" }
 blade-graphics = { git = "https://github.com/kvark/blade.git" }
 egui-gizmo = "0.12"
 egui_plot = "0.23"
-egui-winit = "0.23"
+egui-winit = { workspace = true }
 env_logger = "0.10"
 del-msh = "=0.1.25"                                                             # not following semver :(
 mint = { version = "0.5", features = ["serde"] }
@@ -34,6 +42,12 @@ naga = { version = "0.14", features = ["wgsl-in", "span", "validate"] }
 profiling = "1"
 slab = "0.4"
 strum = { version = "0.25", features = ["derive"] }
-web-sys = "0.3.60"
+web-sys = { workspace = true }
 winit = "0.28"
 kira = "0.8.7"
+
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+console_error_panic_hook = "0.1.7"
+console_log = "1"
+web-sys = { workspace = true, features = ["Window"] }
+getrandom = { workspace = true, features = ["js"] }

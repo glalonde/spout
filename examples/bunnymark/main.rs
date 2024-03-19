@@ -59,18 +59,26 @@ struct Example {
     bunnies: Vec<Sprite>,
     rng: nanorand::WyRand,
     context: gpu::Context,
-    music: Music,
+    music: Option<Music>,
 }
 
-fn get_music(path: impl AsRef<std::path::Path>) -> Result<Music, Box<dyn error::Error>> {
-    let mut manager = AudioManager::<DefaultBackend>::new(AudioManagerSettings::default())?;
-    let sound_data = StaticSoundData::from_file(path, StaticSoundSettings::default())?;
-    let handle = manager.play(sound_data.clone())?;
-    return Result::Ok(Music {
-        manager: manager,
-        sound_data: sound_data,
-        handle: handle,
-    });
+fn get_music(path: impl AsRef<std::path::Path>) -> Result<Option<Music>, Box<dyn error::Error>> {
+    #[cfg(target_arch = "wasm32")]
+    {
+        return Result::Err("Music not supported on wasm.".into());
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let mut manager = AudioManager::<DefaultBackend>::new(AudioManagerSettings::default())?;
+        let sound_data = StaticSoundData::from_file(path, StaticSoundSettings::default())?;
+        let handle = manager.play(sound_data.clone())?;
+        return Result::Ok(Some(Music {
+            manager: manager,
+            sound_data: sound_data,
+            handle: handle,
+        }));
+    }
 }
 
 impl Example {
@@ -191,7 +199,7 @@ impl Example {
         context.wait_for(&sync_point, !0);
 
         context.destroy_buffer(upload_buffer);
-        let music = get_music("assets/music/output/aryx.ogg").unwrap();
+        let music = get_music("assets/music/output/brainless_3.ogg").unwrap_or(None);
 
         Self {
             pipeline,
