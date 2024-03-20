@@ -48,6 +48,7 @@ struct Sprite {
 
 #[derive(rust_embed::RustEmbed)]
 #[folder = "assets/music/output"]
+#[include = "a_so_close.ogg"]
 struct OggFiles;
 
 struct Music {

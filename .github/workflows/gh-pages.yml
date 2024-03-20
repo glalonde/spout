@@ -35,12 +35,12 @@ jobs:
       - name: Install ffmpeg
         run: sudo apt update && sudo apt install -y ffmpeg 
 
-      - name: Convert audio
-        run: |
-          cd assets/music
-          rm -r output
-          ./convert_music.sh
-          ls -la output
+      # - name: Convert audio
+      #   run: |
+      #     cd assets/music
+      #     rm -r output
+      #     ./convert_music.sh
+      #     ls -la output
 
       - name: Install Rust WASM toolchain
         uses: actions-rs/toolchain@v1
