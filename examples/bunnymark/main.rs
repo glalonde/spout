@@ -416,8 +416,23 @@ fn main() {
                 winit::event::WindowEvent::CloseRequested => {
                     *control_flow = winit::event_loop::ControlFlow::Exit;
                 }
+                // Touch events for mobile.
+                winit::event::WindowEvent::Touch {
+                    0:
+                        winit::event::Touch {
+                            phase: touch_phase, ..
+                        },
+                } => match touch_phase {
+                    winit::event::TouchPhase::Started => {
+                        example.init_music();
+                        example.increase();
+                        example.toggle_song();
+                    }
+                    _ => {}
+                },
                 _ => {}
             },
+
             winit::event::Event::RedrawRequested(_) => {
                 frame_count += 1;
                 #[cfg(not(target_arch = "wasm32"))]
