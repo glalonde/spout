@@ -9,5 +9,5 @@ for i in $raw_files; do
   # For FLAC lossless:
   # ffmpeg -i $i -c:a flac $output_dir/$file.flac
   # For vorbis VBR:
-  ffmpeg -i $i -c:a libvorbis -qscale:a 5 $output_dir/$file.ogg
+  ffmpeg -i $i -c:a libvorbis -qscale:a 2 $output_dir/$file.ogg
 done

@@ -32,6 +32,32 @@ jobs:
           fetch-depth: 1
           lfs: true
 
+      - uses: FedericoCarboni/setup-ffmpeg@v3
+        id: setup-ffmpeg
+        with:
+          # A specific version to download, may also be "release" or a specific version
+          # like "6.1.0". At the moment semver specifiers (i.e. >=6.1.0) are supported
+          # only on Windows, on other platforms they are allowed but version is matched
+          # exactly regardless.
+          ffmpeg-version: release
+          # Target architecture of the ffmpeg executable to install. Defaults to the
+          # system architecture. Only x64 and arm64 are supported (arm64 only on Linux).
+          architecture: ''
+          # Linking type of the binaries. Use "shared" to download shared binaries and 
+          # "static" for statically linked ones. Shared builds are currently only available
+          # for windows releases. Defaults to "static"
+          linking-type: static
+          # As of version 3 of this action, builds are no longer downloaded from GitHub
+          # except on Windows: https://github.com/GyanD/codexffmpeg/releases.
+          github-token: ${{ github.server_url == 'https://github.com' && github.token || '' }}
+
+      - name: Convert audio
+        run: |
+          cd assets/music
+          rm -r output
+          ./convert_music.sh
+          ls -la output
+
       - name: Install Rust WASM toolchain
         uses: actions-rs/toolchain@v1
         with:
@@ -46,9 +72,6 @@ jobs:
 
       - name: Generate JS bindings for WebGPU examples
         run: wasm-bindgen --no-typescript --out-dir target/example_web --web target/wasm32-unknown-unknown/release/examples/bunnymark.wasm
-
-      - name: Print Size 
-        run: ls -la target/example_web/ 
 
       - name: Write html
         run: cat assets/wasm-resources/index.template.html | sed "s/{{example}}/bunnymark/g" > target/example_web/index.html
