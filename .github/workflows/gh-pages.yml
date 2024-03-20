@@ -32,8 +32,8 @@ jobs:
           fetch-depth: 1
           lfs: true
 
-      - name: Install ffmpeg
-        run: sudo apt update && sudo apt install -y ffmpeg 
+      # - name: Install ffmpeg
+      #   run: sudo apt update && sudo apt install -y ffmpeg 
 
       # - name: Convert audio
       #   run: |
