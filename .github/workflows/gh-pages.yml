@@ -46,6 +46,9 @@ jobs:
       - name: Generate JS bindings for WebGPU examples
         run: wasm-bindgen --no-typescript --out-dir target/example_web --web target/wasm32-unknown-unknown/release/examples/bunnymark.wasm
 
+      - name: Print Size 
+        run: ls -la target/example_web/ 
+
       - name: Write html
         run: cat assets/wasm-resources/index.template.html | sed "s/{{example}}/bunnymark/g" > target/example_web/index.html
 
