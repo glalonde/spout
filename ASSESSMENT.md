@@ -210,6 +210,54 @@ Three workflows in `.github/workflows/`:
 
 ---
 
+## Salvage vs. Rewrite Analysis
+
+**Verdict: Upgrade, don't rewrite. wgpu remains the right GPU abstraction.**
+
+### Is the existing code worth keeping?
+
+Yes. The ~3,300 lines break down as:
+- ~1,600 lines of hard-to-rewrite domain logic (particle system, terrain generation, shaders)
+- ~700 lines of winit/wgpu plumbing that is the actual upgrade target
+
+The compute shaders (WGSL) and the `int_grid` fixed-point math are the genuinely valuable parts. A rewrite would mostly mean re-deriving the same physics and rendering decisions. The wgpu 0.17 → current and winit 0.28 → 0.30+ upgrades are disruptive but mechanical — API churn, not logic changes.
+
+### Is wgpu still the right choice?
+
+Requirements: compute shaders for particles, web app, native macOS, native iOS.
+
+| Platform | wgpu backend | Status |
+|----------|-------------|--------|
+| Web | WebGPU | Ships via WASM; broad browser support (Chrome, Firefox, Safari) |
+| macOS | Metal | First-class, mature |
+| iOS | Metal | Works; winit has iOS support; App Store needs Xcode signing |
+
+**Alternatives considered:**
+
+- **Raw WebGPU (JS/TS):** Good for web-first, but native requires a WebView wrapper, complicates compute shaders, loses the Rust ecosystem.
+- **Metal (Swift):** Excellent on Apple platforms, but no web story — would require maintaining two codebases.
+- **Bevy:** Uses wgpu under the hood, but the existing particle system is custom GPU compute that doesn't map cleanly to Bevy's ECS. More work to adapt than to upgrade directly.
+
+### The iOS constraint
+
+iOS was never part of the original design. Two paths:
+
+1. **wgpu + winit native iOS target** — Works via the Metal backend. App Store distribution requires Xcode. Harder to set up in CI.
+2. **WASM + WKWebView** — iOS 17+ ships WebGPU support in Safari/WKWebView. The existing WASM build runs in a thin iOS wrapper app. One codebase targets WebGPU everywhere.
+
+**Recommendation: Path 2 (WASM + WKWebView).** Simpler to maintain, reuses the existing `gh-pages.yml` WASM pipeline, and the WKWebView overhead is minimal for this type of game. Only reconsider native iOS if 60fps heavy-compute performance becomes a bottleneck.
+
+### Recommended Upgrade Path
+
+1. **Upgrade wgpu to current (0.22+) and winit to 0.30+** — Main work; primarily affects `main.rs` (winit event loop rewrite) and `particles.rs`/`render.rs` (wgpu API changes). The wgpu changelog documents migration steps.
+2. **Keep shaders as-is** — WGSL is stable; the compute shader logic does not need to change.
+3. **iOS: WASM + WKWebView wrapper** — Wrap the existing WASM build in a minimal Swift/Xcode project using `WKWebView`.
+4. **Preserve the particle system** — It is the core of the game and already GPU-compute-based.
+
+Estimated effort: 2–4 days to upgrade wgpu/winit back to a working build vs. weeks to rewrite to feature parity.
+
+---
+
 ## Recommended Cleanup Plan
 
 ### Immediate (low effort)
