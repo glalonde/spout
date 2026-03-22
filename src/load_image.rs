@@ -27,11 +27,6 @@ pub fn load_image_to_texture(
         bytes_per_row: Some(4 * image.width()),
         rows_per_image: None,
     };
-    queue.write_texture(
-        texture.as_image_copy(),
-        &image.to_vec(),
-        data_layout,
-        texture_extent,
-    );
+    queue.write_texture(texture.as_image_copy(), &image, data_layout, texture_extent);
     Ok(texture.create_view(&wgpu::TextureViewDescriptor::default()))
 }

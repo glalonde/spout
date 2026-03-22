@@ -1,5 +1,6 @@
 use std::f32::consts::PI;
 
+#[allow(clippy::duplicate_mod)]
 #[path = "../examples/framework.rs"]
 mod framework;
 
@@ -93,11 +94,7 @@ impl CameraState {
             self.phi -= motion_params.angular_speed * dt;
         }
         self.phi %= 2.0 * PI;
-        if self.theta > PI {
-            self.theta = PI;
-        } else if self.theta < 0.0 {
-            self.theta = 0.0;
-        }
+        self.theta = self.theta.clamp(0.0, PI);
     }
 }
 

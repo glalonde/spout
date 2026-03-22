@@ -1,5 +1,7 @@
+#![allow(dead_code)]
 use crate::{buffer_util::SizedBuffer, game_params};
 
+#[allow(clippy::upper_case_acronyms)]
 #[repr(i8)]
 #[derive(Copy, Clone)]
 pub enum RotationDirection {
@@ -198,7 +200,7 @@ impl ShipRenderer {
             orientation: state.orientation,
             viewport_width: game_params.viewport_width,
             viewport_height: game_params.viewport_height,
-            viewport_offset: viewport_offset,
+            viewport_offset,
         };
         self.staging_belt
             .write_buffer(
@@ -225,7 +227,7 @@ impl ShipRenderer {
         });
         rpass.set_pipeline(&self.render_pipeline);
         rpass.set_bind_group(0, &self.render_bind_group, &[]);
-        rpass.draw(0..4 as u32, 0..1);
+        rpass.draw(0..4_u32, 0..1);
     }
 
     pub fn after_queue_submission(&mut self) {
