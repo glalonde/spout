@@ -709,46 +709,18 @@ impl TerrainRenderer {
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
+    use crate::gpu_test_utils as gpu;
     use wgpu::util::DeviceExt;
 
-    // Test dimensions chosen so bytes_per_row (64*4=256) aligns to COPY_BYTES_PER_ROW_ALIGNMENT.
+    // Width=64 so bytes_per_row (64×4=256) aligns to COPY_BYTES_PER_ROW_ALIGNMENT exactly.
     const TEST_W: u32 = 64;
     const TEST_H: u32 = 32;
-
-    fn try_create_headless_device() -> Option<(wgpu::Device, wgpu::Queue)> {
-        crate::particles::try_create_headless_device()
-    }
-
-    /// Convert raw BGRA bytes to RGBA and save as a PNG at `path`.
-    fn save_bgra_as_png(path: &std::path::Path, width: u32, height: u32, bgra: &[u8]) {
-        let mut rgba = vec![0u8; bgra.len()];
-        for i in 0..(width * height) as usize {
-            rgba[i * 4] = bgra[i * 4 + 2]; // R <- B
-            rgba[i * 4 + 1] = bgra[i * 4 + 1]; // G
-            rgba[i * 4 + 2] = bgra[i * 4]; // B <- R
-            rgba[i * 4 + 3] = bgra[i * 4 + 3]; // A
-        }
-        let img = image::RgbaImage::from_raw(width, height, rgba)
-            .expect("Failed to create image from raw pixels");
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).expect("Failed to create output dir");
-        }
-        img.save(path).expect("Failed to save PNG");
-    }
-
-    /// Pixel-wise comparison with per-channel tolerance.
-    fn images_within_tolerance(a: &[u8], b: &[u8], tolerance: u8) -> bool {
-        a.len() == b.len()
-            && a.iter()
-                .zip(b.iter())
-                .all(|(x, y)| x.abs_diff(*y) <= tolerance)
-    }
 
     /// Render a TerrainRenderer with deterministic stripe data into an offscreen texture,
     /// copy it to the CPU, save a PNG, and optionally compare against a golden image.
     #[test]
     fn test_terrain_render_headless() {
-        let Some((device, queue)) = try_create_headless_device() else {
+        let Some((device, queue)) = gpu::try_create_headless_device() else {
             eprintln!("No GPU adapter available — skipping test_terrain_render_headless");
             return;
         };
@@ -771,118 +743,35 @@ mod tests {
             size: terrain_size,
         };
 
-        // Offscreen render target: Bgra8UnormSrgb to match TerrainRenderer's pipeline.
-        let texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("Offscreen render target"),
-            size: wgpu::Extent3d {
-                width: TEST_W,
-                height: TEST_H,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Bgra8UnormSrgb,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
-            view_formats: &[],
-        });
-        let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-
-        // Staging buffer for CPU readback (row padding is exact at 64px * 4 bytes = 256).
-        let bytes_per_row = TEST_W * 4;
-        let staging_size = (bytes_per_row * TEST_H) as wgpu::BufferAddress;
-        let staging_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Readback staging buffer"),
-            size: staging_size,
-            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-            mapped_at_creation: false,
-        });
+        let target = gpu::create_offscreen_target(&device, TEST_W, TEST_H);
+        let staging_buffer = gpu::create_readback_buffer(&device, TEST_W, TEST_H);
 
         let mut renderer = TerrainRenderer::init(&device, &game_params, &terrain_buffer);
 
         let mut encoder =
             device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
         renderer.update_render_state(&device, &game_params, 0, 0, &mut encoder);
-        renderer.render(&texture_view, &mut encoder);
-        encoder.copy_texture_to_buffer(
-            wgpu::ImageCopyTexture {
-                texture: &texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
-            wgpu::ImageCopyBuffer {
-                buffer: &staging_buffer,
-                layout: wgpu::ImageDataLayout {
-                    offset: 0,
-                    bytes_per_row: Some(bytes_per_row),
-                    rows_per_image: None,
-                },
-            },
-            wgpu::Extent3d {
-                width: TEST_W,
-                height: TEST_H,
-                depth_or_array_layers: 1,
-            },
-        );
+        renderer.render(&target.view, &mut encoder);
+        gpu::encode_texture_readback(&mut encoder, &target.texture, &staging_buffer, TEST_W, TEST_H);
         queue.submit(Some(encoder.finish()));
         renderer.after_queue_submission();
 
-        let buffer_slice = staging_buffer.slice(..);
-        buffer_slice.map_async(wgpu::MapMode::Read, |_| {});
-        device.poll(wgpu::Maintain::Wait);
-
-        let raw = buffer_slice.get_mapped_range();
-        let pixels: Vec<u8> = raw.to_vec();
-        drop(raw);
-        staging_buffer.unmap();
+        let bgra = gpu::readback_pixels(&device, &staging_buffer);
 
         assert_eq!(
-            pixels.len(),
+            bgra.len(),
             (TEST_W * TEST_H * 4) as usize,
             "Unexpected pixel data size"
         );
 
         // Basic sanity: not all pixels should be identical (stripe terrain produces variation).
-        let all_same = pixels.chunks(4).all(|px| px == &pixels[..4]);
+        let all_same = bgra.chunks(4).all(|px| px == &bgra[..4]);
         assert!(
             !all_same,
             "Render output is a solid color — expected stripe variation"
         );
 
-        // Save output PNG.
-        let output_path = std::path::Path::new("tests/output/terrain_render.png");
-        save_bgra_as_png(output_path, TEST_W, TEST_H, &pixels);
-        eprintln!("Saved render output to {output_path:?}");
-
-        // Golden image comparison.
-        let golden_path = std::path::Path::new("tests/golden/terrain_render.png");
-        if golden_path.exists() {
-            let golden_img = image::open(golden_path)
-                .expect("Failed to open golden image")
-                .to_rgba8();
-            let golden_pixels = golden_img.into_raw();
-
-            // Convert BGRA output to RGBA for comparison.
-            let mut output_rgba = vec![0u8; pixels.len()];
-            for i in 0..(TEST_W * TEST_H) as usize {
-                output_rgba[i * 4] = pixels[i * 4 + 2];
-                output_rgba[i * 4 + 1] = pixels[i * 4 + 1];
-                output_rgba[i * 4 + 2] = pixels[i * 4];
-                output_rgba[i * 4 + 3] = pixels[i * 4 + 3];
-            }
-
-            assert!(
-                images_within_tolerance(&output_rgba, &golden_pixels, 5),
-                "Render output differs from golden by more than tolerance=5. \
-                Check tests/output/terrain_render.png vs tests/golden/terrain_render.png"
-            );
-            eprintln!("Golden image comparison passed.");
-        } else {
-            eprintln!(
-                "No golden image at {golden_path:?}. \
-                Run with SPOUT_GENERATE_GOLDEN=1 or copy tests/output/terrain_render.png there."
-            );
-        }
+        let rgba = gpu::bgra_to_rgba(&bgra, TEST_W, TEST_H);
+        gpu::compare_or_generate_golden("terrain_render", &rgba, TEST_W, TEST_H);
     }
 }

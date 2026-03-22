@@ -10,3 +10,5 @@ pub mod render;
 pub mod shader_util;
 pub mod ship;
 pub mod textured_quad;
+#[cfg(test)]
+pub(crate) mod gpu_test_utils;

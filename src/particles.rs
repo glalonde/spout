@@ -315,42 +315,6 @@ impl Emitter {
     }
 }
 
-/// Try to create a wgpu device and queue without a surface (headless). Returns None if no
-/// adapter is available (e.g. no GPU and no software renderer installed).
-#[cfg(test)]
-pub(crate) fn try_create_headless_device() -> Option<(wgpu::Device, wgpu::Queue)> {
-    pollster::block_on(async {
-        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-            backends: wgpu::Backends::all(),
-            dx12_shader_compiler: Default::default(),
-        });
-        let adapter = instance
-            .request_adapter(&wgpu::RequestAdapterOptions {
-                power_preference: wgpu::PowerPreference::None,
-                force_fallback_adapter: false,
-                compatible_surface: None,
-            })
-            .await?;
-        let info = adapter.get_info();
-        log::info!(
-            "GPU test adapter: {:?} (vendor 0x{:x})",
-            info.name,
-            info.vendor
-        );
-        let (device, queue) = adapter
-            .request_device(
-                &wgpu::DeviceDescriptor {
-                    label: None,
-                    features: wgpu::Features::empty(),
-                    limits: wgpu::Limits::downlevel_defaults(),
-                },
-                None,
-            )
-            .await
-            .ok()?;
-        Some((device, queue))
-    })
-}
 
 pub struct ParticleSystem {
     emitter: Emitter,
@@ -954,6 +918,7 @@ impl ParticleRenderer {
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
+    use crate::gpu_test_utils as gpu;
 
     /// Emit N particles with the given params and read the particle buffer back from the GPU.
     fn run_emitter_and_read_back(
@@ -1006,7 +971,7 @@ mod tests {
 
     #[test]
     fn test_emitter_compute_headless() {
-        let Some((device, queue)) = try_create_headless_device() else {
+        let Some((device, queue)) = gpu::try_create_headless_device() else {
             eprintln!("No GPU adapter available — skipping test_emitter_compute_headless");
             return;
         };
@@ -1067,5 +1032,67 @@ mod tests {
             100.0f32,
             200.0f32
         );
+    }
+
+    /// Render `ParticleRenderer` with a known density buffer into an offscreen texture and
+    /// compare against a golden image. Bypasses the compute pipeline entirely.
+    #[test]
+    fn test_particle_render_headless() {
+        use wgpu::util::DeviceExt;
+
+        let Some((device, queue)) = gpu::try_create_headless_device() else {
+            eprintln!("No GPU adapter available — skipping test_particle_render_headless");
+            return;
+        };
+
+        // Width=64 so bytes_per_row (64×4=256) aligns to COPY_BYTES_PER_ROW_ALIGNMENT.
+        const TEST_W: u32 = 64;
+        const TEST_H: u32 = 32;
+
+        let mut game_params = crate::game_params::GameParams::default();
+        game_params.viewport_width = TEST_W;
+        game_params.viewport_height = TEST_H;
+
+        // Three Gaussian blobs at different positions/intensities so the output exercises the
+        // full sigmoid color-mapping range: sparse fringe → mid-range gradient → saturated core.
+        let density_data: Vec<u32> = (0..(TEST_W * TEST_H))
+            .map(|i| {
+                let x = (i % TEST_W) as f32;
+                let y = (i / TEST_W) as f32;
+                let blob = |cx: f32, cy: f32, peak: f32, sigma: f32| -> f32 {
+                    let dx = x - cx;
+                    let dy = y - cy;
+                    peak * (-(dx * dx + dy * dy) / (2.0 * sigma * sigma)).exp()
+                };
+                let v = blob(16.0, 16.0, 200.0, 6.0)  // bright left blob
+                      + blob(48.0, 10.0,  80.0, 4.0)  // medium upper-right blob
+                      + blob(40.0, 24.0,  40.0, 8.0); // dim lower-right spread
+                v as u32
+            })
+            .collect();
+        let density_size = std::mem::size_of_val(density_data.as_slice()) as u64;
+        let density_buffer = crate::buffer_util::SizedBuffer {
+            buffer: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Test density buffer"),
+                contents: bytemuck::cast_slice(&density_data),
+                usage: wgpu::BufferUsages::STORAGE,
+            }),
+            size: density_size,
+        };
+
+        let target = gpu::create_offscreen_target(&device, TEST_W, TEST_H);
+        let staging_buffer = gpu::create_readback_buffer(&device, TEST_W, TEST_H);
+
+        let mut encoder =
+            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+        let renderer = ParticleRenderer::init(&device, &game_params, &density_buffer, &mut encoder);
+        gpu::encode_clear_texture(&mut encoder, &target.view);
+        renderer.render(&mut encoder, &target.view);
+        gpu::encode_texture_readback(&mut encoder, &target.texture, &staging_buffer, TEST_W, TEST_H);
+        queue.submit(Some(encoder.finish()));
+
+        let bgra = gpu::readback_pixels(&device, &staging_buffer);
+        let rgba = gpu::bgra_to_rgba(&bgra, TEST_W, TEST_H);
+        gpu::compare_or_generate_golden("particle_render", &rgba, TEST_W, TEST_H);
     }
 }
