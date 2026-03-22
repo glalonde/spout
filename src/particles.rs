@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use crate::buffer_util::{self, SizedBuffer};
 
 // This should match the struct defined in the relevant compute shader.
@@ -113,7 +114,7 @@ impl Default for EmitParams {
 
 impl Emitter {
     fn num_particles(&self) -> u32 {
-        return self.params.num_particles;
+        self.params.num_particles
     }
 
     fn create_particle_buffer(device: &wgpu::Device, num_particles: u32) -> SizedBuffer {
@@ -230,7 +231,6 @@ impl Emitter {
                     speed_max: game_params.particle_system_params.emission_speed,
                     ttl_min: game_params.particle_system_params.max_particle_life,
                     ttl_max: game_params.particle_system_params.max_particle_life,
-                    ..Default::default()
                 },
             },
             time: 0.0,
@@ -614,7 +614,7 @@ impl ParticleSystem {
             "Density buffer",
         );
 
-        let emitter = Emitter::new(device, &game_params);
+        let emitter = Emitter::new(device, game_params);
 
         let staging_belt = wgpu::util::StagingBelt::new(uniform_buffer.size);
         let renderer = ParticleRenderer::init(device, game_params, &density_buffer, init_encoder);
@@ -630,7 +630,7 @@ impl ParticleSystem {
                 &uniform_buffer,
                 &density_buffer,
                 &emitter,
-                &level_manager,
+                level_manager,
             );
 
         ParticleSystem {
@@ -910,6 +910,6 @@ impl ParticleRenderer {
         });
         rpass.set_pipeline(&self.render_pipeline);
         rpass.set_bind_group(0, &self.render_bind_group, &[]);
-        rpass.draw(0..4 as u32, 0..1);
+        rpass.draw(0..4_u32, 0..1);
     }
 }

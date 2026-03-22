@@ -12,7 +12,7 @@ mod shader_util;
 mod ship;
 mod textured_quad;
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Default)]
 pub struct InputState {
     forward: bool,
     left: bool,
@@ -32,30 +32,8 @@ pub struct InputState {
 
     fullscreen: bool,
 }
-impl Default for InputState {
-    fn default() -> Self {
-        InputState {
-            forward: false,
-            left: false,
-            right: false,
-            pause: false,
 
-            cam_in: false,
-            cam_out: false,
-            cam_up: false,
-            cam_down: false,
-            cam_left: false,
-            cam_right: false,
-
-            cam_perspective: false,
-            cam_reset: false,
-
-            fullscreen: false,
-        }
-    }
-}
-
-#[derive(Debug)]
+#[derive(Debug, Default)]
 struct GameState {
     input_state: InputState,
     prev_input_state: InputState,
@@ -63,18 +41,6 @@ struct GameState {
     viewport_offset: i32,
     score: i32,
     paused: bool,
-}
-impl Default for GameState {
-    fn default() -> Self {
-        GameState {
-            input_state: InputState::default(),
-            prev_input_state: InputState::default(),
-            ship_state: ship::ShipState::default(),
-            viewport_offset: 0,
-            score: 0,
-            paused: false,
-        }
-    }
 }
 
 struct Spout {
@@ -114,10 +80,10 @@ impl Spout {
         self.iteration_start = now;
 
         if self.state.paused {
-            return (0.0, delta_t.as_secs_f32());
+            (0.0, delta_t.as_secs_f32())
         } else {
             self.game_time += delta_t;
-            return (delta_t.as_secs_f32(), delta_t.as_secs_f32());
+            (delta_t.as_secs_f32(), delta_t.as_secs_f32())
         }
     }
 
@@ -171,7 +137,7 @@ impl Spout {
 
     fn update_viewport_height(&mut self) {
         let ship_height = self.state.ship_state.position[1] as i32;
-        self.state.score = std::cmp::max(ship_height, self.state.score as i32);
+        self.state.score = std::cmp::max(ship_height, self.state.score);
         self.state.viewport_offset =
             self.state.score - (self.game_params.viewport_height / 2) as i32;
     }
@@ -217,7 +183,9 @@ impl Spout {
                     if let Some(best_mode) = &video_mode {
                         if mode.refresh_rate_millihertz() > best_mode.refresh_rate_millihertz() {
                             video_mode = Some(mode);
-                        } else if mode.refresh_rate_millihertz() == best_mode.refresh_rate_millihertz() {
+                        } else if mode.refresh_rate_millihertz()
+                            == best_mode.refresh_rate_millihertz()
+                        {
                             let best_area = best_mode.size().width * best_mode.size().height;
                             let current_area = mode.size().width * mode.size().height;
                             if best_area < current_area {
@@ -337,6 +305,7 @@ impl framework::Example for Spout {
                 }
             );
         }
+        #[allow(clippy::single_match)]
         match event {
             winit::event::WindowEvent::KeyboardInput { input, .. } => bind_keys!(input,
                 // Ship motion bindings
@@ -381,12 +350,12 @@ impl framework::Example for Spout {
     ) {
         {
             if !self.state.prev_input_state.fullscreen && self.state.input_state.fullscreen {
-                if let Some(_) = window.fullscreen() {
+                if window.fullscreen().is_some() {
                     // Set unfullscreen.
                     log::info!("Setting windowed mode.");
                     window.set_fullscreen(None);
                 } else {
-                    if let Some(best_mode) = Spout::select_fullscreen_video_mode(&window) {
+                    if let Some(best_mode) = Spout::select_fullscreen_video_mode(window) {
                         log::info!("Setting exclusive fullscreen with mode: {}", best_mode);
                         window
                             .set_fullscreen(Some(winit::window::Fullscreen::Exclusive(best_mode)));

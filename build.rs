@@ -16,7 +16,6 @@ fn generate_shaders() -> std::result::Result<(), Box<dyn Error>> {
     context.insert("inner_grid_size", &int_grid::INNER_GRID_SIZE);
     context.insert("half_inner_grid_size", &int_grid::HALF_INNER_GRID_SIZE);
 
-
     let output_path = env::var("OUT_DIR")?;
     fs::create_dir_all(format!("{}/shaders/", output_path))?;
     for file in fs::read_dir("src/shaders")? {

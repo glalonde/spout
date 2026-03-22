@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use crate::buffer_util::{self, SizedBuffer};
 
 pub struct WIPRectangleLevel {
@@ -19,7 +20,7 @@ impl WIPRectangleLevel {
         starting_terrain_health: i32,
     ) -> Self {
         let level_num = level_index + 10;
-        let max_dimension = std::cmp::max((level_width / level_num as u32) / 2, 1);
+        let max_dimension = std::cmp::max((level_width / level_num) / 2, 1);
         let num_vacancies = (level_height as f64 * (level_num as f64).sqrt()).ceil() as u32;
 
         // Maximum dimension of any of the vacancies(should be a function of level_num).
@@ -38,7 +39,7 @@ impl WIPRectangleLevel {
         }
     }
     fn done(&self) -> bool {
-        return self.completed_vacancies >= self.num_vacancies;
+        self.completed_vacancies >= self.num_vacancies
     }
 
     fn step(&mut self) {
@@ -64,7 +65,7 @@ impl WIPRectangleLevel {
         while !self.done() && instant::Instant::now() < deadline {
             self.step();
         }
-        return self.done();
+        self.done()
     }
 }
 
@@ -211,7 +212,7 @@ impl TerrainTile {
             dst_byte_offset,
             copy_byte_size,
         );
-        return true;
+        true
     }
 }
 
@@ -261,7 +262,7 @@ impl LevelManager {
                     active.end,
                     intersects
                 );
-                return intersects;
+                intersects
             })
     }
 
@@ -291,7 +292,7 @@ impl LevelManager {
                 f.shape.start,
                 f.shape.end
             );
-            self.composite_tile.copy_to_tile(&f, bytes_per_row, encoder);
+            self.composite_tile.copy_to_tile(f, bytes_per_row, encoder);
         })
     }
 
@@ -347,7 +348,7 @@ impl LevelManager {
                 buffer: composite_tile_buffer,
             },
 
-            unused_buffers: unused_buffers,
+            unused_buffers,
             staging_belt,
             level_maker: LevelMaker::init(
                 level_width,
@@ -418,7 +419,7 @@ impl LevelManager {
                             start: level_start,
                             end: level_start + self.level_height as i32,
                         },
-                        buffer: buffer,
+                        buffer,
                     },
                 );
             }
@@ -496,7 +497,7 @@ impl LevelManager {
 
         self.terrain_renderer.update_render_state(
             device,
-            &game_params,
+            game_params,
             viewport_offset,
             self.composite_tile.shape.start,
             encoder,
@@ -697,7 +698,7 @@ impl TerrainRenderer {
         });
         rpass.set_pipeline(&self.render_pipeline);
         rpass.set_bind_group(0, &self.render_bind_group, &[]);
-        rpass.draw(0..4 as u32, 0..1);
+        rpass.draw(0..4_u32, 0..1);
     }
 
     pub fn after_queue_submission(&mut self) {
