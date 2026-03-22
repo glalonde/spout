@@ -234,3 +234,56 @@ impl ShipRenderer {
         self.staging_belt.recall();
     }
 }
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod tests {
+    use super::*;
+    use crate::gpu_test_utils as gpu;
+
+    /// Render `ShipRenderer` with a centered ship into an offscreen texture and compare
+    /// against a golden image.
+    #[test]
+    fn test_ship_render_headless() {
+        let Some((device, queue)) = gpu::try_create_headless_device() else {
+            eprintln!("No GPU adapter available — skipping test_ship_render_headless");
+            return;
+        };
+
+        // Width=64 so bytes_per_row (64×4=256) aligns to COPY_BYTES_PER_ROW_ALIGNMENT.
+        const TEST_W: u32 = 64;
+        const TEST_H: u32 = 32;
+
+        let mut game_params = crate::game_params::GameParams::default();
+        game_params.viewport_width = TEST_W;
+        game_params.viewport_height = TEST_H;
+
+        // Ship centered in the viewport; default orientation (pointing up).
+        let state = ShipState {
+            position: [32.0, 16.0],
+            ..Default::default()
+        };
+
+        let target = gpu::create_offscreen_target(&device, TEST_W, TEST_H);
+        let staging_buffer = gpu::create_readback_buffer(&device, TEST_W, TEST_H);
+
+        let mut renderer = ShipRenderer::init(&device);
+
+        let mut encoder =
+            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+        gpu::encode_clear_texture(&mut encoder, &target.view);
+        renderer.render(&state, &game_params, 0, &device, &target.view, &mut encoder);
+        gpu::encode_texture_readback(
+            &mut encoder,
+            &target.texture,
+            &staging_buffer,
+            TEST_W,
+            TEST_H,
+        );
+        queue.submit(Some(encoder.finish()));
+        renderer.after_queue_submission();
+
+        let bgra = gpu::readback_pixels(&device, &staging_buffer);
+        let rgba = gpu::bgra_to_rgba(&bgra, TEST_W, TEST_H);
+        gpu::compare_or_generate_golden("ship_render", &rgba, TEST_W, TEST_H);
+    }
+}
