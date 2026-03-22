@@ -96,30 +96,66 @@ Requires: `rustup target add wasm32-unknown-unknown` and `cargo install wasm-bin
 
 ## Remote Branches (15 total)
 
-| Branch | Notes |
-|--------|-------|
-| `master` | Default branch, last commit July 2023 |
-| `legacy_wgpu` | Older wgpu implementation — README notes it as "more complete" |
-| `gh-pages` | Auto-deployed WASM build (GitHub Actions) |
-| `android` | Android port — had 2 merged PRs (#9, #10) |
-| `blade` | Likely a graphics backend experiment |
-| `update-wgpu` | Old wgpu upgrade branch (merged as PR #8) |
-| `level_manager` | Level system work (merged as PR #7) |
-| `test_ci` | CI testing (merged as PR #6) |
-| `glalonde-emitoverangle` | Emission-over-angle feature — **unmerged, status unknown** |
-| `glalonde-fpbresen` | Bresenham line variant — **unmerged, status unknown** |
-| `glalonde-glslrand` | GLSL random numbers — **unmerged, status unknown** |
-| `glalonde-mixer` | Mixing feature (merged as PR #2) |
-| `glalonde-newbrese` | Bresenham implementation (merged as PR #1) |
-| `glalonde-nonimageatomic` | Non-image atomics (merged as PR #5) |
-| `glalonde-wipscroll` | WIP scrolling (merged as PR #4) |
+_Audited 2026-03-21 via `git log` and `git diff` against `origin/master`._
 
-**Branches to investigate:**
-- `legacy_wgpu` — explicitly called out as "more complete" in the README; worth diffing against `master`
-- `android` — may still have useful code separate from merged PRs
-- `glalonde-emitoverangle`, `glalonde-fpbresen`, `glalonde-glslrand` — unmerged feature branches; unclear if abandoned or just not yet merged
+| Branch | Unique Commits vs master | Status |
+|--------|--------------------------|--------|
+| `master` | — | Default branch, last commit July 2023 |
+| `gh-pages` | — | Auto-deployed WASM build (GitHub Actions) |
+| `assessment` | 4 | Current branch — docs/planning only, no code changes |
+| `blade` | 15 | **Unmerged** — major graphics backend rewrite (see below) |
+| `glalonde-emitoverangle` | 1 | **Unmerged** — C++/OpenGL-era particle angle-emission experiment |
+| `glalonde-fpbresen` | 1 | **Unmerged** — C++/OpenGL-era float Bresenham experiment |
+| `glalonde-glslrand` | 1 | **Unmerged** — C++/OpenGL-era integer LCG RNG experiment |
+| `glalonde-mixer` | 1 | Trivial README addition only (2 lines) |
+| `android` | 0 | Fully merged into master |
+| `legacy_wgpu` | 0 | Fully merged — tip is a direct ancestor of master |
+| `glalonde-newbrese` | 0 | Fully merged into master |
+| `glalonde-nonimageatomic` | 0 | Fully merged into master |
+| `glalonde-wipscroll` | 0 | Fully merged into master |
+| `level_manager` | 0 | Fully merged into master |
+| `test_ci` | 0 | Fully merged into master |
+| `update-wgpu` | 0 | Fully merged into master |
 
-**Cleanup candidates (safe to delete):** All `glalonde-*` branches that are merged, plus `update-wgpu`, `level_manager`, `test_ci`.
+### Branch Details: `blade` (15 commits, 69 files, +3,031/−6,547 lines)
+
+An experimental full rewrite replacing `wgpu` + `winit` with **[blade-graphics](https://github.com/kvark/blade)**, a lower-level GPU abstraction crate.
+
+**What was added:**
+- New `Cargo.toml` pulling in `blade-graphics`, `blade-macros`, `egui`, `egui-winit`, `glam`, `kira` (audio), `rust_embed`, `wasm_thread`
+- `src/music.rs` — audio playback embedding `.ogg` files
+- A `bunnymark` example (`examples/bunnymark/`, 457 lines) — classic GPU sprite benchmark
+- `build_wasm.sh` and a `run-wasm/` helper crate
+- A minimal replacement `src/shader.wgsl` (41 lines)
+- `rust-toolchain.toml` pinning the Rust version
+
+**What was deleted:**
+- All core game modules: `particles.rs` (915 lines), `level_manager.rs` (706 lines), `camera.rs`, `ship.rs`, `render.rs`
+- All WGSL shaders under `src/shaders/`
+- `game_params.rs`, `textured_quad.rs`, `color_maps.rs`, `buffer_util.rs`, `shader_util.rs`
+- `build.rs`, `game_config.toml`, `run_wasm.sh`, the `int_grid/` sub-crate, and several examples
+
+**Verdict:** This branch gutted the game logic entirely. It is an architectural experiment/skeleton, not a continuation of the game. It does not salvage the particle system. Unless the goal is specifically to evaluate blade-graphics as a backend, this branch has little value relative to the wgpu upgrade path.
+
+### Branch Details: `glalonde-emitoverangle`, `glalonde-fpbresen`, `glalonde-glslrand`
+
+These three branches are **C++/OpenGL-era experiments**, not Rust/wgpu code. They predate the current Rust rewrite and operate on GLSL compute shaders and C++ test harnesses. They are not applicable to the current codebase.
+
+- **`glalonde-emitoverangle`** (`554fa22 wip`): Reworks the GLSL particle emitter to emit particles in a fan/arc pattern with angular spread and directional velocity control. Also adds a new `ship.cs` compute shader for Bresenham-based ship physics with terrain collision. Contains a known bug (wrong buffer name in the ship shader).
+- **`glalonde-fpbresen`** (`4218a98 fp bresenham with bugs?`): Replaces the fixed-point integer Bresenham particle movement with a floating-point version using `vec2` positions and `float error`. Commit message acknowledges bugs remain.
+- **`glalonde-glslrand`** (`ecfb8e0 integer glsl rand`): Replaces noise-based PRNG in the GPU emitter with an integer LCG seeded from wall-clock nanoseconds. Cleaner and faster than the noise-based approach.
+
+All three are WIP experiments from the project's early C++ phase. They contain interesting algorithmic ideas but are not directly mergeable.
+
+### Corrections to Prior Assessment
+
+- **`legacy_wgpu`** is **not** a separate "more complete" codebase. Its tip commit is a direct ancestor of master — it contains no code that isn't already in master. The README description is misleading.
+- **`android`** is fully merged with zero unique commits. No unique code remains.
+
+**Cleanup candidates (safe to delete):**
+- Fully merged (zero unique code): `android`, `legacy_wgpu`, `update-wgpu`, `level_manager`, `test_ci`, `glalonde-newbrese`, `glalonde-nonimageatomic`, `glalonde-wipscroll`, `glalonde-mixer`
+- C++/OpenGL era, not applicable: `glalonde-emitoverangle`, `glalonde-fpbresen`, `glalonde-glslrand`
+- Architectural experiment, gutted game logic: `blade` (keep if blade-graphics evaluation is desired; delete otherwise)
 
 ---
 
@@ -205,7 +241,7 @@ Three workflows in `.github/workflows/`:
 | CI health | Poor | Old action versions; release workflow has a bug; no recent passing runs confirmed |
 | Test coverage | Minimal | `cargo test` runs but likely only doctests/examples |
 | Documentation | Minimal | README is sparse; no API docs |
-| Branch hygiene | Poor | 15 branches, ~8 are stale merged branches |
+| Branch hygiene | Poor | 15 branches; 9 are fully merged/stale; 3 are C++ era artifacts; `blade` is gutted experiment |
 | Open issues/PRs | Clean | Zero open issues or PRs |
 | Last active | July 2023 | ~2.5 years dormant |
 
@@ -257,6 +293,10 @@ iOS was never part of the original design. Two paths:
 
 Estimated effort: 2–4 days to upgrade wgpu/winit back to a working build vs. weeks to rewrite to feature parity.
 
+### Note on `blade` branch
+
+The `blade` branch explored replacing wgpu with [blade-graphics](https://github.com/kvark/blade) but deleted all game logic in the process (particles, terrain, ship, shaders). It is not a viable alternative path unless starting the game from scratch. The wgpu upgrade remains the correct path.
+
 ---
 
 ## Recommended Cleanup Plan
@@ -268,10 +308,10 @@ Estimated effort: 2–4 days to upgrade wgpu/winit back to a working build vs. w
 4. **Update CI action versions:** `actions/checkout@v4`, `actions/cache@v4`
 
 ### Medium effort
-5. **Audit unmerged branches:** Review `glalonde-emitoverangle`, `glalonde-fpbresen`, `glalonde-glslrand` — merge or close
-6. **Diff `legacy_wgpu` vs `master`:** Understand what "more complete" means and cherry-pick useful features
-7. **Update `rand` and `toml`:** Relatively low-risk upgrades
-8. **Add `wasm-bindgen-cli` caching** to `gh-pages.yml`
+5. **Delete C++/OpenGL-era branches:** `glalonde-emitoverangle`, `glalonde-fpbresen`, `glalonde-glslrand` are not applicable to the Rust/wgpu codebase. The algorithmic ideas (float Bresenham, angular particle emission, integer LCG RNG) could be implemented fresh in WGSL if desired, but the C++ code cannot be directly merged.
+6. **Decide on `blade` branch:** Either delete it (game logic was gutted) or keep it as a reference if evaluating blade-graphics. No action needed to resume wgpu upgrade.
+7. **Update `rand` and `toml`:** Relatively low-risk upgrades.
+8. **Add `wasm-bindgen-cli` caching** to `gh-pages.yml`.
 
 ### High effort (revival path)
 9. **Upgrade `winit` to 0.30+:** Breaking event loop API changes require rewriting the event handling in `main.rs`
