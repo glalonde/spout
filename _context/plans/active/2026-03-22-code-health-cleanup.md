@@ -18,5 +18,6 @@ Pre- and post-upgrade housekeeping identified during audit before the wgpu/winit
 - [ ] Lock file duplicate versions (rand 0.8+0.9, png, miniz_oxide, syn 1+2, windows crates) — most are transitive from wgpu 0.17; will clean up naturally during wgpu upgrade
 - [ ] Clean up WASM dependencies — audit/prune once WASM target is revived
 - [ ] Add unit tests for camera math (spherical→Cartesian transforms) and buffer size calculations
-- [ ] Narrow remaining `#[allow(dead_code)]` suppressions — once broad ones are removed, assess what's left
+- [ ] Upgrade `bytemuck` to latest (>= 1.15): `bytemuck_derive >= 1.5` switches Pod derives from `check` fn to `const` assertions, allowing removal of the documented `#![allow(dead_code)]` in `particles.rs`, `ship.rs`, `level_manager.rs`, `textured_quad.rs`
+- [ ] Narrow remaining `#[allow(dead_code)]` suppressions — once bytemuck is upgraded, remove the file-level allows and re-assess what's left
 - [ ] "Keep in sync with shader" TODOs in `particles.rs` — consider generating struct layout from shader or adding an assert; address when touching particle code during wgpu upgrade
