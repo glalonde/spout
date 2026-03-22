@@ -149,8 +149,8 @@ impl ShipRenderer {
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Ship render pipeline layout"),
-                bind_group_layouts: &[&render_bgl],
-                push_constant_ranges: &[],
+                bind_group_layouts: &[Some(&render_bgl)],
+                immediate_size: 0,
             });
 
         let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -158,17 +158,19 @@ impl ShipRenderer {
             layout: Some(&render_pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &shader_module,
-                entry_point: "vs_main",
+                entry_point: Some("vs_main"),
                 buffers: &[],
+                compilation_options: Default::default(),
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader_module,
-                entry_point: "fs_main",
+                entry_point: Some("fs_main"),
                 targets: &[Some(wgpu::ColorTargetState {
                     format: wgpu::TextureFormat::Bgra8UnormSrgb,
                     blend: Some(wgpu::BlendState::ALPHA_BLENDING),
                     write_mask: wgpu::ColorWrites::all(),
                 })],
+                compilation_options: Default::default(),
             }),
             primitive: wgpu::PrimitiveState {
                 topology: wgpu::PrimitiveTopology::TriangleStrip,
@@ -176,10 +178,11 @@ impl ShipRenderer {
             },
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
-            multiview: None,
+            cache: None,
+            multiview_mask: None,
         });
 
-        let staging_belt = wgpu::util::StagingBelt::new(uniform_buffer.size);
+        let staging_belt = wgpu::util::StagingBelt::new(device.clone(), uniform_buffer.size);
         ShipRenderer {
             uniform_buffer,
             render_bind_group,
@@ -193,7 +196,7 @@ impl ShipRenderer {
         state: &ShipState,
         game_params: &game_params::GameParams,
         viewport_offset: i32,
-        device: &wgpu::Device,
+        _device: &wgpu::Device,
         output_texture_view: &wgpu::TextureView,
         encoder: &mut wgpu::CommandEncoder,
     ) {
@@ -211,7 +214,6 @@ impl ShipRenderer {
                 &self.uniform_buffer.buffer,
                 0,
                 wgpu::BufferSize::new(self.uniform_buffer.size as _).unwrap(),
-                device,
             )
             .copy_from_slice(bytemuck::bytes_of(&uniform_values));
         self.staging_belt.finish();
@@ -221,12 +223,16 @@ impl ShipRenderer {
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                 view: output_texture_view,
                 resolve_target: None,
+                depth_slice: None,
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Load,
-                    store: true,
+                    store: wgpu::StoreOp::Store,
                 },
             })],
             depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
         });
         rpass.set_pipeline(&self.render_pipeline);
         rpass.set_bind_group(0, &self.render_bind_group, &[]);

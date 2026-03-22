@@ -64,8 +64,8 @@ impl WIPRectangleLevel {
         }
     }
 
-    fn work_until(&mut self, deadline: instant::Instant) -> bool {
-        while !self.done() && instant::Instant::now() < deadline {
+    fn work_until(&mut self, deadline: std::time::Instant) -> bool {
+        while !self.done() && std::time::Instant::now() < deadline {
             self.step();
         }
         self.done()
@@ -121,8 +121,8 @@ impl LevelMaker {
         }
     }
 
-    pub fn work_until(&mut self, deadline: instant::Instant) {
-        while instant::Instant::now() < deadline {
+    pub fn work_until(&mut self, deadline: std::time::Instant) {
+        while std::time::Instant::now() < deadline {
             let mut to_remove = Vec::new();
             // Generate levels in order of level index.
             for (key, value) in &mut self.wip_levels {
@@ -332,7 +332,8 @@ impl LevelManager {
             active_interval_height as usize,
             "CompositeTerrainBuffer",
         );
-        let staging_belt = wgpu::util::StagingBelt::new((unused_buffers[0].size / 2) as u64);
+        let staging_belt =
+            wgpu::util::StagingBelt::new(device.clone(), (unused_buffers[0].size / 2) as u64);
         let renderer = TerrainRenderer::init(device, game_params, &composite_tile_buffer);
 
         let mut lm = LevelManager {
@@ -411,7 +412,6 @@ impl LevelManager {
                         &buffer.buffer,
                         0,
                         wgpu::BufferSize::new(buffer.size as _).unwrap(),
-                        device,
                     )
                     .copy_from_slice(bytemuck::cast_slice(level_data));
                 let level_start = level_index * self.level_height as i32;
@@ -542,7 +542,7 @@ struct FragmentUniforms {
 impl TerrainRenderer {
     pub fn update_render_state(
         &mut self,
-        device: &wgpu::Device,
+        _device: &wgpu::Device,
         game_params: &super::game_params::GameParams,
         viewport_offset: i32,
         terrain_buffer_offset: i32,
@@ -562,7 +562,6 @@ impl TerrainRenderer {
                 &self.uniform_buf.buffer,
                 0,
                 wgpu::BufferSize::new(self.uniform_buf.size as _).unwrap(),
-                device,
             )
             .copy_from_slice(bytemuck::bytes_of(&uniforms));
         self.staging_belt.finish();
@@ -640,9 +639,9 @@ impl TerrainRenderer {
 
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                bind_group_layouts: &[&render_bind_group_layout],
+                bind_group_layouts: &[Some(&render_bind_group_layout)],
+                immediate_size: 0,
                 label: Some("Terrain render pipeline layout"),
-                push_constant_ranges: &[],
             });
 
         let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -650,17 +649,19 @@ impl TerrainRenderer {
             layout: Some(&render_pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &shader_module,
-                entry_point: "vs_main",
+                entry_point: Some("vs_main"),
                 buffers: &[],
+                compilation_options: Default::default(),
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader_module,
-                entry_point: "fs_main",
+                entry_point: Some("fs_main"),
                 targets: &[Some(wgpu::ColorTargetState {
                     format: wgpu::TextureFormat::Bgra8UnormSrgb,
                     blend: Some(wgpu::BlendState::ALPHA_BLENDING),
                     write_mask: wgpu::ColorWrites::all(),
                 })],
+                compilation_options: Default::default(),
             }),
             primitive: wgpu::PrimitiveState {
                 topology: wgpu::PrimitiveTopology::TriangleStrip,
@@ -668,10 +669,11 @@ impl TerrainRenderer {
             },
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
-            multiview: None,
+            cache: None,
+            multiview_mask: None,
         });
 
-        let staging_belt = wgpu::util::StagingBelt::new(uniform_buf.size);
+        let staging_belt = wgpu::util::StagingBelt::new(device.clone(), uniform_buf.size);
 
         TerrainRenderer {
             render_bind_group,
@@ -692,12 +694,16 @@ impl TerrainRenderer {
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                 view: output_texture_view,
                 resolve_target: None,
+                depth_slice: None,
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                    store: true,
+                    store: wgpu::StoreOp::Store,
                 },
             })],
             depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
         });
         rpass.set_pipeline(&self.render_pipeline);
         rpass.set_bind_group(0, &self.render_bind_group, &[]);

@@ -23,7 +23,7 @@ struct Spout {
     state: GameState,
     level_manager: level_manager::LevelManager,
     game_time: std::time::Duration,
-    iteration_start: instant::Instant,
+    iteration_start: std::time::Instant,
     game_view_texture: wgpu::TextureView,
     renderer: render::Render,
     particle_system: particles::ParticleSystem,
@@ -32,7 +32,7 @@ struct Spout {
 
 impl Spout {
     fn tick(&mut self) -> (f32, f32) {
-        let now = instant::Instant::now();
+        let now = std::time::Instant::now();
         let delta_t = now - self.iteration_start;
         self.iteration_start = now;
 
@@ -106,7 +106,7 @@ impl Spout {
         let level_budget = std::time::Duration::from_secs_f64(1.0 / 300.0);
         self.level_manager
             .level_maker
-            .work_until(instant::Instant::now() + level_budget);
+            .work_until(std::time::Instant::now() + level_budget);
 
         let (game_dt, wall_dt) = self.tick();
 
@@ -131,8 +131,8 @@ impl Spout {
 
     fn select_fullscreen_video_mode(
         window: &winit::window::Window,
-    ) -> Option<winit::monitor::VideoMode> {
-        let mut video_mode: Option<winit::monitor::VideoMode> = None;
+    ) -> Option<winit::monitor::VideoModeHandle> {
+        let mut video_mode: Option<winit::monitor::VideoModeHandle> = None;
         match window.primary_monitor() {
             Some(monitor) => {
                 for mode in monitor.video_modes() {
@@ -183,7 +183,7 @@ impl framework::Example for Spout {
         adapter: &wgpu::Adapter,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        window: &mut winit::window::Window,
+        window: &winit::window::Window,
     ) -> Self {
         window.set_cursor_visible(false);
         let game_params = game_params::get_game_config_from_default_file();
@@ -231,7 +231,7 @@ impl framework::Example for Spout {
             state: game_state,
             level_manager,
             game_time: std::time::Duration::default(),
-            iteration_start: instant::Instant::now(),
+            iteration_start: std::time::Instant::now(),
             game_view_texture,
             renderer,
             particle_system,
@@ -240,47 +240,40 @@ impl framework::Example for Spout {
     }
 
     fn update(&mut self, event: winit::event::WindowEvent) {
-        // Update input state
-        macro_rules! bind_keys {
-            ($input:expr, $($pat:pat => $result:expr),*) => (
-                            match $input {
-                                    $(
-                            winit::event::KeyboardInput {
-                                virtual_keycode: Some($pat),
-                                state,
-                                ..
-                            } => match state {
-                                winit::event::ElementState::Pressed => $result = true,
-                                winit::event::ElementState::Released => $result = false,
-                            }
-                        ),*
-                    _ => (),
-                }
-            );
-        }
-        #[allow(clippy::single_match)]
-        match event {
-            winit::event::WindowEvent::KeyboardInput { input, .. } => bind_keys!(input,
+        use winit::keyboard::{KeyCode, PhysicalKey};
+        if let winit::event::WindowEvent::KeyboardInput {
+            event:
+                winit::event::KeyEvent {
+                    physical_key: PhysicalKey::Code(key),
+                    state,
+                    ..
+                },
+            ..
+        } = event
+        {
+            let pressed = state == winit::event::ElementState::Pressed;
+            match key {
                 // Ship motion bindings
-                winit::event::VirtualKeyCode::W => self.state.input_state.forward,
-                winit::event::VirtualKeyCode::A => self.state.input_state.left,
-                winit::event::VirtualKeyCode::P => self.state.input_state.pause,
-                winit::event::VirtualKeyCode::D => self.state.input_state.right,
+                KeyCode::KeyW => self.state.input_state.forward = pressed,
+                KeyCode::KeyA => self.state.input_state.left = pressed,
+                KeyCode::KeyP => self.state.input_state.pause = pressed,
+                KeyCode::KeyD => self.state.input_state.right = pressed,
 
                 // Camera bindings
-                winit::event::VirtualKeyCode::U => self.state.input_state.cam_in,
-                winit::event::VirtualKeyCode::O => self.state.input_state.cam_out,
-                winit::event::VirtualKeyCode::I => self.state.input_state.cam_up,
-                winit::event::VirtualKeyCode::K => self.state.input_state.cam_down,
-                winit::event::VirtualKeyCode::J => self.state.input_state.cam_left,
-                winit::event::VirtualKeyCode::L => self.state.input_state.cam_right,
-                winit::event::VirtualKeyCode::N => self.state.input_state.cam_perspective,
-                winit::event::VirtualKeyCode::M => self.state.input_state.cam_reset,
+                KeyCode::KeyU => self.state.input_state.cam_in = pressed,
+                KeyCode::KeyO => self.state.input_state.cam_out = pressed,
+                KeyCode::KeyI => self.state.input_state.cam_up = pressed,
+                KeyCode::KeyK => self.state.input_state.cam_down = pressed,
+                KeyCode::KeyJ => self.state.input_state.cam_left = pressed,
+                KeyCode::KeyL => self.state.input_state.cam_right = pressed,
+                KeyCode::KeyN => self.state.input_state.cam_perspective = pressed,
+                KeyCode::KeyM => self.state.input_state.cam_reset = pressed,
 
                 // Full screen
-                winit::event::VirtualKeyCode::F => self.state.input_state.fullscreen
-            ),
-            _ => (),
+                KeyCode::KeyF => self.state.input_state.fullscreen = pressed,
+
+                _ => {}
+            }
         }
     }
 
@@ -299,7 +292,7 @@ impl framework::Example for Spout {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         _spawner: &framework::Spawner,
-        window: &mut winit::window::Window,
+        window: &winit::window::Window,
     ) {
         {
             if !self.state.prev_input_state.fullscreen && self.state.input_state.fullscreen {
