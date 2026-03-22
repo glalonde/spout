@@ -22,7 +22,7 @@ pub fn load_image_to_texture(
         view_formats: &[],
     });
 
-    let data_layout = wgpu::ImageDataLayout {
+    let data_layout = wgpu::TexelCopyBufferLayout {
         offset: 0,
         bytes_per_row: Some(4 * image.width()),
         rows_per_image: None,

@@ -1,13 +1,10 @@
 /// This example shows how to describe the adapter in use.
 async fn run() {
     #[cfg_attr(target_arch = "wasm32", allow(unused_variables))]
-    let adapter = wgpu::Instance::new(wgpu::InstanceDescriptor {
-        backends: wgpu::Backends::all(),
-        dx12_shader_compiler: Default::default(),
-    })
-    .request_adapter(&wgpu::RequestAdapterOptions::default())
-    .await
-    .unwrap();
+    let adapter = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle())
+        .request_adapter(&wgpu::RequestAdapterOptions::default())
+        .await
+        .unwrap();
 
     #[cfg(not(target_arch = "wasm32"))]
     println!("{:?}", adapter.get_info())

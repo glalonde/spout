@@ -195,8 +195,8 @@ impl Emitter {
         let compute_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Emitter pipeline layout"),
-                bind_group_layouts: &[&compute_bind_group_layout],
-                push_constant_ranges: &[],
+                bind_group_layouts: &[Some(&compute_bind_group_layout)],
+                immediate_size: 0,
             });
 
         // Instantiates the pipeline.
@@ -204,7 +204,9 @@ impl Emitter {
             label: Some("Emitter pipeline"),
             layout: Some(&compute_pipeline_layout),
             module: &cs_module,
-            entry_point: "main",
+            entry_point: Some("main"),
+            cache: None,
+            compilation_options: Default::default(),
         });
 
         // Instantiates the bind group, once again specifying the binding of buffers.
@@ -223,7 +225,7 @@ impl Emitter {
             ],
         });
 
-        let staging_belt = wgpu::util::StagingBelt::new(uniform_buffer.size);
+        let staging_belt = wgpu::util::StagingBelt::new(device.clone(), uniform_buffer.size);
 
         Emitter {
             params: EmitterParams {
@@ -276,7 +278,7 @@ impl Emitter {
         }
     }
 
-    pub fn run_compute(&mut self, device: &wgpu::Device, encoder: &mut wgpu::CommandEncoder) {
+    pub fn run_compute(&mut self, _device: &wgpu::Device, encoder: &mut wgpu::CommandEncoder) {
         if let Some(emit_params) = &self.emit_params {
             // Update uniforms
             // TODO reference https://toji.github.io/webgpu-best-practices/buffer-uploads.html
@@ -286,7 +288,6 @@ impl Emitter {
                     &self.uniform_buffer.buffer,
                     0,
                     wgpu::BufferSize::new(self.uniform_buffer.size as _).unwrap(),
-                    device,
                 )
                 .copy_from_slice(bytemuck::bytes_of(emit_params));
             self.staging_belt.finish();
@@ -294,6 +295,7 @@ impl Emitter {
             {
                 let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                     label: Some("Particle Emitter"),
+                    timestamp_writes: None,
                 });
                 cpass.set_pipeline(&self.compute_pipeline);
                 cpass.set_bind_group(0, &self.compute_bind_group, &[]);
@@ -461,8 +463,8 @@ impl ParticleSystem {
         let compute_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Particle system pipeline layout"),
-                bind_group_layouts: &[&compute_bgl],
-                push_constant_ranges: &[],
+                bind_group_layouts: &[Some(&compute_bgl)],
+                immediate_size: 0,
             });
 
         // Loads the shader from WGSL
@@ -477,7 +479,9 @@ impl ParticleSystem {
                 label: Some("Particle system pipeline"),
                 layout: Some(&compute_pipeline_layout),
                 module: &cs_module,
-                entry_point: "main",
+                entry_point: Some("main"),
+                cache: None,
+                compilation_options: Default::default(),
             });
 
         let update_particles_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -549,8 +553,8 @@ impl ParticleSystem {
         let compute_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Clear density buffer pipeline layout"),
-                bind_group_layouts: &[&compute_bgl],
-                push_constant_ranges: &[],
+                bind_group_layouts: &[Some(&compute_bgl)],
+                immediate_size: 0,
             });
 
         // Loads the shader from WGSL
@@ -564,7 +568,9 @@ impl ParticleSystem {
             label: Some("Clear density buffer pipeline"),
             layout: Some(&compute_pipeline_layout),
             module: &cs_module,
-            entry_point: "main",
+            entry_point: Some("main"),
+            cache: None,
+            compilation_options: Default::default(),
         });
 
         // Instantiates the bind group, once again specifying the binding of buffers.
@@ -619,7 +625,7 @@ impl ParticleSystem {
 
         let emitter = Emitter::new(device, game_params);
 
-        let staging_belt = wgpu::util::StagingBelt::new(uniform_buffer.size);
+        let staging_belt = wgpu::util::StagingBelt::new(device.clone(), uniform_buffer.size);
         let renderer = ParticleRenderer::init(device, game_params, &density_buffer, init_encoder);
 
         // Set up all the clear density buffer compute pass.
@@ -671,6 +677,7 @@ impl ParticleSystem {
             // So use a compute shader instead.
             let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                 label: Some("Clear density buffer"),
+                timestamp_writes: None,
             });
             cpass.set_pipeline(&self.clear_pipeline);
             cpass.set_bind_group(0, &self.clear_bind_group, &[]);
@@ -696,13 +703,13 @@ impl ParticleSystem {
                     &self.uniform_buffer.buffer,
                     0,
                     wgpu::BufferSize::new(self.uniform_buffer.size as _).unwrap(),
-                    device,
                 )
                 .copy_from_slice(bytemuck::bytes_of(&self.uniform_values));
             self.staging_belt.finish();
 
             let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                 label: Some("Particle System"),
+                timestamp_writes: None,
             });
             cpass.set_pipeline(&self.update_particles_pipeline);
             cpass.set_bind_group(0, &self.update_particles_bind_group, &[]);
@@ -773,7 +780,7 @@ impl ParticleRenderer {
             address_mode_w: wgpu::AddressMode::ClampToEdge,
             mag_filter: wgpu::FilterMode::Linear,
             min_filter: wgpu::FilterMode::Linear,
-            mipmap_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::MipmapFilterMode::Linear,
             ..Default::default()
         });
 
@@ -857,8 +864,8 @@ impl ParticleRenderer {
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Particle render pipeline layout"),
-                bind_group_layouts: &[&render_bind_group_layout],
-                push_constant_ranges: &[],
+                bind_group_layouts: &[Some(&render_bind_group_layout)],
+                immediate_size: 0,
             });
 
         let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -866,17 +873,19 @@ impl ParticleRenderer {
             layout: Some(&render_pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &shader_module,
-                entry_point: "vs_main",
+                entry_point: Some("vs_main"),
                 buffers: &[],
+                compilation_options: Default::default(),
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader_module,
-                entry_point: "fs_main",
+                entry_point: Some("fs_main"),
                 targets: &[Some(wgpu::ColorTargetState {
                     format: wgpu::TextureFormat::Bgra8UnormSrgb,
                     blend: Some(wgpu::BlendState::ALPHA_BLENDING),
                     write_mask: wgpu::ColorWrites::all(),
                 })],
+                compilation_options: Default::default(),
             }),
             primitive: wgpu::PrimitiveState {
                 topology: wgpu::PrimitiveTopology::TriangleStrip,
@@ -884,7 +893,8 @@ impl ParticleRenderer {
             },
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
-            multiview: None,
+            cache: None,
+            multiview_mask: None,
         });
         ParticleRenderer {
             render_bind_group,
@@ -904,12 +914,16 @@ impl ParticleRenderer {
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                 view: output_texture_view,
                 resolve_target: None,
+                depth_slice: None,
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Load,
-                    store: true,
+                    store: wgpu::StoreOp::Store,
                 },
             })],
             depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
         });
         rpass.set_pipeline(&self.render_pipeline);
         rpass.set_bind_group(0, &self.render_bind_group, &[]);
@@ -961,7 +975,7 @@ mod tests {
 
         let buffer_slice = staging_buffer.slice(..);
         buffer_slice.map_async(wgpu::MapMode::Read, |_| {});
-        device.poll(wgpu::Maintain::Wait);
+        device.poll(wgpu::PollType::wait_indefinitely()).unwrap();
 
         let data = buffer_slice.get_mapped_range();
         let particles: Vec<Particle> = bytemuck::cast_slice(&data).to_vec();

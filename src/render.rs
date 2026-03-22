@@ -108,13 +108,15 @@ impl Render {
             layout: None,
             vertex: wgpu::VertexState {
                 module: &shader,
-                entry_point: "vs_main",
+                entry_point: Some("vs_main"),
                 buffers: &vertex_buffers,
+                compilation_options: Default::default(),
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
-                entry_point: "fs_main",
+                entry_point: Some("fs_main"),
                 targets: &[Some(config.format.into())],
+                compilation_options: Default::default(),
             }),
             primitive: wgpu::PrimitiveState {
                 cull_mode: Some(wgpu::Face::Back),
@@ -122,7 +124,8 @@ impl Render {
             },
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
-            multiview: None,
+            cache: None,
+            multiview_mask: None,
         });
 
         // Create bind group
@@ -173,7 +176,7 @@ impl Render {
             demo_model: maybe_demo_quad,
 
             frame_num: 0,
-            staging_belt: wgpu::util::StagingBelt::new(0x100),
+            staging_belt: wgpu::util::StagingBelt::new(device.clone(), 0x100),
         }
     }
 
@@ -184,7 +187,7 @@ impl Render {
     pub fn render(
         &mut self,
         view: &wgpu::TextureView,
-        device: &wgpu::Device,
+        _device: &wgpu::Device,
         encoder: &mut wgpu::CommandEncoder,
     ) {
         {
@@ -195,7 +198,6 @@ impl Render {
                     &self.camera_uniform_buf,
                     0,
                     wgpu::BufferSize::new((raw_uniforms.len() * 4) as wgpu::BufferAddress).unwrap(),
-                    device,
                 )
                 .copy_from_slice(bytemuck::cast_slice(&raw_uniforms));
 
@@ -215,12 +217,16 @@ impl Render {
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                         view,
                         resolve_target: None,
+                        depth_slice: None,
                         ops: wgpu::Operations {
                             load: wgpu::LoadOp::Clear(clear_color),
-                            store: true,
+                            store: wgpu::StoreOp::Store,
                         },
                     })],
                     depth_stencil_attachment: None,
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                    multiview_mask: None,
                 });
                 rpass.set_pipeline(&self.draw_pipeline);
 

@@ -71,9 +71,9 @@ pub fn create_color_map(
         usage: wgpu::BufferUsages::COPY_SRC,
     });
     encoder.copy_buffer_to_texture(
-        wgpu::ImageCopyBuffer {
+        wgpu::TexelCopyBufferInfo {
             buffer: &temp_buf,
-            layout: wgpu::ImageDataLayout {
+            layout: wgpu::TexelCopyBufferLayout {
                 offset: 0,
                 bytes_per_row: Some(4 * size),
                 rows_per_image: None,

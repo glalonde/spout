@@ -33,27 +33,25 @@ async fn run() {
 
 async fn execute_gpu(numbers: &[u32]) -> Option<Vec<u32>> {
     // Instantiates instance of WebGPU
-    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-        backends: wgpu::Backends::all(),
-        dx12_shader_compiler: Default::default(),
-    });
+    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
 
     // `request_adapter` instantiates the general connection to the GPU
     let adapter = instance
         .request_adapter(&wgpu::RequestAdapterOptions::default())
-        .await?;
+        .await
+        .ok()?;
 
     // `request_device` instantiates the feature specific connection to the GPU, defining some parameters,
     //  `features` being the available features.
     let (device, queue) = adapter
-        .request_device(
-            &wgpu::DeviceDescriptor {
-                label: None,
-                features: wgpu::Features::empty(),
-                limits: wgpu::Limits::downlevel_defaults(),
-            },
-            None,
-        )
+        .request_device(&wgpu::DeviceDescriptor {
+            label: None,
+            required_features: wgpu::Features::empty(),
+            required_limits: wgpu::Limits::downlevel_defaults(),
+            memory_hints: wgpu::MemoryHints::MemoryUsage,
+            experimental_features: wgpu::ExperimentalFeatures::disabled(),
+            trace: wgpu::Trace::Off,
+        })
         .await
         .unwrap();
 
@@ -116,7 +114,9 @@ async fn execute_gpu_inner(
         label: None,
         layout: None,
         module: &cs_module,
-        entry_point: "main",
+        entry_point: Some("main"),
+        compilation_options: Default::default(),
+        cache: None,
     });
 
     // Instantiates the bind group, once again specifying the binding of buffers.
@@ -135,7 +135,10 @@ async fn execute_gpu_inner(
     let mut encoder =
         device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
     {
-        let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor { label: None });
+        let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+            label: None,
+            timestamp_writes: None,
+        });
         cpass.set_pipeline(&compute_pipeline);
         cpass.set_bind_group(0, &bind_group, &[]);
         cpass.insert_debug_marker("compute collatz iterations");
@@ -155,7 +158,7 @@ async fn execute_gpu_inner(
     // Poll the device in a blocking manner so that the mapping completes.
     // In an actual application, `device.poll(...)` should
     // be called in an event loop or on another thread.
-    device.poll(wgpu::Maintain::Wait);
+    device.poll(wgpu::PollType::wait_indefinitely()).unwrap();
 
     // Gets contents of buffer
     let data = buffer_slice.get_mapped_range();

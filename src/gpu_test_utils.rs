@@ -4,17 +4,15 @@
 /// adapter is available (e.g. no GPU and no software renderer installed).
 pub fn try_create_headless_device() -> Option<(wgpu::Device, wgpu::Queue)> {
     pollster::block_on(async {
-        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-            backends: wgpu::Backends::all(),
-            dx12_shader_compiler: Default::default(),
-        });
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
                 power_preference: wgpu::PowerPreference::None,
                 force_fallback_adapter: false,
                 compatible_surface: None,
             })
-            .await?;
+            .await
+            .ok()?;
         let info = adapter.get_info();
         log::info!(
             "GPU test adapter: {:?} (vendor 0x{:x})",
@@ -22,14 +20,14 @@ pub fn try_create_headless_device() -> Option<(wgpu::Device, wgpu::Queue)> {
             info.vendor
         );
         let (device, queue) = adapter
-            .request_device(
-                &wgpu::DeviceDescriptor {
-                    label: None,
-                    features: wgpu::Features::empty(),
-                    limits: wgpu::Limits::downlevel_defaults(),
-                },
-                None,
-            )
+            .request_device(&wgpu::DeviceDescriptor {
+                label: None,
+                required_features: wgpu::Features::empty(),
+                required_limits: wgpu::Limits::downlevel_defaults(),
+                memory_hints: wgpu::MemoryHints::MemoryUsage,
+                experimental_features: wgpu::ExperimentalFeatures::disabled(),
+                trace: wgpu::Trace::Off,
+            })
             .await
             .ok()?;
         Some((device, queue))
@@ -85,15 +83,15 @@ pub fn encode_texture_readback(
     height: u32,
 ) {
     encoder.copy_texture_to_buffer(
-        wgpu::ImageCopyTexture {
+        wgpu::TexelCopyTextureInfo {
             texture,
             mip_level: 0,
             origin: wgpu::Origin3d::ZERO,
             aspect: wgpu::TextureAspect::All,
         },
-        wgpu::ImageCopyBuffer {
+        wgpu::TexelCopyBufferInfo {
             buffer: staging_buffer,
-            layout: wgpu::ImageDataLayout {
+            layout: wgpu::TexelCopyBufferLayout {
                 offset: 0,
                 bytes_per_row: Some(width * 4),
                 rows_per_image: None,
@@ -111,7 +109,7 @@ pub fn encode_texture_readback(
 pub fn readback_pixels(device: &wgpu::Device, staging_buffer: &wgpu::Buffer) -> Vec<u8> {
     let buffer_slice = staging_buffer.slice(..);
     buffer_slice.map_async(wgpu::MapMode::Read, |_| {});
-    device.poll(wgpu::Maintain::Wait);
+    device.poll(wgpu::PollType::wait_indefinitely()).unwrap();
     let raw = buffer_slice.get_mapped_range();
     let pixels = raw.to_vec();
     drop(raw);
@@ -129,12 +127,16 @@ pub fn encode_clear_texture(encoder: &mut wgpu::CommandEncoder, view: &wgpu::Tex
         color_attachments: &[Some(wgpu::RenderPassColorAttachment {
             view,
             resolve_target: None,
+            depth_slice: None,
             ops: wgpu::Operations {
                 load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                store: true,
+                store: wgpu::StoreOp::Store,
             },
         })],
         depth_stencil_attachment: None,
+        timestamp_writes: None,
+        occlusion_query_set: None,
+        multiview_mask: None,
     });
 }
 
