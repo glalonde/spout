@@ -1,3 +1,6 @@
+// bytemuck_derive 1.4.1 generates a `check` fn for Pod impls that Rust flags as dead
+// code. These GPU layout structs are written via bytemuck but never read back in Rust.
+// TODO: remove when bytemuck_derive >= 1.5 lands (switches to const assertions).
 #![allow(dead_code)]
 use crate::buffer_util::{self, SizedBuffer};
 
