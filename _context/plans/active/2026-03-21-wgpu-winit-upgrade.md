@@ -8,14 +8,12 @@ Upgrade the two major stale dependencies to unblock active development. The comp
 
 ## Immediate — low effort
 
-- [ ] Delete stale merged branches: `update-wgpu`, `level_manager`, `test_ci`, `android`, `glalonde-mixer` (1 commit ahead of master — only a 2-line README wip note, not worth keeping), `glalonde-newbrese`, `glalonde-nonimageatomic`, `glalonde-wipscroll`
 - [ ] Fix `release.yml`: remove/fix undefined `matrix.platform` reference (workflow currently fails silently)
 - [ ] Update CI action versions to `actions/checkout@v4`, `actions/cache@v4`
 - [ ] Add autoformatting: configure `rustfmt` (format on CI) and `clippy` lints to regularize code style
 
 ## Medium effort
 
-- [ ] Audit ALL old branches (`glalonde-emitoverangle`, `glalonde-fpbresen`, `glalonde-glslrand`, `legacy_wgpu`) — for each branch: identify what functionality is implemented, compare against master, and document what is missing from master or worth porting; then merge or close
 - [ ] Upgrade `rand` (0.7 → 0.9) and `toml` (0.5 → 0.8) — lower-risk upgrades
 - [ ] Add `wasm-bindgen-cli` caching to `gh-pages.yml` (currently installs from scratch every run)
 - [ ] Increase test coverage; ensure GPU code is tested using a software GPU backend (e.g. `wgpu` with `dx12`/`vulkan` software adapter or `wgpu`'s `Gl` backend via `lavapipe`/`llvmpipe`)
