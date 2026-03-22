@@ -75,7 +75,7 @@ impl CameraState {
     pub fn update(
         &mut self,
         dt: f32,
-        input_state: &crate::InputState,
+        input_state: &crate::input::InputState,
         motion_params: &CameraMotion,
     ) {
         if input_state.cam_in && !input_state.cam_out {
@@ -220,7 +220,7 @@ impl Camera {
         self.state.center = cgmath::Point3::<f32>::new(center[0], center[1], 0.0);
     }
 
-    pub fn update_state(&mut self, dt: f32, input_state: &crate::InputState) {
+    pub fn update_state(&mut self, dt: f32, input_state: &crate::input::InputState) {
         self.state.update(dt, input_state, &self.motion_params);
     }
 }

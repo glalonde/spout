@@ -33,8 +33,8 @@ impl Render {
     pub fn update_state(
         &mut self,
         dt: f32,
-        input_state: &crate::InputState,
-        prev_input_state: &crate::InputState,
+        input_state: &crate::input::InputState,
+        prev_input_state: &crate::input::InputState,
     ) {
         let target_width: f32 = self.model.width as _;
         let target_height: f32 = self.model.height as _;

@@ -24,11 +24,11 @@ Upgrade the two major stale dependencies to unblock active development. The comp
 
 Build regression coverage before the wgpu/winit upgrade so breakage is caught automatically. Screenshots serve dual purpose: CI pixel-diff regression and multimodal feedback for agents iterating on rendering code.
 
-- [ ] Add Mesa `lavapipe` (software Vulkan) to CI — install `libvulkan-dev mesa-vulkan-drivers` on Ubuntu runner; wgpu picks it up automatically with no real GPU present
-- [ ] Write compute integration test: initialize wgpu headlessly, emit N particles, step the compute pass, copy results back to CPU, assert on particle positions/counts — validates shader correctness and buffer layout
-- [ ] Write render integration test: render a known terrain slice + ship state offscreen, copy framebuffer to CPU, save as PNG — validates render pipeline end-to-end
-- [ ] Add golden image comparison with tolerance (allow small pixel delta to avoid brittleness across drivers); check golden images into `tests/golden/`
-- [ ] Wire headless GPU tests into CI; gate on lavapipe being available (Linux only — macOS Metal works headlessly but keep CI simple)
+- [x] Add Mesa `lavapipe` (software Vulkan) to CI — install `libvulkan-dev mesa-vulkan-drivers` on Ubuntu runner; wgpu picks it up automatically with no real GPU present
+- [x] Write compute integration test: initialize wgpu headlessly, emit N particles, step the compute pass, copy results back to CPU, assert on particle positions/counts — validates shader correctness and buffer layout
+- [x] Write render integration test: render a known terrain slice + ship state offscreen, copy framebuffer to CPU, save as PNG — validates render pipeline end-to-end
+- [x] Add golden image comparison with tolerance (allow small pixel delta to avoid brittleness across drivers); check golden images into `tests/golden/`
+- [x] Wire headless GPU tests into CI; gate on lavapipe being available (Linux only — macOS Metal works headlessly but keep CI simple)
 
 **Verification:** `cargo test` produces output PNGs in `tests/output/`; agent can read these images directly to verify visual correctness after changes.
 

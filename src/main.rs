@@ -1,37 +1,12 @@
-mod buffer_util;
-mod camera;
-mod color_maps;
 #[path = "../examples/framework.rs"]
 mod framework;
-mod game_params;
-mod level_manager;
-mod load_image;
-mod particles;
-mod render;
-mod shader_util;
-mod ship;
-mod textured_quad;
 
-#[derive(Debug, Copy, Clone, Default)]
-pub struct InputState {
-    forward: bool,
-    left: bool,
-    right: bool,
-    pause: bool,
-
-    // Camera controls:
-    cam_in: bool,
-    cam_out: bool,
-    cam_up: bool,
-    cam_down: bool,
-    cam_left: bool,
-    cam_right: bool,
-
-    cam_perspective: bool,
-    cam_reset: bool,
-
-    fullscreen: bool,
-}
+use spout::game_params;
+use spout::input::InputState;
+use spout::level_manager;
+use spout::particles;
+use spout::render;
+use spout::ship;
 
 #[derive(Debug, Default)]
 struct GameState {
@@ -51,26 +26,8 @@ struct Spout {
     iteration_start: instant::Instant,
     game_view_texture: wgpu::TextureView,
     renderer: render::Render,
-    // emitter: emitter::Emitter,
     particle_system: particles::ParticleSystem,
     ship_renderer: ship::ShipRenderer,
-    // staging_belt: wgpu::util::StagingBelt,
-
-    // fps: fps_estimator::FpsEstimator,
-    /*
-    compute_locals: super::particle_system::ComputeLocals,
-    pre_glow_texture: wgpu::TextureView,
-    post_glow_texture: wgpu::TextureView,
-    game_view_texture: wgpu::TextureView,
-    terrain_renderer: super::terrain_renderer::TerrainRenderer,
-    particle_renderer: super::particle_system::ParticleRenderer,
-    glow_renderer: super::glow_pass::GlowRenderer,
-    ship_renderer: super::ship::ShipRenderer,
-    viewport: super::viewport::Viewport,
-    debug_overlay: super::debug_overlay::DebugOverlay,
-    text_renderer: super::text_renderer::TextRenderer,
-    game_viewport: super::game_viewport::GameViewport,
-    */
 }
 
 impl Spout {
@@ -151,7 +108,6 @@ impl Spout {
             .level_maker
             .work_until(instant::Instant::now() + level_budget);
 
-        // let target_duration = std::time::Duration::from_secs_f64(1.0 / self.game_params.fps);
         let (game_dt, wall_dt) = self.tick();
 
         // Process input state integrated over passage of time.
@@ -217,11 +173,6 @@ impl framework::Example for Spout {
         }
     }
 
-    // fn get_default_screen_size() -> winit::dpi::LogicalSize<u32> {
-    //     let game_params = game_params::get_game_config_from_default_file();
-    //     winit::dpi::LogicalSize::new(game_params.viewport_width, game_params.viewport_height)
-    // }
-
     fn init(
         config: &wgpu::SurfaceConfiguration,
         adapter: &wgpu::Adapter,
@@ -263,9 +214,6 @@ impl framework::Example for Spout {
             &game_view_texture,
         );
 
-        // renderer.show_demo_texture = true;
-
-        // TODO load params from config.
         let particle_system =
             particles::ParticleSystem::new(device, &game_params, &mut init_encoder, &level_manager);
 
@@ -359,7 +307,6 @@ impl framework::Example for Spout {
                         log::info!("Setting exclusive fullscreen with mode: {}", best_mode);
                         window
                             .set_fullscreen(Some(winit::window::Fullscreen::Exclusive(best_mode)));
-                        // window.set_fullscreen(Some(winit::window::Fullscreen::Borderless(None)));
                     } else {
                         window.set_fullscreen(Some(winit::window::Fullscreen::Borderless(None)));
                     }
@@ -369,20 +316,9 @@ impl framework::Example for Spout {
 
         let mut encoder =
             device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-        /*
-          1. Grab new input events
-          2. Process particle motions (ship included)
-          3. Get data back from GPU to CPU?
-          4. Update window state based on ship motion
-          5. Render
-        */
 
         self.update_state();
 
-        // Update ship:
-        // TODO
-
-        // Update score based on new ship position:
         self.level_manager.sync_height(
             device,
             self.state.viewport_offset,
@@ -416,7 +352,7 @@ impl framework::Example for Spout {
             );
         }
 
-        // Run render the game view quad.
+        // Render the game view quad.
         self.renderer.render(view, device, &mut encoder);
         self.level_manager.decompose_tiles(&mut encoder);
 
