@@ -137,16 +137,21 @@ impl Spout {
             Some(monitor) => {
                 for mode in monitor.video_modes() {
                     if let Some(best_mode) = &video_mode {
-                        if mode.refresh_rate_millihertz() > best_mode.refresh_rate_millihertz() {
-                            video_mode = Some(mode);
-                        } else if mode.refresh_rate_millihertz()
-                            == best_mode.refresh_rate_millihertz()
+                        match mode
+                            .refresh_rate_millihertz()
+                            .cmp(&best_mode.refresh_rate_millihertz())
                         {
-                            let best_area = best_mode.size().width * best_mode.size().height;
-                            let current_area = mode.size().width * mode.size().height;
-                            if best_area < current_area {
+                            std::cmp::Ordering::Greater => {
                                 video_mode = Some(mode);
                             }
+                            std::cmp::Ordering::Equal => {
+                                let best_area = best_mode.size().width * best_mode.size().height;
+                                let current_area = mode.size().width * mode.size().height;
+                                if best_area < current_area {
+                                    video_mode = Some(mode);
+                                }
+                            }
+                            std::cmp::Ordering::Less => {}
                         }
                     } else {
                         video_mode = Some(mode);
@@ -302,14 +307,11 @@ impl framework::Example for Spout {
                     // Set unfullscreen.
                     log::info!("Setting windowed mode.");
                     window.set_fullscreen(None);
+                } else if let Some(best_mode) = Spout::select_fullscreen_video_mode(window) {
+                    log::info!("Setting exclusive fullscreen with mode: {}", best_mode);
+                    window.set_fullscreen(Some(winit::window::Fullscreen::Exclusive(best_mode)));
                 } else {
-                    if let Some(best_mode) = Spout::select_fullscreen_video_mode(window) {
-                        log::info!("Setting exclusive fullscreen with mode: {}", best_mode);
-                        window
-                            .set_fullscreen(Some(winit::window::Fullscreen::Exclusive(best_mode)));
-                    } else {
-                        window.set_fullscreen(Some(winit::window::Fullscreen::Borderless(None)));
-                    }
+                    window.set_fullscreen(Some(winit::window::Fullscreen::Borderless(None)));
                 }
             }
         }

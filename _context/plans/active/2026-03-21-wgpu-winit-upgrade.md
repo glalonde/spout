@@ -35,6 +35,9 @@ Build regression coverage before the wgpu/winit upgrade so breakage is caught au
 
 ## High effort — revival path
 
+Order of operations: Rust version → winit → wgpu → web app revival.
+
+- [ ] Pin Rust version + upgrade to edition 2021: add `rust-toolchain.toml` pinning a stable release; bump `edition = "2021"` in `Cargo.toml` and `int_grid/Cargo.toml`; run `cargo fix --edition`; documents the minimum Rust floor for wgpu 0.22 (≥ 1.76)
 - [ ] Upgrade `winit` to 0.30+: breaking event loop API changes require rewriting event handling in `main.rs`
 - [ ] Upgrade `wgpu` to 0.22+: breaking API changes throughout — primarily `particles.rs`, `render.rs`, pipeline setup; wgpu changelog documents migration steps
 - [ ] Revive web app: evaluate WebGPU vs WebGL2 as the rendering backend — document pros/cons of each (browser support, wgpu WASM compatibility, performance) and decide before implementing

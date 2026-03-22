@@ -230,12 +230,10 @@ impl Render {
                 // Show the quad.
                 if !self.show_demo_texture {
                     self.model.render(&mut rpass);
+                } else if let Some(quad) = &self.demo_model {
+                    quad.render(&mut rpass);
                 } else {
-                    if let Some(quad) = &self.demo_model {
-                        quad.render(&mut rpass);
-                    } else {
-                        self.model.render(&mut rpass);
-                    }
+                    self.model.render(&mut rpass);
                 }
             }
         }

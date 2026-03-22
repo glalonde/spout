@@ -107,17 +107,14 @@ impl LevelMaker {
 
     pub fn prefetch_up_to_level(&mut self, i: i32) {
         for level_index in self.levels.len() as u32..(i + 1) as u32 {
-            if !self.wip_levels.contains_key(&level_index) {
-                self.wip_levels.insert(
+            self.wip_levels.entry(level_index).or_insert_with(|| {
+                WIPRectangleLevel::init(
                     level_index,
-                    WIPRectangleLevel::init(
-                        level_index,
-                        self.level_width,
-                        self.level_height,
-                        self.starting_terrain_health,
-                    ),
-                );
-            }
+                    self.level_width,
+                    self.level_height,
+                    self.starting_terrain_health,
+                )
+            });
         }
     }
 
@@ -394,6 +391,9 @@ impl LevelManager {
             assert!(level_index < self.level_maker.levels.len() as i32);
             // Check if this level has a buffer, if not, find it one.
             // self.level_maker.use_level(check_level_index, action);
+            // entry() API can't be used here: the block borrows self mutably
+            // (get_unused_tile_buffer, staging_belt) which conflicts with holding an Entry.
+            #[allow(clippy::map_entry)]
             if !self.loaded_tiles.contains_key(&level_index) {
                 // Tile isn't loaded, find a buffer.
                 log::info!("Loading level {} to gpu", level_index);
