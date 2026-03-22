@@ -17,7 +17,7 @@ Upgrade the two major stale dependencies to unblock active development. The comp
 ## Medium effort
 
 - [ ] Audit ALL old branches (`glalonde-emitoverangle`, `glalonde-fpbresen`, `glalonde-glslrand`, `legacy_wgpu`) — for each branch: identify what functionality is implemented, compare against master, and document what is missing from master or worth porting; then merge or close
-- [ ] Upgrade `rand` (0.7 → 0.9) and `toml` (0.5 → 0.8) — lower-risk upgrades
+- [x] Upgrade `rand` (0.7 → 0.9) and `toml` (0.5 → 0.8) — lower-risk upgrades
 - [x] Improve CI caching: expand cargo cache to include `~/.cargo/registry/index`, `~/.cargo/git/db`, and `target/` in ci.yml and release.yml; remove stale `cargo update` from release.yml (Cargo.lock is committed)
 - [x] Disable `gh-pages.yml` (WASM build broken; changed to `workflow_dispatch`-only trigger until WASM is revived)
 

@@ -18,11 +18,11 @@ pollster = "0.2"
 scrub_log = "0.2"
 bytemuck = { version = "1.4", features = ["derive"] }
 async-executor = "1.0"
-rand = "0.7.2"
+rand = "0.9"
 cgmath = "0.18"
 anyhow = "1.0"
 serde = { version = "1.0", features = ["derive"] }
-toml = "0.5"
+toml = "0.8"
 instant = "0.1"
 int_grid = {path = "int_grid"}
 lazy_static = "1"
