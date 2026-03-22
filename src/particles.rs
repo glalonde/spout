@@ -123,7 +123,7 @@ impl Emitter {
         SizedBuffer {
             buffer: device.create_buffer(&wgpu::BufferDescriptor {
                 size: buf_size,
-                usage: wgpu::BufferUsages::STORAGE,
+                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
                 label: Some("Particle storage"),
                 mapped_at_creation: false,
             }),
@@ -313,6 +313,43 @@ impl Emitter {
     pub fn after_queue_submission(&mut self) {
         self.staging_belt.recall();
     }
+}
+
+/// Try to create a wgpu device and queue without a surface (headless). Returns None if no
+/// adapter is available (e.g. no GPU and no software renderer installed).
+#[cfg(test)]
+pub(crate) fn try_create_headless_device() -> Option<(wgpu::Device, wgpu::Queue)> {
+    pollster::block_on(async {
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+            backends: wgpu::Backends::all(),
+            dx12_shader_compiler: Default::default(),
+        });
+        let adapter = instance
+            .request_adapter(&wgpu::RequestAdapterOptions {
+                power_preference: wgpu::PowerPreference::None,
+                force_fallback_adapter: false,
+                compatible_surface: None,
+            })
+            .await?;
+        let info = adapter.get_info();
+        log::info!(
+            "GPU test adapter: {:?} (vendor 0x{:x})",
+            info.name,
+            info.vendor
+        );
+        let (device, queue) = adapter
+            .request_device(
+                &wgpu::DeviceDescriptor {
+                    label: None,
+                    features: wgpu::Features::empty(),
+                    limits: wgpu::Limits::downlevel_defaults(),
+                },
+                None,
+            )
+            .await
+            .ok()?;
+        Some((device, queue))
+    })
 }
 
 pub struct ParticleSystem {
@@ -911,5 +948,124 @@ impl ParticleRenderer {
         rpass.set_pipeline(&self.render_pipeline);
         rpass.set_bind_group(0, &self.render_bind_group, &[]);
         rpass.draw(0..4_u32, 0..1);
+    }
+}
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod tests {
+    use super::*;
+
+    /// Emit N particles with the given params and read the particle buffer back from the GPU.
+    fn run_emitter_and_read_back(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        game_params: &crate::game_params::GameParams,
+        dt: f32,
+        motion: EmitterMotion,
+    ) -> (Vec<Particle>, u32) {
+        let mut emitter = Emitter::new(device, game_params);
+        emitter.emit_for_period(dt, motion);
+        let num_emitted = emitter
+            .emit_params
+            .as_ref()
+            .map(|ep| ep.num_emitted)
+            .unwrap_or(0);
+
+        let staging_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Particle readback staging"),
+            size: emitter.particle_buffer.size,
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("Compute test encoder"),
+        });
+        emitter.run_compute(device, &mut encoder);
+        encoder.copy_buffer_to_buffer(
+            &emitter.particle_buffer.buffer,
+            0,
+            &staging_buffer,
+            0,
+            emitter.particle_buffer.size,
+        );
+        queue.submit(Some(encoder.finish()));
+        emitter.after_queue_submission();
+
+        let buffer_slice = staging_buffer.slice(..);
+        buffer_slice.map_async(wgpu::MapMode::Read, |_| {});
+        device.poll(wgpu::Maintain::Wait);
+
+        let data = buffer_slice.get_mapped_range();
+        let particles: Vec<Particle> = bytemuck::cast_slice(&data).to_vec();
+        drop(data);
+        staging_buffer.unmap();
+
+        (particles, num_emitted)
+    }
+
+    #[test]
+    fn test_emitter_compute_headless() {
+        let Some((device, queue)) = try_create_headless_device() else {
+            eprintln!("No GPU adapter available — skipping test_emitter_compute_headless");
+            return;
+        };
+
+        let mut game_params = crate::game_params::GameParams::default();
+        // Small particle count for fast test: 100 particles/s * 1s life = 100 max particles.
+        // ttl is derived from max_particle_life: emitter sets ttl = max_particle_life = 1.0.
+        game_params.particle_system_params.emission_rate = 100.0;
+        game_params.particle_system_params.max_particle_life = 1.0;
+
+        // dt >> emit_period (0.01), so we expect ~50 particles emitted.
+        let dt = 0.5f32;
+        let motion = EmitterMotion {
+            position_start: [100.0, 200.0],
+            position_end: [100.0, 200.0],
+            velocity_start: [0.0, 0.0],
+            velocity_end: [0.0, 0.0],
+            angle_start: 0.0,
+            angle_end: 0.0,
+            _p0: 0,
+            _p1: 0,
+        };
+
+        let (particles, num_emitted) =
+            run_emitter_and_read_back(&device, &queue, &game_params, dt, motion);
+
+        assert!(num_emitted > 0, "Expected particles to be emitted, got 0");
+
+        // Every emitted particle should have ttl > 0 (we set ttl_min = ttl_max = 2.0).
+        let live: Vec<_> = particles[..num_emitted as usize]
+            .iter()
+            .filter(|p| p.ttl > 0.0)
+            .collect();
+        assert!(
+            !live.is_empty(),
+            "Expected some emitted particles with ttl > 0, got 0/{}",
+            num_emitted,
+        );
+
+        // Emitted positions should be near ship position [100, 200].
+        for p in &live {
+            assert!(
+                (p.position[0] - 100.0).abs() < 20.0,
+                "Particle x={} too far from ship x=100",
+                p.position[0]
+            );
+            assert!(
+                (p.position[1] - 200.0).abs() < 20.0,
+                "Particle y={} too far from ship y=200",
+                p.position[1]
+            );
+        }
+
+        eprintln!(
+            "test_emitter_compute_headless: {}/{} emitted particles are live, positions near [{}, {}]",
+            live.len(),
+            num_emitted,
+            100.0f32,
+            200.0f32
+        );
     }
 }
