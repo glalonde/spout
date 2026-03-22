@@ -69,16 +69,17 @@ The `Cargo.lock` pins all transitive deps as of July 2023. A `cargo update` woul
 ## Build Status
 
 ### Rust toolchain
-Rust was **not installed** in the test environment. To check the build locally:
+**Verified: builds and runs as of 2026-03-21.**
+
+The code compiles and runs with the locked dependencies (`Cargo.lock`). Native desktop target confirmed working.
+
+To build locally:
 ```bash
 rustup show   # Check installed toolchains
 cargo check   # Fast type-check without linking
 cargo build   # Full build
+cargo run     # Build and run
 ```
-
-The code **should build** with the locked dependencies (`cargo build` uses `Cargo.lock` by default). However:
-- `wgpu 0.17` requires a GPU or software rasterizer. Native builds need a display server / GPU.
-- CI last passed when the final commit was pushed (July 2023). **There is no recent CI run confirming the build still works.**
 
 ### WASM build
 ```bash
@@ -199,7 +200,7 @@ Three workflows in `.github/workflows/`:
 |-----------|--------|-------|
 | Code architecture | Good | Clean GPU/compute separation; shader templating is clever |
 | Code completeness | ~60% MVP | Core mechanics work; UI, score, game-over missing |
-| Build health | Unknown | Not verified recently; Cargo.lock should still produce a working build |
+| Build health | Good | Verified builds and runs as of 2026-03-21 with locked deps |
 | Dependency freshness | Poor | wgpu (0.17→0.20+), winit (0.28→0.30+) both have breaking API changes |
 | CI health | Poor | Old action versions; release workflow has a bug; no recent passing runs confirmed |
 | Test coverage | Minimal | `cargo test` runs but likely only doctests/examples |
