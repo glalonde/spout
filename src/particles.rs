@@ -315,7 +315,6 @@ impl Emitter {
     }
 }
 
-
 pub struct ParticleSystem {
     emitter: Emitter,
     uniform_values: ParticleSystemUniforms,
@@ -1088,7 +1087,13 @@ mod tests {
         let renderer = ParticleRenderer::init(&device, &game_params, &density_buffer, &mut encoder);
         gpu::encode_clear_texture(&mut encoder, &target.view);
         renderer.render(&mut encoder, &target.view);
-        gpu::encode_texture_readback(&mut encoder, &target.texture, &staging_buffer, TEST_W, TEST_H);
+        gpu::encode_texture_readback(
+            &mut encoder,
+            &target.texture,
+            &staging_buffer,
+            TEST_W,
+            TEST_H,
+        );
         queue.submit(Some(encoder.finish()));
 
         let bgra = gpu::readback_pixels(&device, &staging_buffer);

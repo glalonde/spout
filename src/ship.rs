@@ -272,7 +272,13 @@ mod tests {
             device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
         gpu::encode_clear_texture(&mut encoder, &target.view);
         renderer.render(&state, &game_params, 0, &device, &target.view, &mut encoder);
-        gpu::encode_texture_readback(&mut encoder, &target.texture, &staging_buffer, TEST_W, TEST_H);
+        gpu::encode_texture_readback(
+            &mut encoder,
+            &target.texture,
+            &staging_buffer,
+            TEST_W,
+            TEST_H,
+        );
         queue.submit(Some(encoder.finish()));
         renderer.after_queue_submission();
 
