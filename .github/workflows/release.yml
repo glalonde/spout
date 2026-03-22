@@ -18,17 +18,19 @@ jobs:
           sudo apt-get install -y alsa alsa-tools libasound2-dev
       - name: Fixup the owner of ~/.cargo/
         run: sudo chown -R $(whoami):$(id -ng) ~/.cargo/
-      - name: Generate Cargo.lock and Cargo.version
-        run: |
-          cargo update
-          cargo --version > Cargo.version
-      - name: Cache cargo registry
+      - name: Generate Cargo.version
+        run: cargo --version > Cargo.version
+      - name: Cache cargo
         uses: actions/cache@v4
         with:
-          path: ~/.cargo/registry/cache
-          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-registry-
+            ${{ runner.os }}-cargo-
       - name: Build project
         run: |
           cargo build --release --verbose
