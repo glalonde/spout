@@ -8,6 +8,8 @@ Live streaming some of the programming ony my youtube channel: [https://youtu.be
 
 Legacy version is in branch `legacy_wgpu`. It's actually in a more complete state, but is based on older libraries. I'm in the process of getting back to the same functionality now.
 
+See [docs/pipeline.md](docs/pipeline.md) for a diagram of the per-frame compute and render pipeline.
+
 ## Web Dev Notes
 
 Try visiting the demo at [https://glalonde.github.io/spout/](https://glalonde.github.io/spout/)
