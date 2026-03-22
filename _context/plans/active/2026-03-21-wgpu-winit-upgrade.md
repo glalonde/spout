@@ -9,9 +9,9 @@ Upgrade the two major stale dependencies to unblock active development. The comp
 ## Immediate — low effort
 
 - [ ] Delete stale merged branches: `update-wgpu`, `level_manager`, `test_ci`, `android`, `glalonde-mixer` (1 commit ahead of master — only a 2-line README wip note, not worth keeping), `glalonde-newbrese`, `glalonde-nonimageatomic`, `glalonde-wipscroll`
-- [ ] Fix `release.yml`: remove/fix undefined `matrix.platform` reference (workflow currently fails silently)
-- [ ] Update CI action versions to `actions/checkout@v4`, `actions/cache@v4`
-- [ ] Add autoformatting: configure `rustfmt` (format on CI) and `clippy` lints to regularize code style
+- [x] Fix `release.yml`: remove/fix undefined `matrix.platform` reference (workflow currently fails silently)
+- [x] Update CI action versions to `actions/checkout@v4`, `actions/cache@v4`
+- [x] Add autoformatting: configure `rustfmt` (format on CI) and `clippy` lints to regularize code style
 
 ## Medium effort
 
