@@ -4,7 +4,7 @@ pub fn load_image_to_texture(
     queue: &wgpu::Queue,
 ) -> Result<wgpu::TextureView, image::ImageError> {
     let image = image::load_from_memory(include_bytes!("../assets/texture_coordinates2.png"))?;
-    let image = image.into_bgra8();
+    let image = image.into_rgba8();
     let texture_extent = wgpu::Extent3d {
         width: image.width(),
         height: image.height(),
@@ -16,7 +16,7 @@ pub fn load_image_to_texture(
         mip_level_count: 1,
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
-        format: wgpu::TextureFormat::Bgra8UnormSrgb,
+        format: wgpu::TextureFormat::Rgba8UnormSrgb,
         usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
         label: None,
         view_formats: &[],
