@@ -8,6 +8,9 @@ use spout::particles;
 use spout::render;
 use spout::ship;
 
+/// Time budget per frame for background level generation (≈ 1/300 s).
+const LEVEL_BUDGET: std::time::Duration = std::time::Duration::from_nanos(3_333_333);
+
 #[derive(Debug, Default)]
 struct GameState {
     input_state: InputState,
@@ -103,10 +106,9 @@ impl Spout {
     fn update_state(&mut self) {
         self.update_paused();
 
-        let level_budget = std::time::Duration::from_secs_f64(1.0 / 300.0);
         self.level_manager
             .level_maker
-            .work_until(std::time::Instant::now() + level_budget);
+            .work_until(std::time::Instant::now() + LEVEL_BUDGET);
 
         let (game_dt, wall_dt) = self.tick();
 
@@ -324,7 +326,7 @@ impl framework::Example for Spout {
         // Run compute pipeline(s).
         self.level_manager.compose_tiles(&mut encoder);
         self.particle_system
-            .run_compute(&self.level_manager, device, &mut encoder);
+            .run_compute(&self.level_manager, &mut encoder);
 
         // Render terrain.
         self.level_manager
@@ -341,14 +343,13 @@ impl framework::Example for Spout {
                 &self.state.ship_state,
                 &self.game_params,
                 self.state.viewport_offset,
-                device,
                 &self.game_view_texture,
                 &mut encoder,
             );
         }
 
         // Render the game view quad.
-        self.renderer.render(view, device, &mut encoder);
+        self.renderer.render(view, &mut encoder);
         self.level_manager.decompose_tiles(&mut encoder);
 
         queue.submit(Some(encoder.finish()));
@@ -359,8 +360,7 @@ impl framework::Example for Spout {
 
         {
             // After rendering, do some "async" work:
-            let level_budget = std::time::Duration::from_secs_f64(1.0 / 300.0);
-            let deadline = self.iteration_start + level_budget;
+            let deadline = self.iteration_start + LEVEL_BUDGET;
             self.level_manager.level_maker.work_until(deadline);
         }
     }

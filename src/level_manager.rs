@@ -1,7 +1,3 @@
-// bytemuck_derive 1.4.1 generates a `check` fn for Pod impls that Rust flags as dead
-// code. FragmentUniforms fields are written via bytemuck but never read back in Rust.
-// TODO: remove when bytemuck_derive >= 1.5 lands (switches to const assertions).
-#![allow(dead_code)]
 use crate::buffer_util::{self, SizedBuffer};
 
 pub struct WIPRectangleLevel {
@@ -499,7 +495,6 @@ impl LevelManager {
         // TODO when a level is no longer needed, recycle the buffer.
 
         self.terrain_renderer.update_render_state(
-            device,
             game_params,
             viewport_offset,
             self.composite_tile.shape.start,
@@ -542,7 +537,6 @@ struct FragmentUniforms {
 impl TerrainRenderer {
     pub fn update_render_state(
         &mut self,
-        _device: &wgpu::Device,
         game_params: &super::game_params::GameParams,
         viewport_offset: i32,
         terrain_buffer_offset: i32,
@@ -759,7 +753,7 @@ mod tests {
 
         let mut encoder =
             device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-        renderer.update_render_state(&device, &game_params, 0, 0, &mut encoder);
+        renderer.update_render_state(&game_params, 0, 0, &mut encoder);
         renderer.render(&target.view, &mut encoder);
         gpu::encode_texture_readback(
             &mut encoder,

@@ -11,11 +11,7 @@ pub struct Render {
 
     draw_pipeline: wgpu::RenderPipeline,
 
-    pub show_demo_texture: bool,
     model: textured_quad::TexturedQuad,
-    demo_model: Option<textured_quad::TexturedQuad>,
-
-    frame_num: i64,
     staging_belt: wgpu::util::StagingBelt,
 }
 
@@ -61,7 +57,7 @@ impl Render {
         game_params: &crate::game_params::GameParams,
         _adapter: &wgpu::Adapter,
         device: &wgpu::Device,
-        queue: &wgpu::Queue,
+        _queue: &wgpu::Queue,
         texture_view: &wgpu::TextureView,
     ) -> Self {
         let mut camera = camera::Camera {
@@ -102,10 +98,63 @@ impl Render {
             source: wgpu::ShaderSource::Wgsl(crate::include_shader!("textured_model.wgsl")),
         });
 
+        // Group 0: camera uniforms (ViewData = projection + view, 2 × mat4x4<f32> = 128 bytes).
+        let camera_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("Camera BGL"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: wgpu::BufferSize::new(128),
+                },
+                count: None,
+            }],
+        });
+
+        // Group 1: texture (b0), sampler (b1), model-pose uniform (b2, mat4x4<f32> = 64 bytes).
+        let texture_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("Texture BGL"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: wgpu::BufferSize::new(64),
+                    },
+                    count: None,
+                },
+            ],
+        });
+
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("Draw pipeline layout"),
+            bind_group_layouts: &[Some(&camera_bgl), Some(&texture_bgl)],
+            immediate_size: 0,
+        });
+
         let draw_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("draw"),
-            // TODO convert this to explicit pipeline layout.
-            layout: None,
+            layout: Some(&pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: Some("vs_main"),
@@ -129,9 +178,8 @@ impl Render {
         });
 
         // Create bind group
-        let camera_bind_group_layout = draw_pipeline.get_bind_group_layout(0);
         let camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &camera_bind_group_layout,
+            layout: &camera_bgl,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
                 resource: camera_uniform_buf.as_entire_binding(),
@@ -141,26 +189,11 @@ impl Render {
 
         let textured_quad = textured_quad::TexturedQuad::init(
             device,
-            draw_pipeline.get_bind_group_layout(1),
+            texture_bgl,
             texture_view,
             game_params.viewport_width,
             game_params.viewport_height,
         );
-
-        let maybe_demo_texture = crate::load_image::load_image_to_texture(device, queue);
-        let maybe_demo_quad = match maybe_demo_texture {
-            Ok(demo_texture) => Some(textured_quad::TexturedQuad::init(
-                device,
-                draw_pipeline.get_bind_group_layout(1),
-                &demo_texture,
-                game_params.viewport_width,
-                game_params.viewport_height,
-            )),
-            Err(e) => {
-                log::error!("Couldn't load demo texture: {:?}", e);
-                None
-            }
-        };
 
         // Aim the camera at the quad to start with.
         Render::reset_camera(&textured_quad, &mut camera);
@@ -171,11 +204,7 @@ impl Render {
             camera_uniform_buf,
             draw_pipeline,
 
-            show_demo_texture: false,
             model: textured_quad,
-            demo_model: maybe_demo_quad,
-
-            frame_num: 0,
             staging_belt: wgpu::util::StagingBelt::new(device.clone(), 0x100),
         }
     }
@@ -184,12 +213,7 @@ impl Render {
         self.camera.screen_size = (config.width, config.height);
     }
 
-    pub fn render(
-        &mut self,
-        view: &wgpu::TextureView,
-        _device: &wgpu::Device,
-        encoder: &mut wgpu::CommandEncoder,
-    ) {
+    pub fn render(&mut self, view: &wgpu::TextureView, encoder: &mut wgpu::CommandEncoder) {
         {
             let raw_uniforms = self.camera.to_uniform_data();
             self.staging_belt
@@ -234,17 +258,9 @@ impl Render {
                 rpass.set_bind_group(0, &self.camera_bind_group, &[]);
 
                 // Show the quad.
-                if !self.show_demo_texture {
-                    self.model.render(&mut rpass);
-                } else if let Some(quad) = &self.demo_model {
-                    quad.render(&mut rpass);
-                } else {
-                    self.model.render(&mut rpass);
-                }
+                self.model.render(&mut rpass);
             }
         }
-
-        self.frame_num += 1;
     }
 
     pub fn after_queue_submission(&mut self) {

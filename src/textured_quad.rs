@@ -1,7 +1,3 @@
-// bytemuck_derive 1.4.1 generates a `check` fn for Pod impls that Rust flags as dead
-// code. The Vertex struct fields are written via bytemuck but never read back in Rust.
-// TODO: remove when bytemuck_derive >= 1.5 lands (switches to const assertions).
-#![allow(dead_code)]
 use bytemuck::{Pod, Zeroable};
 use wgpu::util::DeviceExt;
 

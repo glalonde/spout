@@ -1,7 +1,3 @@
-// bytemuck_derive 1.4.1 generates a `check` fn for Pod impls that Rust flags as dead
-// code. These GPU layout structs are written via bytemuck but never read back in Rust.
-// TODO: remove when bytemuck_derive >= 1.5 lands (switches to const assertions).
-#![allow(dead_code)]
 use crate::buffer_util::{self, SizedBuffer};
 
 // This should match the struct defined in the relevant compute shader.
@@ -278,7 +274,7 @@ impl Emitter {
         }
     }
 
-    pub fn run_compute(&mut self, _device: &wgpu::Device, encoder: &mut wgpu::CommandEncoder) {
+    pub fn run_compute(&mut self, encoder: &mut wgpu::CommandEncoder) {
         if let Some(emit_params) = &self.emit_params {
             // Update uniforms
             // TODO reference https://toji.github.io/webgpu-best-practices/buffer-uploads.html
@@ -663,10 +659,9 @@ impl ParticleSystem {
     pub fn run_compute(
         &mut self,
         level_manager: &crate::level_manager::LevelManager,
-        device: &wgpu::Device,
         encoder: &mut wgpu::CommandEncoder,
     ) {
-        self.emitter.run_compute(device, encoder);
+        self.emitter.run_compute(encoder);
 
         // Clear density buffer.
         // See https://docs.rs/wgpu/latest/wgpu/struct.CommandEncoder.html#method.clear_buffer
@@ -962,7 +957,7 @@ mod tests {
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("Compute test encoder"),
         });
-        emitter.run_compute(device, &mut encoder);
+        emitter.run_compute(&mut encoder);
         encoder.copy_buffer_to_buffer(
             &emitter.particle_buffer.buffer,
             0,

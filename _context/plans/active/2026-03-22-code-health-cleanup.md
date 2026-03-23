@@ -15,22 +15,18 @@ Pre- and post-upgrade housekeeping. Items identified during the pre-upgrade audi
 
 ## Easy / mechanical (do next)
 
-- [ ] Remove `frame_num: i64` from `Render` (`src/render.rs:18`) — incremented every frame, never read
-- [ ] Remove dead demo texture machinery from `Render`: `show_demo_texture: bool`, `demo_model: Option<TexturedQuad>`, and the `load_image_to_texture` call at init — loads a texture unconditionally, allocates GPU memory, never toggled by any input; `pub show_demo_texture` is dead public API
-- [ ] Remove vestigial `_device: &wgpu::Device` params from four render methods — these became unused when StagingBelt internalized the device during the wgpu 29 upgrade:
-  - `Render::render()` (`src/render.rs:190`)
-  - `ShipRenderer::render()` (`src/ship.rs:199`)
-  - `TerrainRenderer::update_render_state()` (`src/level_manager.rs:545`)
-  - `ParticleSystem::run_compute()` (`src/particles.rs:281`)
-- [ ] Extract duplicated level budget constant in `main.rs` (lines 106 and 362): `Duration::from_secs_f64(1.0 / 300.0)` appears twice
-- [ ] Replace `lazy_static` with `OnceLock` (stable since 1.70) — no urgency, lazy_static still maintained
+- [x] Remove `frame_num: i64` from `Render` (`src/render.rs`) — done
+- [x] Remove dead demo texture machinery from `Render` — done
+- [x] Remove vestigial `_device: &wgpu::Device` params from four render methods — done (also fixed all callers and tests)
+- [x] Extract duplicated level budget constant in `main.rs` — `LEVEL_BUDGET: Duration = from_nanos(3_333_333)` at module level
+- [x] Replace `lazy_static` with `OnceLock` — done in `color_maps.rs`, `lazy_static` dep removed
 
 ---
 
 ## Moderate effort
 
-- [ ] Upgrade `bytemuck` to >= 1.15: `bytemuck_derive >= 1.5` switches Pod derives from `check` fn to `const` assertions, allowing removal of the documented `#![allow(dead_code)]` in `particles.rs`, `ship.rs`, `level_manager.rs`, `textured_quad.rs`; then narrow remaining `#[allow(dead_code)]` suppressions and re-assess what's genuinely unused
-- [ ] Convert draw pipeline to explicit pipeline layout in `render.rs` (existing TODO at line 108): currently uses `layout: None` (auto-layout via shader reflection), which is fragile against accidental shader/bind-group mismatches and blocks pipeline layout sharing
+- [x] Upgrade `bytemuck` to >= 1.15 — Cargo.toml updated to 1.15 (lock already had 1.25); removed all 4 file-level `#![allow(dead_code)]` bytemuck comments; narrowed remaining allows
+- [x] Convert draw pipeline to explicit pipeline layout in `render.rs` — explicit BGLs for group 0 (camera, 128B) and group 1 (tex/sampler/model-pose 64B), PipelineLayout wired in, TODO removed
 - [ ] Address "keep in sync with shader" TODOs in `particles.rs` — consider generating struct layout from shader or adding a static size assert
 
 ---
