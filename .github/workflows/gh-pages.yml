@@ -5,11 +5,21 @@ on:
     branches: [master]
   workflow_dispatch:
 
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Only one deployment at a time; cancel in-progress if a new push lands.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
 env:
   RUSTFLAGS: --cfg=web_sys_unstable_apis
 
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -26,15 +36,24 @@ jobs:
       - name: Build WebGPU
         run: cargo build --release --target wasm32-unknown-unknown
 
-      - name: Generate JS bindings for WebGPU examples
+      - name: Generate JS bindings
         run: wasm-bindgen --no-typescript --out-dir target/spout_web --web target/wasm32-unknown-unknown/release/spout.wasm
 
       - name: Write html
         run: cat wasm-resources/index.template.html | sed "s/{{example}}/spout/g" > target/spout_web/index.html
 
-      - name: Deploy
-        uses: peaceiris/actions-gh-pages@v3
-        if: github.ref == 'refs/heads/master'
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./target/spout_web
+          path: ./target/spout_web
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
