@@ -29,6 +29,7 @@ scarlet = "1"
 image = "0.25"
 fastrand = "1.7"
 wgpu = "29"
+web-time = "1"
 
 
 # TODO(wasm-revival): update these when reviving the WASM target

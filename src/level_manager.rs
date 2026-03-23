@@ -1,4 +1,5 @@
 use crate::buffer_util::{self, SizedBuffer};
+use web_time::Instant;
 
 pub struct WIPRectangleLevel {
     width: u32,
@@ -60,8 +61,8 @@ impl WIPRectangleLevel {
         }
     }
 
-    fn work_until(&mut self, deadline: std::time::Instant) -> bool {
-        while !self.done() && std::time::Instant::now() < deadline {
+    fn work_until(&mut self, deadline: Instant) -> bool {
+        while !self.done() && Instant::now() < deadline {
             self.step();
         }
         self.done()
@@ -117,8 +118,8 @@ impl LevelMaker {
         }
     }
 
-    pub fn work_until(&mut self, deadline: std::time::Instant) {
-        while std::time::Instant::now() < deadline {
+    pub fn work_until(&mut self, deadline: Instant) {
+        while Instant::now() < deadline {
             let mut to_remove = Vec::new();
             // Generate levels in order of level index.
             for (key, value) in &mut self.wip_levels {
