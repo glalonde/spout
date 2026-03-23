@@ -1,5 +1,8 @@
 use std::future::Future;
 use std::sync::Arc;
+use web_time::Instant;
+#[cfg(target_arch = "wasm32")]
+use winit::platform::web::WindowAttributesExtWebSys;
 use winit::{
     application::ApplicationHandler,
     event::{KeyEvent, WindowEvent},
@@ -78,7 +81,7 @@ struct FrameworkApp<E: Example> {
     /// Set once GPU init completes.
     gpu: Option<GpuState<E>>,
     spawner: Spawner,
-    last_frame: std::time::Instant,
+    last_frame: Instant,
     frame_count: u32,
     accum_time: f32,
     /// On WASM, `init_gpu` runs via `spawn_local`. The completed result lands
@@ -94,7 +97,7 @@ impl<E: Example> FrameworkApp<E> {
             window: None,
             gpu: None,
             spawner: Spawner::new(),
-            last_frame: std::time::Instant::now(),
+            last_frame: Instant::now(),
             frame_count: 0,
             accum_time: 0.0,
             #[cfg(target_arch = "wasm32")]
@@ -196,7 +199,12 @@ impl<E: Example> ApplicationHandler for FrameworkApp<E> {
 
         let window = Arc::new(
             event_loop
-                .create_window(winit::window::Window::default_attributes().with_title(&self.title))
+                .create_window({
+                    let attrs = winit::window::Window::default_attributes().with_title(&self.title);
+                    #[cfg(target_arch = "wasm32")]
+                    let attrs = attrs.with_append(true);
+                    attrs
+                })
                 .expect("Failed to create window"),
         );
         self.window = Some(window.clone());
@@ -262,7 +270,7 @@ impl<E: Example> ApplicationHandler for FrameworkApp<E> {
             }
             WindowEvent::RedrawRequested => {
                 self.accum_time += self.last_frame.elapsed().as_secs_f32();
-                self.last_frame = std::time::Instant::now();
+                self.last_frame = Instant::now();
                 self.frame_count += 1;
                 if self.frame_count == 100 {
                     log::info!(

@@ -1,6 +1,8 @@
 #[path = "../examples/framework.rs"]
 mod framework;
 
+use web_time::Instant;
+
 use spout::game_params;
 use spout::input::InputState;
 use spout::level_manager;
@@ -26,7 +28,7 @@ struct Spout {
     state: GameState,
     level_manager: level_manager::LevelManager,
     game_time: std::time::Duration,
-    iteration_start: std::time::Instant,
+    iteration_start: Instant,
     game_view_texture: wgpu::TextureView,
     renderer: render::Render,
     particle_system: particles::ParticleSystem,
@@ -35,7 +37,7 @@ struct Spout {
 
 impl Spout {
     fn tick(&mut self) -> (f32, f32) {
-        let now = std::time::Instant::now();
+        let now = Instant::now();
         let delta_t = now - self.iteration_start;
         self.iteration_start = now;
 
@@ -108,7 +110,7 @@ impl Spout {
 
         self.level_manager
             .level_maker
-            .work_until(std::time::Instant::now() + LEVEL_BUDGET);
+            .work_until(Instant::now() + LEVEL_BUDGET);
 
         let (game_dt, wall_dt) = self.tick();
 
@@ -233,7 +235,7 @@ impl framework::Example for Spout {
             state: game_state,
             level_manager,
             game_time: std::time::Duration::default(),
-            iteration_start: std::time::Instant::now(),
+            iteration_start: Instant::now(),
             game_view_texture,
             renderer,
             particle_system,
