@@ -1,7 +1,3 @@
-// bytemuck_derive 1.4.1 generates a `check` fn for Pod impls that Rust flags as dead
-// code. These GPU layout structs are written via bytemuck but never read back in Rust.
-// TODO: remove when bytemuck_derive >= 1.5 lands (switches to const assertions).
-#![allow(dead_code)]
 use crate::{buffer_util::SizedBuffer, game_params};
 
 #[allow(clippy::upper_case_acronyms)]
@@ -196,7 +192,6 @@ impl ShipRenderer {
         state: &ShipState,
         game_params: &game_params::GameParams,
         viewport_offset: i32,
-        _device: &wgpu::Device,
         output_texture_view: &wgpu::TextureView,
         encoder: &mut wgpu::CommandEncoder,
     ) {
@@ -280,7 +275,7 @@ mod tests {
         let mut encoder =
             device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
         gpu::encode_clear_texture(&mut encoder, &target.view);
-        renderer.render(&state, &game_params, 0, &device, &target.view, &mut encoder);
+        renderer.render(&state, &game_params, 0, &target.view, &mut encoder);
         gpu::encode_texture_readback(
             &mut encoder,
             &target.texture,

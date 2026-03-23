@@ -1,7 +1,8 @@
 name: github pages
 
-# Disabled: WASM build is currently broken. Re-enable once WASM is revived (see plan).
 on:
+  push:
+    branches: [master]
   workflow_dispatch:
 
 env:

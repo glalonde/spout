@@ -10,17 +10,23 @@ enum ColorMap {
     Plasma = 3,
 }
 
-use lazy_static::lazy_static;
-lazy_static! {
-    static ref COLOR_MAPS: [scarlet::colormap::ListedColorMap; 4] = [
-        scarlet::colormap::ListedColorMap::viridis(),
-        scarlet::colormap::ListedColorMap::magma(),
-        scarlet::colormap::ListedColorMap::inferno(),
-        scarlet::colormap::ListedColorMap::plasma(),
-    ];
+use std::sync::OnceLock;
+
+static COLOR_MAPS: OnceLock<[scarlet::colormap::ListedColorMap; 4]> = OnceLock::new();
+
+fn color_maps() -> &'static [scarlet::colormap::ListedColorMap; 4] {
+    COLOR_MAPS.get_or_init(|| {
+        [
+            scarlet::colormap::ListedColorMap::viridis(),
+            scarlet::colormap::ListedColorMap::magma(),
+            scarlet::colormap::ListedColorMap::inferno(),
+            scarlet::colormap::ListedColorMap::plasma(),
+        ]
+    })
 }
+
 pub fn get_color_map_from_index(i: usize) -> &'static scarlet::colormap::ListedColorMap {
-    &COLOR_MAPS[i]
+    &color_maps()[i]
 }
 
 // Create a particle density color map rgba
