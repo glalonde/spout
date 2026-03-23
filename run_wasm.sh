@@ -15,6 +15,9 @@ mkdir -p target/wasm-binary/$TITLE
 wasm-bindgen --target web --out-dir $OUTPUT_DIR target/wasm32-unknown-unknown/release/$TITLE.wasm
 cat wasm-resources/index.template.html | sed "s/{{example}}/$TITLE/g" > $OUTPUT_DIR/index.html
 
+# Kill any existing server on port 1234
+lsof -ti :1234 | xargs kill 2>/dev/null || true
+
 # Find a serving tool to host the example
 SERVE_CMD=""
 SERVE_ARGS=""
