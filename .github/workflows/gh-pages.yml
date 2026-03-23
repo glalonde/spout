@@ -17,14 +17,11 @@ jobs:
           submodules: false
           fetch-depth: 0
 
-      - name: Install Rust WASM toolchain
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          target: wasm32-unknown-unknown
+      - name: Install WASM target
+        run: rustup target add wasm32-unknown-unknown
 
       - name: Install wasm-bindgen-cli
-        run: cargo install wasm-bindgen-cli
+        run: cargo install wasm-bindgen-cli --version 0.2.114 --locked
 
       - name: Build WebGPU
         run: cargo build --release --target wasm32-unknown-unknown
