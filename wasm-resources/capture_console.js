@@ -9,7 +9,17 @@ const url = process.argv[2] || 'http://localhost:1234';
 const timeout = parseInt(process.argv[3] || '10000', 10);
 
 (async () => {
-    const browser = await chromium.launch();
+    const browser = await chromium.launch({
+        args: [
+            // Enable WebGPU with the Vulkan/SwiftShader software backend so
+            // validation errors show up even without a real GPU.
+            '--enable-features=WebGPU,Vulkan,UseSkiaRenderer',
+            '--enable-unsafe-webgpu',
+            '--use-angle=swiftshader',
+            '--use-vulkan=swiftshader',
+            '--disable-vulkan-fallback-to-gl-for-testing',
+        ],
+    });
     const context = await browser.newContext();
     const page = await context.newPage();
 

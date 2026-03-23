@@ -1,6 +1,8 @@
 use std::future::Future;
 use std::sync::Arc;
 use web_time::Instant;
+#[cfg(target_arch = "wasm32")]
+use winit::platform::web::WindowAttributesExtWebSys;
 use winit::{
     application::ApplicationHandler,
     event::{KeyEvent, WindowEvent},
@@ -197,7 +199,12 @@ impl<E: Example> ApplicationHandler for FrameworkApp<E> {
 
         let window = Arc::new(
             event_loop
-                .create_window(winit::window::Window::default_attributes().with_title(&self.title))
+                .create_window({
+                    let attrs = winit::window::Window::default_attributes().with_title(&self.title);
+                    #[cfg(target_arch = "wasm32")]
+                    let attrs = attrs.with_append(true);
+                    attrs
+                })
                 .expect("Failed to create window"),
         );
         self.window = Some(window.clone());
