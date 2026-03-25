@@ -75,6 +75,7 @@ mod native {
         /// on the main thread (cpal::Stream is not Send on CoreAudio/macOS).
         pending: Option<mpsc::Receiver<Vec<f32>>>,
         track_index: usize,
+        playing: bool,
     }
 
     impl AudioPlayer {
@@ -83,6 +84,7 @@ mod native {
                 _stream: None,
                 pending: None,
                 track_index: 0,
+                playing: true,
             };
             player.start_track(0);
             player
@@ -93,6 +95,7 @@ mod native {
                 _stream: None,
                 pending: None,
                 track_index: 0,
+                playing: false,
             }
         }
 
@@ -103,17 +106,32 @@ mod native {
                 match rx.try_recv() {
                     Ok(samples) => {
                         if let Some(stream) = build_cpal_stream(samples) {
-                            if let Err(e) = stream.play() {
-                                log::error!("audio: failed to start stream: {e}");
-                            } else {
-                                self._stream = Some(stream);
+                            if self.playing {
+                                if let Err(e) = stream.play() {
+                                    log::error!("audio: failed to start stream: {e}");
+                                }
                             }
+                            self._stream = Some(stream);
                         }
                     }
                     Err(mpsc::TryRecvError::Empty) => self.pending = Some(rx),
                     Err(mpsc::TryRecvError::Disconnected) => {
                         log::warn!("audio: render thread exited without sending samples");
                     }
+                }
+            }
+        }
+
+        /// Toggle music on/off. Pauses or resumes the current cpal stream.
+        pub fn toggle(&mut self) {
+            self.playing = !self.playing;
+            if let Some(stream) = &self._stream {
+                if self.playing {
+                    if let Err(e) = stream.play() {
+                        log::error!("audio: failed to resume: {e}");
+                    }
+                } else if let Err(e) = stream.pause() {
+                    log::error!("audio: failed to pause: {e}");
                 }
             }
         }
@@ -196,6 +214,7 @@ mod wasm_audio {
         track_index: usize,
         context: Option<web_sys::AudioContext>,
         source: Option<web_sys::AudioBufferSourceNode>,
+        playing: bool,
     }
 
     impl AudioPlayer {
@@ -206,6 +225,7 @@ mod wasm_audio {
                 track_index: 0,
                 context: None,
                 source: None,
+                playing: true,
             };
             player.start_render(0);
             player
@@ -218,6 +238,7 @@ mod wasm_audio {
                 track_index: 0,
                 context: None,
                 source: None,
+                playing: false,
             }
         }
 
@@ -263,9 +284,23 @@ mod wasm_audio {
             // Browsers suspend AudioContext until the first user gesture.
             // Call resume() every frame until it transitions to Running; it is a
             // no-op once running and is ignored (without error) before a gesture.
+            // Only do this when music is enabled.
+            if self.playing {
+                if let Some(ctx) = &self.context {
+                    if ctx.state() != web_sys::AudioContextState::Running {
+                        let _ = ctx.resume();
+                    }
+                }
+            }
+        }
+
+        pub fn toggle(&mut self) {
+            self.playing = !self.playing;
             if let Some(ctx) = &self.context {
-                if ctx.state() != web_sys::AudioContextState::Running {
+                if self.playing {
                     let _ = ctx.resume();
+                } else {
+                    let _ = ctx.suspend();
                 }
             }
         }

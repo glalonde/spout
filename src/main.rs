@@ -305,6 +305,13 @@ impl framework::Example for Spout {
                     }
                 }
 
+                // Toggle music on/off (on key-down only)
+                KeyCode::KeyY => {
+                    if pressed {
+                        self.audio.toggle();
+                    }
+                }
+
                 _ => {}
             }
         }
