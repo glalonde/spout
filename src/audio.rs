@@ -185,8 +185,12 @@ mod wasm_stub {
     pub struct AudioPlayer;
 
     impl AudioPlayer {
-        pub fn new() -> Self { AudioPlayer }
-        pub fn disabled() -> Self { AudioPlayer }
+        pub fn new() -> Self {
+            AudioPlayer
+        }
+        pub fn disabled() -> Self {
+            AudioPlayer
+        }
         pub fn poll(&mut self) {}
         pub fn next_track(&mut self) {}
     }

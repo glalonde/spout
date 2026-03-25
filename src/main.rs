@@ -1,6 +1,6 @@
+mod audio;
 #[path = "../examples/framework.rs"]
 mod framework;
-mod audio;
 
 use web_time::Instant;
 
