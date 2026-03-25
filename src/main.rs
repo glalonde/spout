@@ -1,6 +1,8 @@
 mod audio;
 #[path = "../examples/framework.rs"]
 mod framework;
+#[cfg(target_arch = "wasm32")]
+mod mobile_input;
 
 use web_time::Instant;
 
@@ -111,6 +113,14 @@ impl Spout {
 
     /// Mostly responsible for updating superficial state based on new inputs.
     fn update_state(&mut self) {
+        // Merge touch / accelerometer inputs from JS (WASM only).
+        #[cfg(target_arch = "wasm32")]
+        {
+            self.state.input_state.forward |= mobile_input::get_forward();
+            self.state.input_state.left |= mobile_input::get_left();
+            self.state.input_state.right |= mobile_input::get_right();
+        }
+
         self.audio.poll();
         self.update_paused();
 

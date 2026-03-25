@@ -373,11 +373,11 @@ mod wasm_audio {
         }
 
         buffer
-            .copy_to_channel(&mut left, 0)
+            .copy_to_channel(&left, 0)
             .map_err(|e| log::error!("audio: copy_to_channel(L) failed: {:?}", e))
             .ok()?;
         buffer
-            .copy_to_channel(&mut right, 1)
+            .copy_to_channel(&right, 1)
             .map_err(|e| log::error!("audio: copy_to_channel(R) failed: {:?}", e))
             .ok()?;
 
