@@ -1,4 +1,3 @@
-{% include "grid.wgsl.include" %}
 {% include "particle.wgsl.include" %}
 
 // This shader module handles particle update and aggregation.
