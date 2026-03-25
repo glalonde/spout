@@ -1510,10 +1510,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "int_grid"
-version = "0.1.0"
-
-[[package]]
 name = "interpolate_name"
 version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3286,7 +3282,6 @@ dependencies = [
  "fastrand",
  "getrandom 0.3.4",
  "image",
- "int_grid",
  "js-sys",
  "log",
  "oxdz",

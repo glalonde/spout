@@ -1,5 +1,4 @@
 {% include "particle.wgsl.include" %}
-{% include "grid.wgsl.include" %}
 {% include "hash.wgsl.include" %}
 {% include "noise.wgsl.include" %}
 
