@@ -175,23 +175,177 @@ mod native {
     }
 }
 
-// ── WASM stub (Phase 2 will implement Web Audio) ─────────────────────────────
+// ── WASM implementation (Web Audio API) ──────────────────────────────────────
 
 #[cfg(target_arch = "wasm32")]
-pub use wasm_stub::AudioPlayer;
+pub use wasm_audio::AudioPlayer;
 
 #[cfg(target_arch = "wasm32")]
-mod wasm_stub {
-    pub struct AudioPlayer;
+mod wasm_audio {
+    use super::{render_track, TRACKS};
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    // Pending render result, tagged with a generation counter so that a stale
+    // render (from a skipped track) is silently discarded.
+    type Pending = Rc<RefCell<Option<(usize, Vec<f32>)>>>;
+
+    pub struct AudioPlayer {
+        pending: Pending,
+        generation: usize,
+        track_index: usize,
+        context: Option<web_sys::AudioContext>,
+        source: Option<web_sys::AudioBufferSourceNode>,
+    }
 
     impl AudioPlayer {
         pub fn new() -> Self {
-            AudioPlayer
+            let mut player = AudioPlayer {
+                pending: Rc::new(RefCell::new(None)),
+                generation: 0,
+                track_index: 0,
+                context: None,
+                source: None,
+            };
+            player.start_render(0);
+            player
         }
+
         pub fn disabled() -> Self {
-            AudioPlayer
+            AudioPlayer {
+                pending: Rc::new(RefCell::new(None)),
+                generation: 0,
+                track_index: 0,
+                context: None,
+                source: None,
+            }
         }
-        pub fn poll(&mut self) {}
-        pub fn next_track(&mut self) {}
+
+        /// Call once per frame. Picks up rendered PCM, creates/resumes the
+        /// AudioContext, and swaps in a new source node when a track is ready.
+        pub fn poll(&mut self) {
+            // Consume pending samples only if they belong to the current generation.
+            let samples = {
+                let mut p = self.pending.borrow_mut();
+                match p.as_ref() {
+                    Some((gen, _)) if *gen == self.generation => p.take().map(|(_, s)| s),
+                    _ => None,
+                }
+            };
+
+            if let Some(samples) = samples {
+                match &self.context {
+                    Some(ctx) => {
+                        // AudioContext already exists — just swap in a new source.
+                        if let Some(src) = make_source(ctx, &samples) {
+                            if let Some(old) = self.source.replace(src) {
+                                // Deref to AudioScheduledSourceNode to call the
+                                // non-deprecated stop_with_when.
+                                let _ = std::ops::Deref::deref(&old).stop_with_when(0.0);
+                            }
+                        }
+                    }
+                    None => {
+                        // First track: create the AudioContext.
+                        match web_sys::AudioContext::new() {
+                            Ok(ctx) => {
+                                if let Some(src) = make_source(&ctx, &samples) {
+                                    self.source = Some(src);
+                                }
+                                self.context = Some(ctx);
+                            }
+                            Err(e) => log::error!("audio: AudioContext::new failed: {:?}", e),
+                        }
+                    }
+                }
+            }
+
+            // Browsers suspend AudioContext until the first user gesture.
+            // Call resume() every frame until it transitions to Running; it is a
+            // no-op once running and is ignored (without error) before a gesture.
+            if let Some(ctx) = &self.context {
+                if ctx.state() != web_sys::AudioContextState::Running {
+                    let _ = ctx.resume();
+                }
+            }
+        }
+
+        pub fn next_track(&mut self) {
+            // Stop the current source immediately; poll() will start the next one
+            // once its render completes.
+            if let Some(src) = self.source.take() {
+                let _ = std::ops::Deref::deref(&src).stop_with_when(0.0);
+            }
+            let next = (self.track_index + 1) % TRACKS.len();
+            self.start_render(next);
+        }
+
+        fn start_render(&mut self, index: usize) {
+            self.track_index = index;
+            self.generation += 1;
+            let gen = self.generation;
+            let pending = Rc::clone(&self.pending);
+            let track_bytes: &'static [u8] = TRACKS[index];
+            wasm_bindgen_futures::spawn_local(async move {
+                if let Some(samples) = render_track(track_bytes) {
+                    *pending.borrow_mut() = Some((gen, samples));
+                }
+            });
+        }
+    }
+
+    /// Fill an AudioBuffer with interleaved-stereo `samples` and start looping it.
+    ///
+    /// `samples` is `[L0, R0, L1, R1, ...]` at 44 100 Hz, as produced by
+    /// `render_track`.
+    fn make_source(
+        ctx: &web_sys::AudioContext,
+        samples: &[f32],
+    ) -> Option<web_sys::AudioBufferSourceNode> {
+        let num_frames = (samples.len() / 2) as u32;
+
+        let buffer = ctx
+            .create_buffer(2, num_frames, 44100.0)
+            .map_err(|e| log::error!("audio: create_buffer failed: {:?}", e))
+            .ok()?;
+
+        // Deinterleave into separate channel arrays.
+        let mut left = Vec::with_capacity(num_frames as usize);
+        let mut right = Vec::with_capacity(num_frames as usize);
+        for frame in samples.chunks(2) {
+            left.push(frame[0]);
+            right.push(frame.get(1).copied().unwrap_or(0.0));
+        }
+
+        buffer
+            .copy_to_channel(&mut left, 0)
+            .map_err(|e| log::error!("audio: copy_to_channel(L) failed: {:?}", e))
+            .ok()?;
+        buffer
+            .copy_to_channel(&mut right, 1)
+            .map_err(|e| log::error!("audio: copy_to_channel(R) failed: {:?}", e))
+            .ok()?;
+
+        let source = ctx
+            .create_buffer_source()
+            .map_err(|e| log::error!("audio: create_buffer_source failed: {:?}", e))
+            .ok()?;
+
+        source.set_buffer(Some(&buffer));
+        source.set_loop(true);
+
+        let dest = ctx.destination();
+        source
+            .connect_with_audio_node(&dest)
+            .map_err(|e| log::error!("audio: connect failed: {:?}", e))
+            .ok()?;
+
+        source
+            .start()
+            .map_err(|e| log::error!("audio: source.start() failed: {:?}", e))
+            .ok()?;
+
+        log::info!("audio: WASM playback started ({} frames)", num_frames);
+        Some(source)
     }
 }
