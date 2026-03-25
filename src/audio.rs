@@ -26,6 +26,14 @@ const TRACKS: &[&[u8]] = &[
     include_bytes!("../assets/music/z_bviinaaa.mod"),
 ];
 
+/// Returns a randomly shuffled sequence of track indices covering the whole playlist.
+fn shuffled_playlist() -> Vec<usize> {
+    use rand::seq::SliceRandom;
+    let mut indices: Vec<usize> = (0..TRACKS.len()).collect();
+    indices.shuffle(&mut rand::rng());
+    indices
+}
+
 fn render_track(bytes: &[u8]) -> Option<Vec<f32>> {
     let mut player = oxdz::Oxdz::new(bytes, 44100, "")
         .map_err(|e| log::error!("audio: failed to load track: {e}"))
@@ -74,19 +82,24 @@ mod native {
         /// Receives rendered PCM from the background thread; stream is built
         /// on the main thread (cpal::Stream is not Send on CoreAudio/macOS).
         pending: Option<mpsc::Receiver<Vec<f32>>>,
-        track_index: usize,
+        /// Shuffled play order; wraps around when exhausted.
+        playlist: Vec<usize>,
+        playlist_pos: usize,
         playing: bool,
     }
 
     impl AudioPlayer {
         pub fn new() -> Self {
+            let playlist = super::shuffled_playlist();
+            let first = playlist[0];
             let mut player = AudioPlayer {
                 _stream: None,
                 pending: None,
-                track_index: 0,
+                playlist,
+                playlist_pos: 0,
                 playing: true,
             };
-            player.start_track(0);
+            player.start_track(first);
             player
         }
 
@@ -94,7 +107,8 @@ mod native {
             AudioPlayer {
                 _stream: None,
                 pending: None,
-                track_index: 0,
+                playlist: (0..super::TRACKS.len()).collect(),
+                playlist_pos: 0,
                 playing: false,
             }
         }
@@ -137,13 +151,13 @@ mod native {
         }
 
         pub fn next_track(&mut self) {
-            let next = (self.track_index + 1) % TRACKS.len();
+            self.playlist_pos = (self.playlist_pos + 1) % self.playlist.len();
+            let next = self.playlist[self.playlist_pos];
             self.start_track(next);
         }
 
         fn start_track(&mut self, index: usize) {
             self._stream = None; // drop current stream immediately
-            self.track_index = index;
             let (tx, rx) = mpsc::channel();
 
             let track_bytes: &'static [u8] = TRACKS[index];
@@ -211,7 +225,9 @@ mod wasm_audio {
     pub struct AudioPlayer {
         pending: Pending,
         generation: usize,
-        track_index: usize,
+        /// Shuffled play order; wraps around when exhausted.
+        playlist: Vec<usize>,
+        playlist_pos: usize,
         context: Option<web_sys::AudioContext>,
         source: Option<web_sys::AudioBufferSourceNode>,
         playing: bool,
@@ -219,15 +235,18 @@ mod wasm_audio {
 
     impl AudioPlayer {
         pub fn new() -> Self {
+            let playlist = super::shuffled_playlist();
+            let first = playlist[0];
             let mut player = AudioPlayer {
                 pending: Rc::new(RefCell::new(None)),
                 generation: 0,
-                track_index: 0,
+                playlist,
+                playlist_pos: 0,
                 context: None,
                 source: None,
                 playing: true,
             };
-            player.start_render(0);
+            player.start_render(first);
             player
         }
 
@@ -235,7 +254,8 @@ mod wasm_audio {
             AudioPlayer {
                 pending: Rc::new(RefCell::new(None)),
                 generation: 0,
-                track_index: 0,
+                playlist: (0..super::TRACKS.len()).collect(),
+                playlist_pos: 0,
                 context: None,
                 source: None,
                 playing: false,
@@ -311,12 +331,12 @@ mod wasm_audio {
             if let Some(src) = self.source.take() {
                 let _ = std::ops::Deref::deref(&src).stop_with_when(0.0);
             }
-            let next = (self.track_index + 1) % TRACKS.len();
+            self.playlist_pos = (self.playlist_pos + 1) % self.playlist.len();
+            let next = self.playlist[self.playlist_pos];
             self.start_render(next);
         }
 
         fn start_render(&mut self, index: usize) {
-            self.track_index = index;
             self.generation += 1;
             let gen = self.generation;
             let pending = Rc::clone(&self.pending);
