@@ -6,6 +6,11 @@ fn generate_shaders() -> std::result::Result<(), Box<dyn Error>> {
     println!("cargo:rerun-if-changed=src/shaders/");
     let mut context = tera::Context::new();
 
+    // Workgroup size for all particle/density compute shaders.
+    // Must match particle_workgroup_size in particles.rs.
+    const PARTICLE_WORKGROUP_SIZE: u32 = 256;
+    context.insert("particle_workgroup_size", &PARTICLE_WORKGROUP_SIZE);
+
     context.insert("inner_grid_bits", &int_grid::INNER_GRID_BITS);
     context.insert("outer_grid_bits", &int_grid::OUTER_GRID_BITS);
     context.insert("outer_grid_size", &int_grid::OUTER_GRID_SIZE);

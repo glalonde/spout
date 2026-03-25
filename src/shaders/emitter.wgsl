@@ -81,9 +81,9 @@ fn nozzle_shape(interp: f32) -> vec2<f32> {
   return vec2<f32>(0.0, mix(-rocket_width / 2.0, rocket_width / 2.0, interp));
 }
 
-@compute @workgroup_size(256)
+@compute @workgroup_size({{ particle_workgroup_size }})
 fn main(@builtin(global_invocation_id) global_id: vec3<u32>, @builtin(num_workgroups) num_workgroups: vec3<u32>) {
-    let total_particles = num_workgroups[0] * 256u;
+    let total_particles = num_workgroups[0] * {{ particle_workgroup_size }}u;
     let gid = global_id[0];
     let particle = &(particle_buffer[gid]);
 

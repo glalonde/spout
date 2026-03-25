@@ -1,5 +1,9 @@
 use crate::buffer_util::{self, SizedBuffer};
 
+/// Must match `@workgroup_size` in particles.wgsl, emitter.wgsl, and
+/// clear_density_buffer.wgsl (injected at compile time via build.rs).
+const PARTICLE_WORKGROUP_SIZE: u32 = 256;
+
 // This should match the struct defined in the relevant compute shader.
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C)]
@@ -513,11 +517,8 @@ impl ParticleSystem {
             ],
         });
 
-        // TODO keep this in sync with shader.
         let num_particles = emitter.num_particles();
-        let particle_group_size = 256;
-        let update_particles_work_groups =
-            (num_particles as f64 / particle_group_size as f64).ceil() as u32;
+        let update_particles_work_groups = num_particles.div_ceil(PARTICLE_WORKGROUP_SIZE);
         (
             update_particles_work_groups,
             update_particles_pipeline,
@@ -579,10 +580,8 @@ impl ParticleSystem {
             }],
         });
 
-        // TODO keep this in sync with shader.
-        let clear_group_size = 256;
-        let num_density_cells = density_buffer.size / (std::mem::size_of::<u32>() as u64);
-        let clear_work_groups = (num_density_cells as f64 / clear_group_size as f64).ceil() as u32;
+        let num_density_cells = (density_buffer.size / std::mem::size_of::<u32>() as u64) as u32;
+        let clear_work_groups = num_density_cells.div_ceil(PARTICLE_WORKGROUP_SIZE);
         (clear_work_groups, clear_pipeline, clear_bind_group)
     }
 
