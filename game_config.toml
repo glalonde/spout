@@ -30,7 +30,7 @@ color_map = 1
 # Set to 1.1 to effectively disable bloom.
 bloom_threshold = 0.6
 # Bloom intensity in the final composite. 0.0 = off, 1.0 = full, 2.0+ = oversaturated.
-bloom_strength = 2.0
+bloom_strength = 1.25
 # Number of separable H+V blur iterations. Each pass widens the halo by ~√2.
 # 1 = tight, 2 = moderate, 4 = wide.
 bloom_passes = 2
