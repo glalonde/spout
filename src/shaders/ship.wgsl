@@ -14,6 +14,15 @@ var<private> ship_vertices: array<vec2<f32>, 6> = array<vec2<f32>, 6>(
     vec2<f32>( -8.0, -9.0),   // right wing
 );
 
+// Closed perimeter for the wireframe outline (LineStrip, 5 points).
+var<private> outline_vertices: array<vec2<f32>, 5> = array<vec2<f32>, 5>(
+    vec2<f32>( 12.0,  0.0),   // nose
+    vec2<f32>( -8.0,  9.0),   // left wing
+    vec2<f32>( -5.0,  0.0),   // tail notch
+    vec2<f32>( -8.0, -9.0),   // right wing
+    vec2<f32>( 12.0,  0.0),   // nose (close loop)
+);
+
 
 struct Uniforms {
     position: vec2<f32>,
@@ -41,7 +50,7 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
     let world_pos = rot * ship_vertices[vertex_index] + uniforms.position;
     let viewport_pos = world_to_ndc(world_pos, f32(uniforms.viewport_width), f32(uniforms.viewport_height), f32(uniforms.viewport_offset));
     var out: VertexOutput;
-    out.position = vec4<f32>(viewport_pos.x, viewport_pos.y, 0.0, 1.0); 
+    out.position = vec4<f32>(viewport_pos.x, viewport_pos.y, 0.0, 1.0);
     return out;
 }
 
@@ -49,4 +58,20 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     // Dark steel-blue — well below the bloom threshold so it doesn't over-glow.
     return vec4<f32>(0.25, 0.42, 0.75, 0.9);
+}
+
+@vertex
+fn vs_outline(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
+    let rot = rotate2d(uniforms.orientation);
+    let world_pos = rot * outline_vertices[vertex_index] + uniforms.position;
+    let viewport_pos = world_to_ndc(world_pos, f32(uniforms.viewport_width), f32(uniforms.viewport_height), f32(uniforms.viewport_offset));
+    var out: VertexOutput;
+    out.position = vec4<f32>(viewport_pos.x, viewport_pos.y, 0.0, 1.0);
+    return out;
+}
+
+@fragment
+fn fs_outline(in: VertexOutput) -> @location(0) vec4<f32> {
+    // Bright light-blue HDR — above bloom threshold for a subtle electric glow.
+    return vec4<f32>(0.3, 0.7, 2.0, 1.0);
 }
