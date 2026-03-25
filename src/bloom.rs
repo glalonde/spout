@@ -26,11 +26,11 @@ pub struct Bloom {
     v_blur_bind_group: wgpu::BindGroup,
 
     /// Receives threshold output; also the final bloom result after v_blur overwrites it.
-    _bright_texture: wgpu::Texture,
+    pub bright_texture: wgpu::Texture,
     bright_view: wgpu::TextureView,
 
     /// Intermediate buffer for horizontal blur output.
-    _blur_texture: wgpu::Texture,
+    pub blur_texture: wgpu::Texture,
     blur_view: wgpu::TextureView,
 }
 
@@ -55,7 +55,8 @@ impl Bloom {
                 dimension: wgpu::TextureDimension::D2,
                 format: BLOOM_FORMAT,
                 usage: wgpu::TextureUsages::TEXTURE_BINDING
-                    | wgpu::TextureUsages::RENDER_ATTACHMENT,
+                    | wgpu::TextureUsages::RENDER_ATTACHMENT
+                    | wgpu::TextureUsages::COPY_SRC,
                 view_formats: &[],
             })
         };
@@ -282,9 +283,9 @@ impl Bloom {
             blur_pipeline,
             h_blur_bind_group,
             v_blur_bind_group,
-            _bright_texture: bright_texture,
+            bright_texture,
             bright_view,
-            _blur_texture: blur_texture,
+            blur_texture,
             blur_view,
         }
     }
@@ -360,6 +361,63 @@ mod tests {
     use super::*;
     use crate::gpu_test_utils as gpu;
 
+    const TEST_W: u32 = 64;
+    const TEST_H: u32 = 64;
+    /// Bytes per pixel for Rgba16Float: 4 channels × 2 bytes (f16) = 8.
+    const BPP: u32 = 8;
+
+    fn make_game_view_texture(device: &wgpu::Device) -> wgpu::Texture {
+        device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("test_game_view"),
+            size: wgpu::Extent3d {
+                width: TEST_W,
+                height: TEST_H,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: GAME_VIEW_FORMAT,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING
+                | wgpu::TextureUsages::RENDER_ATTACHMENT
+                | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        })
+    }
+
+    /// Upload pixel data to `texture`. Unlisted pixels are black (zero).
+    /// Each entry is `(col, row, f16_le_bytes)` — all four channels set to the given value.
+    /// Row 0 is the top of the texture.
+    fn upload_pixels(queue: &wgpu::Queue, texture: &wgpu::Texture, pixels: &[(u32, u32, [u8; 2])]) {
+        let mut data = vec![0u8; (TEST_W * TEST_H * BPP) as usize];
+        for &(col, row, f16_bytes) in pixels {
+            let base = ((row * TEST_W + col) * BPP) as usize;
+            for ch in 0..4usize {
+                data[base + ch * 2] = f16_bytes[0];
+                data[base + ch * 2 + 1] = f16_bytes[1];
+            }
+        }
+        queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            &data,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(TEST_W * BPP),
+                rows_per_image: None,
+            },
+            wgpu::Extent3d {
+                width: TEST_W,
+                height: TEST_H,
+                depth_or_array_layers: 1,
+            },
+        );
+    }
+
     /// Verifies that all three bloom shaders compile and all pipelines/bind groups
     /// construct without error. Does not check pixel output.
     #[test]
@@ -369,30 +427,87 @@ mod tests {
             return;
         };
 
-        // Create a minimal game-view texture as the threshold pass input.
-        let game_texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("test_game_view"),
-            size: wgpu::Extent3d {
-                width: 64,
-                height: 64,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: GAME_VIEW_FORMAT,
-            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::RENDER_ATTACHMENT,
-            view_formats: &[],
-        });
+        let game_texture = make_game_view_texture(&device);
         let game_view = game_texture.create_view(&Default::default());
 
-        // Should not panic — validates shader compilation and pipeline creation.
         let _bloom = Bloom::new(
             &device,
-            64,
-            64,
+            TEST_W,
+            TEST_H,
             &game_view,
             &crate::game_params::VisualParams::default(),
         );
+    }
+
+    /// Golden image test: places bright pixels at two asymmetric positions, runs all
+    /// three bloom passes, and compares the output against a stored golden PNG.
+    ///
+    /// Input pixels are f16 8.0 so the Gaussian bloom halo is clearly visible after two
+    /// passes of attenuation (≈ 98/255 at the peak; see calculation below).
+    ///
+    /// Pixel positions (col, row) — texture row 0 = top:
+    ///   (12, 8)  — upper-left quadrant
+    ///   (48, 40) — lower-right quadrant
+    ///
+    /// Any Y-flip or X-flip in the bloom would move the halos to the wrong quadrant
+    /// and fail the comparison.
+    ///
+    /// Math: threshold=0.5, input=8.0 → threshold output ≈ 7.5 → center after
+    /// h_blur ≈ 1.70 → center after v_blur ≈ 0.39 → rgba8 ≈ 99.
+    ///
+    /// Regenerate: SPOUT_GENERATE_GOLDEN=1 cargo test test_bloom_golden -- --nocapture
+    #[test]
+    fn test_bloom_golden() {
+        let Some((device, queue)) = gpu::try_create_headless_device() else {
+            eprintln!("No GPU available, skipping bloom golden test");
+            return;
+        };
+
+        // f16 encoding of 8.0: sign=0, exp=3+15=18=0x12, mantissa=0 → 0x4800 LE.
+        let f16_8: [u8; 2] = [0x00, 0x48];
+
+        let game_texture = make_game_view_texture(&device);
+        upload_pixels(&queue, &game_texture, &[(12, 8, f16_8), (48, 40, f16_8)]);
+        // Flush write_texture before recording render commands that read it.
+        queue.submit([]);
+
+        let game_view = game_texture.create_view(&Default::default());
+        let visual_params = crate::game_params::VisualParams {
+            bloom_threshold: 0.5,
+            bloom_blur_radius: 2.0,
+            ..crate::game_params::VisualParams::default()
+        };
+        let bloom = Bloom::new(&device, TEST_W, TEST_H, &game_view, &visual_params);
+
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("test_bloom_golden_encoder"),
+        });
+        bloom.render(&mut encoder);
+
+        let staging = gpu::create_readback_buffer(&device, TEST_W, TEST_H, BPP);
+        gpu::encode_texture_readback(
+            &mut encoder,
+            &bloom.bright_texture,
+            &staging,
+            TEST_W,
+            TEST_H,
+            BPP,
+        );
+        queue.submit(std::iter::once(encoder.finish()));
+
+        let raw = gpu::readback_pixels(&device, &staging);
+        let rgba8 = gpu::rgba16f_to_rgba8(&raw, TEST_W, TEST_H);
+
+        // The RGB channels should have visible halos. (Alpha is always 1.0.)
+        let max_r = (0..TEST_W * TEST_H)
+            .map(|i| rgba8[(i * 4) as usize])
+            .max()
+            .unwrap_or(0);
+        assert!(
+            max_r > 10,
+            "bloom RGB output is unexpectedly dark (max_r={max_r}); check upload or passes"
+        );
+
+        gpu::compare_or_generate_golden("bloom_golden", &rgba8, TEST_W, TEST_H);
     }
 }
