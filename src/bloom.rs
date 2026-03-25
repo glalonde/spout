@@ -40,6 +40,7 @@ impl Bloom {
         width: u32,
         height: u32,
         game_view: &wgpu::TextureView,
+        visual_params: &crate::game_params::VisualParams,
     ) -> Self {
         let make_tex = |label| {
             device.create_texture(&wgpu::TextureDescriptor {
@@ -117,6 +118,8 @@ impl Bloom {
             bind_group_layouts: &[Some(&threshold_bgl)],
             immediate_size: 0,
         });
+        let threshold_constants = [("bloom_threshold", visual_params.bloom_threshold as f64)];
+
         let threshold_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("bloom_threshold"),
             layout: Some(&threshold_layout),
@@ -134,7 +137,10 @@ impl Bloom {
                     blend: None,
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
-                compilation_options: Default::default(),
+                compilation_options: wgpu::PipelineCompilationOptions {
+                    constants: &threshold_constants,
+                    ..Default::default()
+                },
             }),
             primitive: wgpu::PrimitiveState {
                 topology: wgpu::PrimitiveTopology::TriangleStrip,
@@ -179,8 +185,8 @@ impl Bloom {
             ],
         });
 
-        // Direction uniforms: step in UV space (2 texels wide for a more visible radius).
-        let step_scale = 2.0_f32;
+        // Direction uniforms: step in UV space per tap, from config.
+        let step_scale = visual_params.bloom_blur_radius;
         let h_dir: [f32; 4] = [step_scale / width as f32, 0.0, 0.0, 0.0];
         let v_dir: [f32; 4] = [0.0, step_scale / height as f32, 0.0, 0.0];
 
@@ -381,6 +387,12 @@ mod tests {
         let game_view = game_texture.create_view(&Default::default());
 
         // Should not panic — validates shader compilation and pipeline creation.
-        let _bloom = Bloom::new(&device, 64, 64, &game_view);
+        let _bloom = Bloom::new(
+            &device,
+            64,
+            64,
+            &game_view,
+            &crate::game_params::VisualParams::default(),
+        );
     }
 }

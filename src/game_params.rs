@@ -10,9 +10,7 @@ pub struct GameParams {
 
     pub fps: f64,
     pub music_starts_on: bool,
-    pub enable_glow_pass: bool,
     pub render_ship: bool,
-    pub color_map: i32,
 
     #[serde(default)]
     pub particle_system_params: ParticleSystemParams,
@@ -22,6 +20,39 @@ pub struct GameParams {
 
     #[serde(default)]
     pub level_params: LevelParams,
+
+    #[serde(default)]
+    pub visual_params: VisualParams,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Copy)]
+pub struct VisualParams {
+    /// Index into the particle color map palette (see color_maps.rs).
+    pub color_map: i32,
+
+    /// Brightness level above which pixels contribute to bloom (0.0–1.0).
+    /// Lower = more of the scene glows; higher = only the brightest hotspots.
+    /// Set to 1.1 to effectively disable bloom.
+    pub bloom_threshold: f32,
+
+    /// Multiplier on the bloom contribution in the final composite.
+    /// 0.0 = no bloom, 1.0 = full additive bloom, 2.0+ = oversaturated.
+    pub bloom_strength: f32,
+
+    /// Blur step size in texels. Controls the width of the bloom halo.
+    /// 1.0 = tight (~4px radius), 2.0 = moderate (~8px), 4.0 = wide (~16px).
+    pub bloom_blur_radius: f32,
+}
+
+impl Default for VisualParams {
+    fn default() -> Self {
+        VisualParams {
+            color_map: 0,
+            bloom_threshold: 0.6,
+            bloom_strength: 1.0,
+            bloom_blur_radius: 2.0,
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy)]
@@ -94,12 +125,11 @@ impl Default for GameParams {
             level_height: 960,
             fps: 60.0,
             music_starts_on: false,
-            enable_glow_pass: true,
             render_ship: false,
-            color_map: 0,
             particle_system_params: ParticleSystemParams::default(),
             ship_params: ShipParams::default(),
             level_params: LevelParams::default(),
+            visual_params: VisualParams::default(),
         }
     }
 }
@@ -132,12 +162,11 @@ mod tests {
             level_height: 320 * 3,
             fps: 60.0,
             music_starts_on: false,
-            enable_glow_pass: false,
             render_ship: true,
-            color_map: 0,
             particle_system_params: ParticleSystemParams::default(),
             ship_params: ShipParams::default(),
             level_params: LevelParams::default(),
+            visual_params: VisualParams::default(),
         };
         let serialized = toml::to_string(&params).unwrap();
         println!("serialized = {}", serialized);

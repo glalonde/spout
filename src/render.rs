@@ -61,6 +61,7 @@ impl Render {
         texture_view: &wgpu::TextureView,
         bloom_view: &wgpu::TextureView,
     ) -> Self {
+        let visual_params = &game_params.visual_params;
         let mut camera = camera::Camera {
             screen_size: (config.width, config.height),
             ..Default::default()
@@ -169,6 +170,8 @@ impl Render {
             immediate_size: 0,
         });
 
+        let draw_constants = [("bloom_strength", visual_params.bloom_strength as f64)];
+
         let draw_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("draw"),
             layout: Some(&pipeline_layout),
@@ -182,7 +185,10 @@ impl Render {
                 module: &shader,
                 entry_point: Some("fs_main"),
                 targets: &[Some(config.format.into())],
-                compilation_options: Default::default(),
+                compilation_options: wgpu::PipelineCompilationOptions {
+                    constants: &draw_constants,
+                    ..Default::default()
+                },
             }),
             primitive: wgpu::PrimitiveState {
                 cull_mode: Some(wgpu::Face::Back),

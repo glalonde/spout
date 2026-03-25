@@ -267,8 +267,8 @@ mod tests {
             ..Default::default()
         };
 
-        let target = gpu::create_offscreen_target(&device, TEST_W, TEST_H);
-        let staging_buffer = gpu::create_readback_buffer(&device, TEST_W, TEST_H);
+        let target = gpu::create_offscreen_target(&device, TEST_W, TEST_H, crate::bloom::GAME_VIEW_FORMAT);
+        let staging_buffer = gpu::create_readback_buffer(&device, TEST_W, TEST_H, 8);
 
         let mut renderer = ShipRenderer::init(&device);
 
@@ -282,12 +282,13 @@ mod tests {
             &staging_buffer,
             TEST_W,
             TEST_H,
+            8,
         );
         queue.submit(Some(encoder.finish()));
         renderer.after_queue_submission();
 
-        let bgra = gpu::readback_pixels(&device, &staging_buffer);
-        let rgba = gpu::bgra_to_rgba(&bgra, TEST_W, TEST_H);
+        let raw = gpu::readback_pixels(&device, &staging_buffer);
+        let rgba = gpu::rgba16f_to_rgba8(&raw, TEST_W, TEST_H);
         gpu::compare_or_generate_golden("ship_render", &rgba, TEST_W, TEST_H);
     }
 }

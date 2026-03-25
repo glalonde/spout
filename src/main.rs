@@ -218,6 +218,7 @@ impl framework::Example for Spout {
             game_params.viewport_width,
             game_params.viewport_height,
             &game_view_texture,
+            &game_params.visual_params,
         );
 
         let mut init_encoder =

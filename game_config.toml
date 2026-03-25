@@ -1,17 +1,15 @@
 # Viewport size is the shape of the view into the game world in game units (not necessarily the size of the window/canvas)
-viewport_width = 480 
-viewport_height = 270
-level_width = 480
-level_height = 960
+viewport_width = 240
+viewport_height = 135
+level_width = 240
+level_height = 480
 fps = 60.0
-music_starts_on = true 
-enable_glow_pass = true 
-render_ship = true 
-color_map = 1
+music_starts_on = true
+render_ship = true
 
 [particle_system_params]
 emission_rate = 1000000
-emission_speed = 1000.0 
+emission_speed = 1000.0
 max_particle_life = 3.0
 damage_rate = 0.01
 gravity = -0.0
@@ -24,3 +22,14 @@ max_speed = 600.0
 
 [level_params]
 starting_terrain_health = 10000
+
+[visual_params]
+# Index into the particle color map palette (0–3).
+color_map = 1
+# Brightness cutoff for bloom extraction (0.0–1.0). Lower = more of the scene glows.
+# Set to 1.1 to effectively disable bloom.
+bloom_threshold = 0.6
+# Bloom intensity in the final composite. 0.0 = off, 1.0 = full, 2.0+ = oversaturated.
+bloom_strength = 1.5
+# Blur step size in texels. Controls bloom halo width. 1=tight, 2=moderate, 4=wide.
+bloom_blur_radius = 3.0
