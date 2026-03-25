@@ -57,12 +57,16 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let ca         = ca_dir * ca_dist * crt_strength * 0.018;
 
     // Sample R, G, B from slightly offset UVs; fold bloom into the same samples.
-    let r = textureSample(hdr_tex,   hdr_sampler,   buv + ca).r
-          + textureSample(bloom_tex, bloom_sampler, buv + ca).r * bloom_strength;
-    let g = textureSample(hdr_tex,   hdr_sampler,   buv     ).g
-          + textureSample(bloom_tex, bloom_sampler, buv     ).g * bloom_strength;
-    let b = textureSample(hdr_tex,   hdr_sampler,   buv - ca).b
-          + textureSample(bloom_tex, bloom_sampler, buv - ca).b * bloom_strength;
+    // textureSampleLevel (explicit LOD=0) is used throughout because the bezel
+    // early-return above creates non-uniform control flow, which the WGSL spec
+    // forbids for implicit-LOD textureSample.  The composite textures are
+    // single-mip so LOD 0 is always correct.
+    let r = textureSampleLevel(hdr_tex,   hdr_sampler,   buv + ca, 0.0).r
+          + textureSampleLevel(bloom_tex, bloom_sampler, buv + ca, 0.0).r * bloom_strength;
+    let g = textureSampleLevel(hdr_tex,   hdr_sampler,   buv,      0.0).g
+          + textureSampleLevel(bloom_tex, bloom_sampler, buv,      0.0).g * bloom_strength;
+    let b = textureSampleLevel(hdr_tex,   hdr_sampler,   buv - ca, 0.0).b
+          + textureSampleLevel(bloom_tex, bloom_sampler, buv - ca, 0.0).b * bloom_strength;
 
     var color = clamp(vec3<f32>(r, g, b), vec3<f32>(0.0), vec3<f32>(1.0));
 
