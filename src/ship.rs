@@ -267,7 +267,8 @@ mod tests {
             ..Default::default()
         };
 
-        let target = gpu::create_offscreen_target(&device, TEST_W, TEST_H, crate::bloom::GAME_VIEW_FORMAT);
+        let target =
+            gpu::create_offscreen_target(&device, TEST_W, TEST_H, crate::bloom::GAME_VIEW_FORMAT);
         let staging_buffer = gpu::create_readback_buffer(&device, TEST_W, TEST_H, 8);
 
         let mut renderer = ShipRenderer::init(&device);
