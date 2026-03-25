@@ -32,6 +32,9 @@ pub struct Bloom {
     /// Intermediate buffer for horizontal blur output.
     pub blur_texture: wgpu::Texture,
     blur_view: wgpu::TextureView,
+
+    /// Number of H+V blur iterations. Each pass widens the halo by ~√2.
+    bloom_passes: u32,
 }
 
 impl Bloom {
@@ -186,10 +189,9 @@ impl Bloom {
             ],
         });
 
-        // Direction uniforms: step in UV space per tap, from config.
-        let step_scale = visual_params.bloom_blur_radius;
-        let h_dir: [f32; 4] = [step_scale / width as f32, 0.0, 0.0, 0.0];
-        let v_dir: [f32; 4] = [0.0, step_scale / height as f32, 0.0, 0.0];
+        // Direction uniforms: one-texel step in UV space for the bilinear blur kernel.
+        let h_dir: [f32; 4] = [1.0 / width as f32, 0.0, 0.0, 0.0];
+        let v_dir: [f32; 4] = [0.0, 1.0 / height as f32, 0.0, 0.0];
 
         let h_uniform = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("bloom_h_uniform"),
@@ -287,18 +289,21 @@ impl Bloom {
             bright_view,
             blur_texture,
             blur_view,
+            bloom_passes: visual_params.bloom_passes.max(1),
         }
     }
 
-    /// Run all bloom passes. Call after all game renders (terrain, particles, ship) are done,
-    /// and before the final blit.
+    /// Run the bloom pipeline. Call after all game renders, before the final blit.
+    ///
+    /// Executes: threshold, then `bloom_passes` × (horizontal blur + vertical blur).
+    /// Each H+V iteration widens the halo by ~√2 via Gaussian convolution.
     pub fn render(&self, encoder: &mut wgpu::CommandEncoder) {
         let clear = wgpu::Operations {
             load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
             store: wgpu::StoreOp::Store,
         };
 
-        // Pass 1: threshold — game_view → bright_tex
+        // Threshold: game_view → bright_tex
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("bloom_threshold"),
@@ -315,38 +320,38 @@ impl Bloom {
             pass.draw(0..4, 0..1);
         }
 
-        // Pass 2: horizontal blur — bright_tex → blur_tex
-        {
-            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("bloom_h_blur"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &self.blur_view,
-                    resolve_target: None,
-                    depth_slice: None,
-                    ops: clear,
-                })],
-                ..Default::default()
-            });
-            pass.set_pipeline(&self.blur_pipeline);
-            pass.set_bind_group(0, &self.h_blur_bind_group, &[]);
-            pass.draw(0..4, 0..1);
-        }
-
-        // Pass 3: vertical blur — blur_tex → bright_tex (final bloom output)
-        {
-            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("bloom_v_blur"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &self.bright_view,
-                    resolve_target: None,
-                    depth_slice: None,
-                    ops: clear,
-                })],
-                ..Default::default()
-            });
-            pass.set_pipeline(&self.blur_pipeline);
-            pass.set_bind_group(0, &self.v_blur_bind_group, &[]);
-            pass.draw(0..4, 0..1);
+        // Blur iterations: each pass is H (bright_tex→blur_tex) + V (blur_tex→bright_tex).
+        for _ in 0..self.bloom_passes {
+            {
+                let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("bloom_h_blur"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: &self.blur_view,
+                        resolve_target: None,
+                        depth_slice: None,
+                        ops: clear,
+                    })],
+                    ..Default::default()
+                });
+                pass.set_pipeline(&self.blur_pipeline);
+                pass.set_bind_group(0, &self.h_blur_bind_group, &[]);
+                pass.draw(0..4, 0..1);
+            }
+            {
+                let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("bloom_v_blur"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: &self.bright_view,
+                        resolve_target: None,
+                        depth_slice: None,
+                        ops: clear,
+                    })],
+                    ..Default::default()
+                });
+                pass.set_pipeline(&self.blur_pipeline);
+                pass.set_bind_group(0, &self.v_blur_bind_group, &[]);
+                pass.draw(0..4, 0..1);
+            }
         }
     }
 
@@ -474,7 +479,6 @@ mod tests {
         let game_view = game_texture.create_view(&Default::default());
         let visual_params = crate::game_params::VisualParams {
             bloom_threshold: 0.5,
-            bloom_blur_radius: 2.0,
             ..crate::game_params::VisualParams::default()
         };
         let bloom = Bloom::new(&device, TEST_W, TEST_H, &game_view, &visual_params);
