@@ -34,3 +34,6 @@ bloom_strength = 2.0
 # Number of separable H+V blur iterations. Each pass widens the halo by ~√2.
 # 1 = tight, 2 = moderate, 4 = wide.
 bloom_passes = 2
+# CRT post-process: barrel distortion, chromatic aberration, phosphor mask,
+# scanlines, vignette. 0.0 = off, 1.0 = full.
+crt_strength = 0.5

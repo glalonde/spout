@@ -296,7 +296,10 @@ impl Render {
             immediate_size: 0,
         });
 
-        let composite_constants = [("bloom_strength", visual_params.bloom_strength as f64)];
+        let composite_constants = [
+            ("bloom_strength", visual_params.bloom_strength as f64),
+            ("crt_strength", visual_params.crt_strength as f64),
+        ];
 
         let composite_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("composite"),

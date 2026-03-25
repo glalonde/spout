@@ -43,6 +43,12 @@ pub struct VisualParams {
     /// Each additional pass widens the halo by roughly √2 (Gaussian convolution).
     /// 1 = tight (~4 px radius), 2 = moderate (~6 px), 4 = wide (~8 px).
     pub bloom_passes: u32,
+
+    /// CRT post-process intensity. 0.0 = bypass, 1.0 = full effect.
+    /// Applies barrel distortion, chromatic aberration, phosphor mask,
+    /// scanlines, and vignette.
+    #[serde(default)]
+    pub crt_strength: f32,
 }
 
 impl Default for VisualParams {
@@ -52,6 +58,7 @@ impl Default for VisualParams {
             bloom_threshold: 0.6,
             bloom_strength: 1.0,
             bloom_passes: 2,
+            crt_strength: 0.0,
         }
     }
 }
