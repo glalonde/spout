@@ -48,11 +48,11 @@ Spout's terrain buffer is already a grid of integer cells — a natural foundati
 Visuals are considered high-priority — the game lives or dies on how stimulating it looks.
 
 - ✦ **Particle color / heat** — color particles by speed, age, or type; hot = bright/white, cool = dim/colored
-- ✦ **Glowing terrain edges** — SDF or edge-detect pass to give terrain a lit/glowing border where it meets space
+- ~~**Glowing terrain edges**~~ ✅ Done — 4-connected edge detection in terrain fragment shader; HDR red-orange edges drive bloom
 - ✦ **Background texture / parallax** — nebula, star field, or noise-based background layer with depth
 - ✦ **Terrain texture** — procedural or sampled texture overlaid on terrain rather than flat color
-- ✦ **Bloom** — glow/halo on bright particles and terrain edges; relatively cheap post-process pass
-- ✦ **CRT / phosphor filter** — scanlines, barrel distortion, phosphor persistence; fits the retro aesthetic
+- ~~**Bloom**~~ ✅ Done — HDR pipeline with configurable threshold/strength/passes; runs at full display resolution
+- ~~**CRT / phosphor filter**~~ ✅ Done — barrel distortion, chromatic aberration, phosphor mask, scanlines, vignette via `crt_strength`
 - ✦ **Vector screen effect** — simulate an oscilloscope/Asteroids-original look; particles and ship drawn as glowing vector lines rather than rasterized pixels
 - ✦ **Multiple particle types** — smoke, sparks, debris with distinct visual profiles
 - **Lighting** — particles as dynamic light sources illuminating nearby terrain

@@ -74,6 +74,36 @@ on WASM or it panics at runtime.
 getrandom = { version = "0.3", features = ["wasm_js"] }
 ```
 
+### WGSL uniformity: `textureSample` after a non-uniform early return
+
+`textureSample` (implicit LOD) requires **uniform control flow** — all invocations
+in the same quad must reach the call.  An early `return` conditioned on a
+per-fragment value (e.g. a UV-derived bezel check) splits the quad and violates
+this rule.
+
+Chrome/Dawn enforces it strictly: the pipeline is silently invalidated and
+rendering produces **a black screen with no console error**.  Mobile Safari is
+lenient, so the same code appears to work on mobile.
+
+**Fix:** replace `textureSample` with `textureSampleLevel(..., 0.0)`.  For
+full-screen post-processing quads sampling single-mip textures this is always
+correct and has no uniformity requirement.
+
+```wgsl
+// Bad — violates uniformity when some fragments early-return:
+if any(buv < vec2<f32>(0.0)) || any(buv > vec2<f32>(1.0)) {
+    return vec4<f32>(0.0);
+}
+let c = textureSample(tex, samp, buv);  // ← not reached by all quad invocations
+
+// Good:
+let c = textureSampleLevel(tex, samp, buv, 0.0);  // no uniformity requirement
+```
+
+See `src/shaders/bloom_composite.wgsl` (fixed in PR #37) for the real example.
+
+---
+
 ### CI: `wasm-bindgen-cli` version must match `Cargo.lock`
 The CLI version must exactly match the `wasm-bindgen` crate version pinned in
 `Cargo.lock`. Check with:

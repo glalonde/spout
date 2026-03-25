@@ -1,8 +1,8 @@
 # Music Plan
 
-## Current state
+## Status: Phase 1 + Phase 2 complete (merged to master)
 
-- `music_starts_on` flag exists in `GameParams` and `game_config.toml` (currently `true`) but nothing reads it — no audio code exists yet
+## Current state
 - `assets/music/` has both tracker source files and pre-rendered OGGs:
   - **Tracker files** (MOD/XM/S3M): 13 files, ~800 KB total
   - **Pre-rendered OGGs** (`assets/music/output/`): ~32 MB total — dead weight now, can be deleted
@@ -67,26 +67,24 @@ already a transitive dep.
 
 ## Implementation phases
 
-### Phase 1 — Native playback, one track
-1. Add `oxdz` + `cpal` as deps
-2. Pre-render one track (`include_bytes!` a .xm) to `Vec<f32>` on a background
-   thread at startup
-3. Feed rendered PCM into a `cpal` output stream (i16 → f32, stereo)
-4. Loop playback when the buffer ends
-5. Gate on `music_starts_on` from `GameParams`
+### Phase 1 — Native playback ✅
+- `oxdz` + `cpal` deps added; all 13 tracker files embedded via `include_bytes!`
+- Pre-renders track on background thread → `Vec<f32>` → cpal output stream
+- Loops playback; gated on `music_starts_on` from `GameParams`
 
-### Phase 2 — WASM playback
-1. Pre-render on a `spawn_local` future (non-blocking)
-2. Create `AudioContext`, fill `AudioBuffer`, play via `AudioBufferSourceNode`
-3. Handle browser autoplay policy: audio context must be resumed on first user
-   gesture (first keypress / click unlocks it)
-4. Loop: `source.loop = true`
+### Phase 2 — WASM playback ✅
+- `spawn_local` future pre-renders the track (no blocking)
+- `AudioContext` + `AudioBuffer` + `AudioBufferSourceNode`; `source.loop = true`
+- Resumes AudioContext each frame until Running (handles browser autoplay policy)
 
-### Phase 3 — Track list + controls
-1. Embed all 13 tracker files, build a playlist
-2. Skip-track key binding (spare keys available)
-3. Volume control (expose in game config or key binding)
-4. Crossfade or instant switch on track change
+### Phase 2b — Track list + controls ✅
+- All 13 tracker files in a shuffled playlist
+- `T` key = next track, `Y` key = toggle music on/off
+- `music_starts_on = false` default in `game_config.toml`
+
+### Phase 3 — Future
+- Volume control (game config or key binding)
+- Crossfade on track change
 
 ## Cleanup tasks (can do any time)
 - Delete `assets/music/output/` OGG directory (32 MB, regeneratable from source)
