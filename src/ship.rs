@@ -91,6 +91,7 @@ pub struct ShipRenderer {
     uniform_buffer: SizedBuffer,
     render_bind_group: wgpu::BindGroup,
     render_pipeline: wgpu::RenderPipeline,
+    outline_pipeline: wgpu::RenderPipeline,
     staging_belt: wgpu::util::StagingBelt,
 }
 
@@ -178,11 +179,41 @@ impl ShipRenderer {
             multiview_mask: None,
         });
 
+        let outline_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("Ship outline pipeline"),
+            layout: Some(&render_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &shader_module,
+                entry_point: Some("vs_outline"),
+                buffers: &[],
+                compilation_options: Default::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader_module,
+                entry_point: Some("fs_outline"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: crate::bloom::GAME_VIEW_FORMAT,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::all(),
+                })],
+                compilation_options: Default::default(),
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::LineStrip,
+                ..Default::default()
+            },
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            cache: None,
+            multiview_mask: None,
+        });
+
         let staging_belt = wgpu::util::StagingBelt::new(device.clone(), uniform_buffer.size);
         ShipRenderer {
             uniform_buffer,
             render_bind_group,
             render_pipeline,
+            outline_pipeline,
             staging_belt,
         }
     }
@@ -232,6 +263,9 @@ impl ShipRenderer {
         rpass.set_pipeline(&self.render_pipeline);
         rpass.set_bind_group(0, &self.render_bind_group, &[]);
         rpass.draw(0..6_u32, 0..1);
+
+        rpass.set_pipeline(&self.outline_pipeline);
+        rpass.draw(0..5_u32, 0..1);
     }
 
     pub fn after_queue_submission(&mut self) {
