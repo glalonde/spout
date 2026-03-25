@@ -30,6 +30,10 @@ image = "0.25"
 fastrand = "1.7"
 wgpu = "29"
 web-time = "1"
+oxdz = { git = "https://github.com/glalonde/oxdz", branch = "master" }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+cpal = "0.15"
 
 
 # TODO(wasm-revival): update these when reviving the WASM target
