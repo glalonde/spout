@@ -348,3 +348,39 @@ impl Bloom {
         &self.bright_view
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::gpu_test_utils as gpu;
+
+    /// Verifies that all three bloom shaders compile and all pipelines/bind groups
+    /// construct without error. Does not check pixel output.
+    #[test]
+    fn test_bloom_construction() {
+        let Some((device, _queue)) = gpu::try_create_headless_device() else {
+            eprintln!("No GPU available, skipping bloom construction test");
+            return;
+        };
+
+        // Create a minimal game-view texture as the threshold pass input.
+        let game_texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("test_game_view"),
+            size: wgpu::Extent3d {
+                width: 64,
+                height: 64,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: GAME_VIEW_FORMAT,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[],
+        });
+        let game_view = game_texture.create_view(&Default::default());
+
+        // Should not panic — validates shader compilation and pipeline creation.
+        let _bloom = Bloom::new(&device, 64, 64, &game_view);
+    }
+}
