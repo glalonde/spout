@@ -1,3 +1,4 @@
+mod audio;
 #[path = "../examples/framework.rs"]
 mod framework;
 
@@ -33,6 +34,7 @@ struct Spout {
     renderer: render::Render,
     particle_system: particles::ParticleSystem,
     ship_renderer: ship::ShipRenderer,
+    audio: audio::AudioPlayer,
 }
 
 impl Spout {
@@ -106,6 +108,7 @@ impl Spout {
 
     /// Mostly responsible for updating superficial state based on new inputs.
     fn update_state(&mut self) {
+        self.audio.poll();
         self.update_paused();
 
         self.level_manager
@@ -230,6 +233,12 @@ impl framework::Example for Spout {
 
         queue.submit(Some(init_encoder.finish()));
 
+        let audio = if game_params.music_starts_on {
+            audio::AudioPlayer::new()
+        } else {
+            audio::AudioPlayer::disabled()
+        };
+
         Spout {
             game_params,
             state: game_state,
@@ -240,6 +249,7 @@ impl framework::Example for Spout {
             renderer,
             particle_system,
             ship_renderer,
+            audio,
         }
     }
 
@@ -275,6 +285,13 @@ impl framework::Example for Spout {
 
                 // Full screen
                 KeyCode::KeyF => self.state.input_state.fullscreen = pressed,
+
+                // Skip to next music track (on key-down only)
+                KeyCode::KeyT => {
+                    if pressed {
+                        self.audio.next_track();
+                    }
+                }
 
                 _ => {}
             }
