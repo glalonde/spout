@@ -42,6 +42,11 @@ npx playwright install chromium
      The script is useful for catching pre-GPU panics (bad init, missing APIs,
      etc.) but cannot test rendering. Use a real browser for GPU functionality.
 
+   **Critical:** the winit exception propagates through `await init()` in the
+   HTML `load` handler. Any code **after** `await init()` (e.g. mobile control
+   setup) is never reached unless `init()` is wrapped in try/catch. See the
+   `### winit exception breaks post-init JS setup` section below.
+
 5. Kill the server when done:
    ```bash
    kill %1   # or pkill -f "python3 -m http.server"
@@ -101,6 +106,42 @@ let c = textureSampleLevel(tex, samp, buv, 0.0);  // no uniformity requirement
 ```
 
 See `src/shaders/bloom_composite.wgsl` (fixed in PR #37) for the real example.
+
+---
+
+### winit exception breaks post-init JS setup
+
+`event_loop.run_app()` in winit 0.30 on WASM calls `wasm_bindgen::throw_str()`
+with the message `"Using exceptions for control flow, don't mind me."` This
+unwinds the synchronous Rust call stack after RAF callbacks have been
+registered — the game loop is running, but the exception propagates through
+`wasm.__wbindgen_start()` and out of the generated `init()` Promise.
+
+**Consequence:** any JavaScript code written **after** `await init()` in the
+HTML `load` handler is never reached:
+
+```javascript
+// BROKEN — mobile setup never runs:
+await init();            // throws (winit's exception)
+bindButton(…);           // ← dead code
+```
+
+**Fix:** wrap `await init()` in try/catch and check the message:
+
+```javascript
+try {
+  await init();
+} catch (e) {
+  if (
+    typeof e?.message !== "string" ||
+    !e.message.includes("Using exceptions for control flow")
+  ) {
+    console.error("Unexpected error during WASM init:", e);
+  }
+}
+// now safe to run post-init setup
+bindButton(…);
+```
 
 ---
 

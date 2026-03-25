@@ -201,7 +201,20 @@
       // ── Initialise ────────────────────────────────────────────────────
 
       window.addEventListener("load", async () => {
-        await init();
+        try {
+          await init();
+        } catch (e) {
+          // winit (0.30) on WASM throws a JS exception after registering
+          // requestAnimationFrame callbacks as a control-flow trick to unwind
+          // the synchronous startup stack.  The game loop is already running
+          // at this point; swallow the expected error and continue setup.
+          if (
+            typeof e?.message !== "string" ||
+            !e.message.includes("Using exceptions for control flow")
+          ) {
+            console.error("Unexpected error during WASM init:", e);
+          }
+        }
 
         if (!isTouchDevice()) {
           // Desktop: no overlay needed.
