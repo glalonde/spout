@@ -7,6 +7,37 @@ on:
     branches-ignore: [staging.tmp]
 
 jobs:
+  wasm-build:
+    runs-on: ubuntu-latest
+    env:
+      RUSTFLAGS: --cfg=web_sys_unstable_apis
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install WASM target
+        run: rustup target add wasm32-unknown-unknown
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target/
+          key: ${{ runner.os }}-wasm-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-wasm-
+      - name: Install wasm-bindgen-cli
+        run: cargo install wasm-bindgen-cli --version 0.2.114 --locked
+      - name: Build WASM
+        run: cargo build --release --target wasm32-unknown-unknown
+      - name: Generate JS bindings
+        run: |
+          mkdir -p target/spout_web
+          wasm-bindgen --no-typescript --out-dir target/spout_web --web \
+            target/wasm32-unknown-unknown/release/spout.wasm
+          sed "s/{{example}}/spout/g" wasm-resources/index.template.html \
+            > target/spout_web/index.html
+
   build:
     runs-on: ubuntu-latest
     steps:

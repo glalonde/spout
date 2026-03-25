@@ -1,18 +1,18 @@
-name: Deploy to GitHub Pages (production)
+name: Deploy to GitHub Pages (canary)
+
+# Deploys the canary branch to https://glalonde.github.io/spout/canary/
+# Can also be triggered manually from any branch via workflow_dispatch.
 
 on:
   push:
-    branches: [master]
+    branches: [canary]
   workflow_dispatch:
 
-# Write permission is needed for peaceiris/actions-gh-pages to push the
-# gh-pages branch. No id-token / pages write needed with the branch approach.
 permissions:
   contents: write
 
-# One production deploy at a time; cancel the in-progress one if master moves.
 concurrency:
-  group: pages-production
+  group: pages-canary
   cancel-in-progress: true
 
 env:
@@ -35,8 +35,9 @@ jobs:
             ~/.cargo/registry/cache
             ~/.cargo/git/db
             target/
-          key: ${{ runner.os }}-wasm-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-wasm-canary-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
+            ${{ runner.os }}-wasm-canary-
             ${{ runner.os }}-wasm-
 
       - name: Install wasm-bindgen-cli
@@ -53,10 +54,11 @@ jobs:
           sed "s/{{example}}/spout/g" wasm-resources/index.template.html \
             > target/spout_web/index.html
 
-      - name: Deploy to gh-pages (root)
+      - name: Deploy to gh-pages/canary
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./target/spout_web
-          # keep_files preserves the canary/ subdirectory written by canary.yml
+          destination_dir: canary
+          # keep_files preserves the root production deployment
           keep_files: true
