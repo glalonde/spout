@@ -39,9 +39,10 @@ pub struct VisualParams {
     /// 0.0 = no bloom, 1.0 = full additive bloom, 2.0+ = oversaturated.
     pub bloom_strength: f32,
 
-    /// Blur step size in texels. Controls the width of the bloom halo.
-    /// 1.0 = tight (~4px radius), 2.0 = moderate (~8px), 4.0 = wide (~16px).
-    pub bloom_blur_radius: f32,
+    /// Number of separable H+V blur iterations applied to the thresholded image.
+    /// Each additional pass widens the halo by roughly √2 (Gaussian convolution).
+    /// 1 = tight (~4 px radius), 2 = moderate (~6 px), 4 = wide (~8 px).
+    pub bloom_passes: u32,
 }
 
 impl Default for VisualParams {
@@ -50,7 +51,7 @@ impl Default for VisualParams {
             color_map: 0,
             bloom_threshold: 0.6,
             bloom_strength: 1.0,
-            bloom_blur_radius: 2.0,
+            bloom_passes: 2,
         }
     }
 }

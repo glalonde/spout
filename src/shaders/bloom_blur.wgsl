@@ -25,8 +25,7 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
 }
 
 struct BlurUniforms {
-    // Step in UV space per tap. Set to (1/width, 0) for horizontal, (0, 1/height) for vertical.
-    // Multiply by step_scale for a wider blur radius.
+    // One-texel step in UV space: (1/width, 0) for horizontal, (0, 1/height) for vertical.
     direction: vec2<f32>,
     _pad: vec2<f32>,
 };
@@ -35,20 +34,38 @@ struct BlurUniforms {
 @group(0) @binding(1) var source_sampler: sampler;
 @group(0) @binding(2) var<uniform> uniforms: BlurUniforms;
 
-// 9-tap Gaussian weights (taps at offsets 0..4, normalized so sum = 1).
-var<private> weights: array<f32, 5> = array<f32, 5>(
+// Bilinear-optimised 9-tap Gaussian: 5 fetches instead of 9.
+//
+// A linear sampler blends two adjacent texels in one fetch. By placing each
+// sample at a fractional offset, we recover the same weighted sum as integer
+// taps at 0, ±1, ±2, ±3, ±4 while halving the non-center fetch count.
+//
+// Derivation from standard weights w = [0.2270, 0.1946, 0.1216, 0.0541, 0.0162]:
+//   combined weight: w[i] + w[i+1]
+//   combined offset: (i*w[i] + (i+1)*w[i+1]) / (w[i] + w[i+1])
+//
+//   tap A (replaces ±1, ±2): weight = 0.1946+0.1216 = 0.3162
+//                              offset = (1*0.1946 + 2*0.1216) / 0.3162 = 1.3846
+//   tap B (replaces ±3, ±4): weight = 0.0541+0.0162 = 0.0703
+//                              offset = (3*0.0541 + 4*0.0162) / 0.0703 = 3.2308
+//
+// Total weight: 0.2270 + 2*(0.3162 + 0.0703) = 1.0  ✓
+var<private> weights: array<f32, 3> = array<f32, 3>(
     0.2270270270,
-    0.1945945946,
-    0.1216216216,
-    0.0540540541,
-    0.0162162162,
+    0.3162162162,
+    0.0702702703,
+);
+var<private> offsets: array<f32, 3> = array<f32, 3>(
+    0.0,
+    1.3846153846,
+    3.2307692308,
 );
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     var result = textureSample(source, source_sampler, in.tex_coord).rgb * weights[0];
-    for (var i: i32 = 1; i < 5; i += 1) {
-        let offset = uniforms.direction * f32(i);
+    for (var i: i32 = 1; i < 3; i += 1) {
+        let offset = uniforms.direction * offsets[i];
         result += textureSample(source, source_sampler, in.tex_coord + offset).rgb * weights[i];
         result += textureSample(source, source_sampler, in.tex_coord - offset).rgb * weights[i];
     }
