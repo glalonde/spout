@@ -4,7 +4,7 @@ viewport_height = 135
 level_width = 240
 level_height = 480
 fps = 60.0
-music_starts_on = true
+music_starts_on = false
 render_ship = true
 
 [particle_system_params]

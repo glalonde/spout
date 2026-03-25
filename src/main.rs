@@ -32,6 +32,7 @@ struct Spout {
     game_time: std::time::Duration,
     iteration_start: Instant,
     game_view_texture: wgpu::TextureView,
+    upscaled_view: wgpu::TextureView,
     bloom: bloom::Bloom,
     renderer: render::Render,
     particle_system: particles::ParticleSystem,
@@ -213,11 +214,13 @@ impl framework::Example for Spout {
             game_params.viewport_height,
         );
 
+        let upscaled_view = make_texture(device, config.width, config.height);
+
         let bloom = bloom::Bloom::new(
             device,
-            game_params.viewport_width,
-            game_params.viewport_height,
-            &game_view_texture,
+            config.width,
+            config.height,
+            &upscaled_view,
             &game_params.visual_params,
         );
 
@@ -234,6 +237,7 @@ impl framework::Example for Spout {
             device,
             queue,
             &game_view_texture,
+            &upscaled_view,
             bloom.bloom_view(),
         );
 
@@ -257,6 +261,7 @@ impl framework::Example for Spout {
             game_time: std::time::Duration::default(),
             iteration_start: Instant::now(),
             game_view_texture,
+            upscaled_view,
             bloom,
             renderer,
             particle_system,
@@ -305,6 +310,13 @@ impl framework::Example for Spout {
                     }
                 }
 
+                // Toggle music on/off (on key-down only)
+                KeyCode::KeyY => {
+                    if pressed {
+                        self.audio.toggle();
+                    }
+                }
+
                 _ => {}
             }
         }
@@ -313,10 +325,20 @@ impl framework::Example for Spout {
     fn resize(
         &mut self,
         config: &wgpu::SurfaceConfiguration,
-        _device: &wgpu::Device,
+        device: &wgpu::Device,
         _queue: &wgpu::Queue,
     ) {
-        self.renderer.resize(config);
+        let new_upscaled = make_texture(device, config.width, config.height);
+        self.bloom = bloom::Bloom::new(
+            device,
+            config.width,
+            config.height,
+            &new_upscaled,
+            &self.game_params.visual_params,
+        );
+        self.renderer
+            .resize(config, device, &new_upscaled, self.bloom.bloom_view());
+        self.upscaled_view = new_upscaled;
     }
 
     fn render(
@@ -379,10 +401,13 @@ impl framework::Example for Spout {
             );
         }
 
-        // Run bloom post-process (threshold + blur).
+        // Blit game view (240×135) → upscaled HDR (surface resolution).
+        self.renderer.blit(&self.upscaled_view, &mut encoder);
+
+        // Run bloom post-process at full surface resolution (threshold + blur).
         self.bloom.render(&mut encoder);
 
-        // Render the game view quad.
+        // Composite upscaled HDR + bloom → surface (LDR).
         self.renderer.render(view, &mut encoder);
         self.level_manager.decompose_tiles(&mut encoder);
 

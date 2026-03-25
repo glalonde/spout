@@ -2,10 +2,17 @@ struct VertexOutput {
     @builtin(position) position: vec4<f32>,
 };
 
-var<private> ship_vertices: array<vec2<f32>, 4> = array<vec2<f32>, 4>(vec2<f32>(-10.0, 6.0),
-    vec2<f32>(0.0, 0.0),
-    vec2<f32>(-10.0, 0.0),
-    vec2<f32>(-10.0, -6.0));
+// Two triangles forming a chevron with a concave tail notch:
+//   nose(12,0) → left-wing(-8,9) → notch(-5,0)
+//   nose(12,0) → notch(-5,0)     → right-wing(-8,-9)
+var<private> ship_vertices: array<vec2<f32>, 6> = array<vec2<f32>, 6>(
+    vec2<f32>( 12.0,  0.0),   // nose
+    vec2<f32>( -8.0,  9.0),   // left wing
+    vec2<f32>( -5.0,  0.0),   // tail notch
+    vec2<f32>( 12.0,  0.0),   // nose (repeated)
+    vec2<f32>( -5.0,  0.0),   // tail notch (repeated)
+    vec2<f32>( -8.0, -9.0),   // right wing
+);
 
 
 struct Uniforms {
@@ -40,5 +47,6 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    return vec4<f32>(1.0, 0.0, 1.0, 1.0);
+    // Dark steel-blue — well below the bloom threshold so it doesn't over-glow.
+    return vec4<f32>(0.25, 0.42, 0.62, 0.85);
 }

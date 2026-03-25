@@ -169,7 +169,7 @@ impl ShipRenderer {
                 compilation_options: Default::default(),
             }),
             primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleStrip,
+                topology: wgpu::PrimitiveTopology::TriangleList,
                 ..Default::default()
             },
             depth_stencil: None,
@@ -231,7 +231,7 @@ impl ShipRenderer {
         });
         rpass.set_pipeline(&self.render_pipeline);
         rpass.set_bind_group(0, &self.render_bind_group, &[]);
-        rpass.draw(0..4_u32, 0..1);
+        rpass.draw(0..6_u32, 0..1);
     }
 
     pub fn after_queue_submission(&mut self) {

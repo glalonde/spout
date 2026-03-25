@@ -17,4 +17,5 @@ pub struct InputState {
     pub cam_reset: bool,
 
     pub fullscreen: bool,
+    pub music_toggle: bool,
 }

@@ -1,27 +1,45 @@
 [![Build Status](https://github.com/glalonde/spout/workflows/CI/badge.svg)](https://github.com/glalonde/spout/actions)
 
-# Spout Web version
+# Spout
 
 ![Spout preview](./assets/spout_preview.png)
 
-Live streaming some of the programming ony my youtube channel: [https://youtu.be/QauR0n0V48M](https://youtu.be/QauR0n0V48M) 
+Asteroids-style 2D arcade game with GPU-accelerated particle terrain destruction. Runs natively on desktop (via wgpu/Metal/Vulkan/DX12) and in the browser (via WebAssembly + WebGPU).
 
-Legacy version is in branch `legacy_wgpu`. It's actually in a more complete state, but is based on older libraries. I'm in the process of getting back to the same functionality now.
+Live programming streams on YouTube: [https://youtu.be/QauR0n0V48M](https://youtu.be/QauR0n0V48M)
 
 See [docs/pipeline.md](docs/pipeline.md) for a diagram of the per-frame compute and render pipeline.
 
-## Web Dev Notes
+> **Legacy version** is in branch `legacy_wgpu` — more feature-complete but based on older libraries.
 
-Try visiting the demo at [https://glalonde.github.io/spout/](https://glalonde.github.io/spout/)
+## Play
 
-Try running the wasm version! It might work:
+**Native:**
+```
+cargo run
+```
+
+**Web (WebAssembly):**
 ```
 ./run_wasm.sh
 ```
 
-Currently this only works on a few browser configs.
+Or try the live demo: [https://glalonde.github.io/spout/](https://glalonde.github.io/spout/)
 
-## Firefox Nightly
-- Go to [about:config](about:config)
-- Set `dom.webgpu.enabled` to true
-- Set `gfx.webrender.all` to true
+## Controls
+
+| Key | Action |
+|-----|--------|
+| W | Thrust |
+| A / D | Rotate |
+| T | Next track |
+| Y | Toggle music |
+| F | Fullscreen |
+| P | Pause |
+
+## Browser Requirements
+
+WebGPU is required. It is available in:
+- **Chrome / Edge** 113+ (enabled by default)
+- **Firefox Nightly** — enable `dom.webgpu.enabled` and `gfx.webrender.all` in [about:config](about:config)
+- **Safari** 18+ (Technology Preview)

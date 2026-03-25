@@ -1,0 +1,53 @@
+name: Update Golden Images
+
+on:
+  workflow_dispatch:
+
+jobs:
+  update-goldens:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Use the ref (branch) selected in the GitHub Actions UI.
+          ref: ${{ github.ref }}
+
+      - name: Install system deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libvulkan-dev mesa-vulkan-drivers
+
+      - name: Fixup the owner of ~/.cargo/
+        run: sudo chown -R $(whoami):$(id -ng) ~/.cargo/
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Regenerate golden images
+        run: cargo test --verbose
+        env:
+          WGPU_BACKEND: vulkan
+          SPOUT_GENERATE_GOLDEN: "1"
+
+      - name: Commit updated goldens
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add tests/golden/
+          if git diff --staged --quiet; then
+            echo "No golden images changed."
+          else
+            git commit -m "Regenerate golden images [skip ci]"
+            git push
+          fi
