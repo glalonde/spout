@@ -753,7 +753,7 @@ impl ParticleRenderer {
         let cm_texture = crate::color_maps::create_color_map(
             256,
             device,
-            super::color_maps::get_color_map_from_index(game_params.color_map as _),
+            super::color_maps::get_color_map_from_index(game_params.visual_params.color_map as _),
             init_encoder,
         );
 
@@ -875,7 +875,7 @@ impl ParticleRenderer {
                 module: &shader_module,
                 entry_point: Some("fs_main"),
                 targets: &[Some(wgpu::ColorTargetState {
-                    format: wgpu::TextureFormat::Bgra8UnormSrgb,
+                    format: crate::bloom::GAME_VIEW_FORMAT,
                     blend: Some(wgpu::BlendState::ALPHA_BLENDING),
                     write_mask: wgpu::ColorWrites::all(),
                 })],
@@ -1090,8 +1090,9 @@ mod tests {
             size: density_size,
         };
 
-        let target = gpu::create_offscreen_target(&device, TEST_W, TEST_H);
-        let staging_buffer = gpu::create_readback_buffer(&device, TEST_W, TEST_H);
+        let target =
+            gpu::create_offscreen_target(&device, TEST_W, TEST_H, crate::bloom::GAME_VIEW_FORMAT);
+        let staging_buffer = gpu::create_readback_buffer(&device, TEST_W, TEST_H, 8);
 
         let mut encoder =
             device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
@@ -1104,11 +1105,12 @@ mod tests {
             &staging_buffer,
             TEST_W,
             TEST_H,
+            8,
         );
         queue.submit(Some(encoder.finish()));
 
-        let bgra = gpu::readback_pixels(&device, &staging_buffer);
-        let rgba = gpu::bgra_to_rgba(&bgra, TEST_W, TEST_H);
+        let raw = gpu::readback_pixels(&device, &staging_buffer);
+        let rgba = gpu::rgba16f_to_rgba8(&raw, TEST_W, TEST_H);
         gpu::compare_or_generate_golden("particle_render", &rgba, TEST_W, TEST_H);
     }
 }

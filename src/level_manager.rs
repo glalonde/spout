@@ -652,7 +652,7 @@ impl TerrainRenderer {
                 module: &shader_module,
                 entry_point: Some("fs_main"),
                 targets: &[Some(wgpu::ColorTargetState {
-                    format: wgpu::TextureFormat::Bgra8UnormSrgb,
+                    format: crate::bloom::GAME_VIEW_FORMAT,
                     blend: Some(wgpu::BlendState::ALPHA_BLENDING),
                     write_mask: wgpu::ColorWrites::all(),
                 })],
@@ -747,8 +747,9 @@ mod tests {
             size: terrain_size,
         };
 
-        let target = gpu::create_offscreen_target(&device, TEST_W, TEST_H);
-        let staging_buffer = gpu::create_readback_buffer(&device, TEST_W, TEST_H);
+        let target =
+            gpu::create_offscreen_target(&device, TEST_W, TEST_H, crate::bloom::GAME_VIEW_FORMAT);
+        let staging_buffer = gpu::create_readback_buffer(&device, TEST_W, TEST_H, 8);
 
         let mut renderer = TerrainRenderer::init(&device, &game_params, &terrain_buffer);
 
@@ -762,26 +763,27 @@ mod tests {
             &staging_buffer,
             TEST_W,
             TEST_H,
+            8,
         );
         queue.submit(Some(encoder.finish()));
         renderer.after_queue_submission();
 
-        let bgra = gpu::readback_pixels(&device, &staging_buffer);
+        let raw = gpu::readback_pixels(&device, &staging_buffer);
 
         assert_eq!(
-            bgra.len(),
-            (TEST_W * TEST_H * 4) as usize,
+            raw.len(),
+            (TEST_W * TEST_H * 8) as usize,
             "Unexpected pixel data size"
         );
 
         // Basic sanity: not all pixels should be identical (stripe terrain produces variation).
-        let all_same = bgra.chunks(4).all(|px| px == &bgra[..4]);
+        let all_same = raw.chunks(8).all(|px| px == &raw[..8]);
         assert!(
             !all_same,
             "Render output is a solid color — expected stripe variation"
         );
 
-        let rgba = gpu::bgra_to_rgba(&bgra, TEST_W, TEST_H);
+        let rgba = gpu::rgba16f_to_rgba8(&raw, TEST_W, TEST_H);
         gpu::compare_or_generate_golden("terrain_render", &rgba, TEST_W, TEST_H);
     }
 }

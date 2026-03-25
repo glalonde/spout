@@ -4,6 +4,7 @@ mod framework;
 
 use web_time::Instant;
 
+use spout::bloom;
 use spout::game_params;
 use spout::input::InputState;
 use spout::level_manager;
@@ -31,6 +32,7 @@ struct Spout {
     game_time: std::time::Duration,
     iteration_start: Instant,
     game_view_texture: wgpu::TextureView,
+    bloom: bloom::Bloom,
     renderer: render::Render,
     particle_system: particles::ParticleSystem,
     ship_renderer: ship::ShipRenderer,
@@ -211,6 +213,14 @@ impl framework::Example for Spout {
             game_params.viewport_height,
         );
 
+        let bloom = bloom::Bloom::new(
+            device,
+            game_params.viewport_width,
+            game_params.viewport_height,
+            &game_view_texture,
+            &game_params.visual_params,
+        );
+
         let mut init_encoder =
             device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
 
@@ -224,6 +234,7 @@ impl framework::Example for Spout {
             device,
             queue,
             &game_view_texture,
+            bloom.bloom_view(),
         );
 
         let particle_system =
@@ -246,6 +257,7 @@ impl framework::Example for Spout {
             game_time: std::time::Duration::default(),
             iteration_start: Instant::now(),
             game_view_texture,
+            bloom,
             renderer,
             particle_system,
             ship_renderer,
@@ -367,6 +379,9 @@ impl framework::Example for Spout {
             );
         }
 
+        // Run bloom post-process (threshold + blur).
+        self.bloom.render(&mut encoder);
+
         // Render the game view quad.
         self.renderer.render(view, &mut encoder);
         self.level_manager.decompose_tiles(&mut encoder);
@@ -396,7 +411,7 @@ fn make_texture(device: &wgpu::Device, width: u32, height: u32) -> wgpu::Texture
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Bgra8UnormSrgb,
+            format: bloom::GAME_VIEW_FORMAT,
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::RENDER_ATTACHMENT,
             label: None,
             view_formats: &[],

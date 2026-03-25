@@ -59,7 +59,9 @@ impl Render {
         device: &wgpu::Device,
         _queue: &wgpu::Queue,
         texture_view: &wgpu::TextureView,
+        bloom_view: &wgpu::TextureView,
     ) -> Self {
+        let visual_params = &game_params.visual_params;
         let mut camera = camera::Camera {
             screen_size: (config.width, config.height),
             ..Default::default()
@@ -113,7 +115,7 @@ impl Render {
             }],
         });
 
-        // Group 1: texture (b0), sampler (b1), model-pose uniform (b2, mat4x4<f32> = 64 bytes).
+        // Group 1: game texture (b0), sampler (b1), model-pose uniform (b2), bloom texture (b3), bloom sampler (b4).
         let texture_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("Texture BGL"),
             entries: &[
@@ -143,6 +145,22 @@ impl Render {
                     },
                     count: None,
                 },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 4,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
             ],
         });
 
@@ -151,6 +169,8 @@ impl Render {
             bind_group_layouts: &[Some(&camera_bgl), Some(&texture_bgl)],
             immediate_size: 0,
         });
+
+        let draw_constants = [("bloom_strength", visual_params.bloom_strength as f64)];
 
         let draw_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("draw"),
@@ -165,7 +185,10 @@ impl Render {
                 module: &shader,
                 entry_point: Some("fs_main"),
                 targets: &[Some(config.format.into())],
-                compilation_options: Default::default(),
+                compilation_options: wgpu::PipelineCompilationOptions {
+                    constants: &draw_constants,
+                    ..Default::default()
+                },
             }),
             primitive: wgpu::PrimitiveState {
                 cull_mode: Some(wgpu::Face::Back),
@@ -191,6 +214,7 @@ impl Render {
             device,
             texture_bgl,
             texture_view,
+            bloom_view,
             game_params.viewport_width,
             game_params.viewport_height,
         );

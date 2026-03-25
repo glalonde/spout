@@ -40,11 +40,16 @@ pub struct OffscreenTarget {
     pub view: wgpu::TextureView,
 }
 
-/// Create an offscreen `Bgra8UnormSrgb` render target of the given size.
+/// Create an offscreen render target of the given size and format.
 ///
-/// Width must be 64 so that `bytes_per_row` (64 × 4 = 256) satisfies
-/// `COPY_BYTES_PER_ROW_ALIGNMENT` exactly, enabling zero-padding readback.
-pub fn create_offscreen_target(device: &wgpu::Device, width: u32, height: u32) -> OffscreenTarget {
+/// For `Bgra8UnormSrgb` or `Rgba16Float`, width must be 64 so that
+/// `bytes_per_row` satisfies `COPY_BYTES_PER_ROW_ALIGNMENT` exactly.
+pub fn create_offscreen_target(
+    device: &wgpu::Device,
+    width: u32,
+    height: u32,
+    format: wgpu::TextureFormat,
+) -> OffscreenTarget {
     let texture = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("Offscreen render target"),
         size: wgpu::Extent3d {
@@ -55,7 +60,7 @@ pub fn create_offscreen_target(device: &wgpu::Device, width: u32, height: u32) -
         mip_level_count: 1,
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
-        format: wgpu::TextureFormat::Bgra8UnormSrgb,
+        format,
         usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
         view_formats: &[],
     });
@@ -64,8 +69,15 @@ pub fn create_offscreen_target(device: &wgpu::Device, width: u32, height: u32) -
 }
 
 /// Create a staging buffer for CPU readback of a texture with the given dimensions.
-pub fn create_readback_buffer(device: &wgpu::Device, width: u32, height: u32) -> wgpu::Buffer {
-    let size = (width * 4 * height) as wgpu::BufferAddress;
+///
+/// `bytes_per_pixel` must match the texture format: 4 for `Bgra8UnormSrgb`, 8 for `Rgba16Float`.
+pub fn create_readback_buffer(
+    device: &wgpu::Device,
+    width: u32,
+    height: u32,
+    bytes_per_pixel: u32,
+) -> wgpu::Buffer {
+    let size = (width * bytes_per_pixel * height) as wgpu::BufferAddress;
     device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("Readback staging buffer"),
         size,
@@ -75,12 +87,15 @@ pub fn create_readback_buffer(device: &wgpu::Device, width: u32, height: u32) ->
 }
 
 /// Encode a copy from `texture` into `staging_buffer`. Call before `queue.submit()`.
+///
+/// `bytes_per_pixel` must match the texture format: 4 for `Bgra8UnormSrgb`, 8 for `Rgba16Float`.
 pub fn encode_texture_readback(
     encoder: &mut wgpu::CommandEncoder,
     texture: &wgpu::Texture,
     staging_buffer: &wgpu::Buffer,
     width: u32,
     height: u32,
+    bytes_per_pixel: u32,
 ) {
     encoder.copy_texture_to_buffer(
         wgpu::TexelCopyTextureInfo {
@@ -93,7 +108,7 @@ pub fn encode_texture_readback(
             buffer: staging_buffer,
             layout: wgpu::TexelCopyBufferLayout {
                 offset: 0,
-                bytes_per_row: Some(width * 4),
+                bytes_per_row: Some(width * bytes_per_pixel),
                 rows_per_image: None,
             },
         },
@@ -140,16 +155,33 @@ pub fn encode_clear_texture(encoder: &mut wgpu::CommandEncoder, view: &wgpu::Tex
     });
 }
 
-/// Swap red and blue channels of raw BGRA pixel data, producing RGBA.
-pub fn bgra_to_rgba(bgra: &[u8], width: u32, height: u32) -> Vec<u8> {
-    let mut rgba = vec![0u8; bgra.len()];
-    for i in 0..(width * height) as usize {
-        rgba[i * 4] = bgra[i * 4 + 2]; // R ← B
-        rgba[i * 4 + 1] = bgra[i * 4 + 1]; // G
-        rgba[i * 4 + 2] = bgra[i * 4]; // B ← R
-        rgba[i * 4 + 3] = bgra[i * 4 + 3]; // A
+/// Convert raw `Rgba16Float` bytes (8 bytes/pixel, little-endian f16) to 8-bit RGBA.
+///
+/// Each f16 channel is decoded, clamped to [0, 1], and scaled to [0, 255].
+pub fn rgba16f_to_rgba8(raw: &[u8], width: u32, height: u32) -> Vec<u8> {
+    let num_pixels = (width * height) as usize;
+    let mut out = vec![0u8; num_pixels * 4];
+    for i in 0..num_pixels {
+        for ch in 0..4usize {
+            let offset = (i * 4 + ch) * 2;
+            let bits = u16::from_le_bytes([raw[offset], raw[offset + 1]]);
+            let f = f16_to_f32(bits);
+            out[i * 4 + ch] = (f.clamp(0.0, 1.0) * 255.0 + 0.5) as u8;
+        }
     }
-    rgba
+    out
+}
+
+fn f16_to_f32(bits: u16) -> f32 {
+    let sign = ((bits as u32) >> 15) << 31;
+    let exp = ((bits >> 10) & 0x1f) as u32;
+    let mant = (bits & 0x3ff) as u32;
+    let f32_bits = match exp {
+        0 => sign | (mant << 13),               // zero / subnormal
+        31 => sign | 0x7f800000 | (mant << 13), // Inf / NaN
+        e => sign | ((e + 112) << 23) | (mant << 13),
+    };
+    f32::from_bits(f32_bits)
 }
 
 /// Return `true` if every corresponding channel pair in `a` and `b` differs by at most
