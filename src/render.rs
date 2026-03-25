@@ -59,6 +59,7 @@ impl Render {
         device: &wgpu::Device,
         _queue: &wgpu::Queue,
         texture_view: &wgpu::TextureView,
+        bloom_view: &wgpu::TextureView,
     ) -> Self {
         let mut camera = camera::Camera {
             screen_size: (config.width, config.height),
@@ -113,7 +114,7 @@ impl Render {
             }],
         });
 
-        // Group 1: texture (b0), sampler (b1), model-pose uniform (b2, mat4x4<f32> = 64 bytes).
+        // Group 1: game texture (b0), sampler (b1), model-pose uniform (b2), bloom texture (b3), bloom sampler (b4).
         let texture_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("Texture BGL"),
             entries: &[
@@ -141,6 +142,22 @@ impl Render {
                         has_dynamic_offset: false,
                         min_binding_size: wgpu::BufferSize::new(64),
                     },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 4,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None,
                 },
             ],
@@ -191,6 +208,7 @@ impl Render {
             device,
             texture_bgl,
             texture_view,
+            bloom_view,
             game_params.viewport_width,
             game_params.viewport_height,
         );

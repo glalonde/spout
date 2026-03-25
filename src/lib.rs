@@ -1,3 +1,4 @@
+pub mod bloom;
 pub mod buffer_util;
 pub mod camera;
 pub mod color_maps;

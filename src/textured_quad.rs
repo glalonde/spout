@@ -48,6 +48,7 @@ impl TexturedQuad {
         device: &wgpu::Device,
         bind_group_layout: wgpu::BindGroupLayout,
         texture_view: &wgpu::TextureView,
+        bloom_view: &wgpu::TextureView,
         width: u32,
         height: u32,
     ) -> Self {
@@ -73,6 +74,12 @@ impl TexturedQuad {
             mag_filter: wgpu::FilterMode::Nearest,
             min_filter: wgpu::FilterMode::Nearest,
             mipmap_filter: wgpu::MipmapFilterMode::Linear,
+            ..Default::default()
+        });
+        let bloom_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("bloom_composite_sampler"),
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
             ..Default::default()
         });
 
@@ -103,6 +110,14 @@ impl TexturedQuad {
                 wgpu::BindGroupEntry {
                     binding: 2,
                     resource: pose_uniform_buf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::TextureView(bloom_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: wgpu::BindingResource::Sampler(&bloom_sampler),
                 },
             ],
             label: None,
