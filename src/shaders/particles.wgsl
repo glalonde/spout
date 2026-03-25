@@ -92,9 +92,9 @@ fn copysign(in: f32) -> i32 {
 
 const PI: f32 = 3.14159265358979323846;
 
-@compute @workgroup_size(256)
+@compute @workgroup_size({{ particle_workgroup_size }})
 fn main(@builtin(global_invocation_id) global_id: vec3<u32>, @builtin(num_workgroups) num_workgroups: vec3<u32>) {
-  let total_particles = num_workgroups[0] * 256u;
+  let total_particles = num_workgroups[0] * {{ particle_workgroup_size }}u;
   let gid = global_id[0];
 
   let particle = &(particle_buffer[gid]);
