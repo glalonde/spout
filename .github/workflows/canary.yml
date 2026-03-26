@@ -40,8 +40,19 @@ jobs:
             ${{ runner.os }}-wasm-canary-
             ${{ runner.os }}-wasm-
 
+      - name: Get wasm-bindgen version
+        id: wbg-version
+        run: |
+          echo "version=$(grep -A1 '^name = "wasm-bindgen"$' Cargo.lock | grep '^version' | head -1 | cut -d'"' -f2)" >> $GITHUB_OUTPUT
+      - name: Cache wasm-bindgen-cli binary
+        id: cache-wasm-bindgen
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/wasm-bindgen
+          key: wasm-bindgen-cli-${{ steps.wbg-version.outputs.version }}
       - name: Install wasm-bindgen-cli
-        run: cargo install wasm-bindgen-cli --version 0.2.114 --locked
+        if: steps.cache-wasm-bindgen.outputs.cache-hit != 'true'
+        run: cargo install wasm-bindgen-cli --version ${{ steps.wbg-version.outputs.version }} --locked
 
       - name: Build WebGPU
         run: cargo build --release --target wasm32-unknown-unknown

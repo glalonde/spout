@@ -235,6 +235,12 @@ mod tests {
         (a - b).abs() < EPSILON
     }
 
+    // pos() relative to center — same as the position vector from center to camera.
+    fn pos_vec(state: &CameraState) -> glam::Vec3 {
+        state.pos() - state.center
+    }
+
+
     #[test]
     fn pos_at_north_pole() {
         // theta=0 is the "north pole" in spherical coords: camera sits directly above center on +Z axis.
@@ -287,7 +293,7 @@ mod tests {
                 ortho: None,
                 perspective: None,
             };
-            let len = (state.pos() - state.center).length();
+            let len = pos_vec(&state).length();
             // Use relative tolerance: trig at f32 precision accumulates ~1e-6 relative error.
             assert!(
                 (len - 250.0).abs() < 250.0 * 1e-5,
@@ -332,7 +338,7 @@ mod tests {
                 perspective: None,
             };
             // Look direction = center - pos
-            let look = state.center - state.pos();
+            let look = -pos_vec(&state);
             let dot = look.dot(state.up());
             assert!(
                 approx_eq(dot, 0.0),
@@ -365,9 +371,21 @@ mod tests {
     fn ortho_look_at_sets_center() {
         let mut cam = Camera::default();
         cam.ortho_look_at([100.0, 200.0], 1920.0, 1080.0, true);
-        assert!(approx_eq(cam.state.center.x, 100.0));
-        assert!(approx_eq(cam.state.center.y, 200.0));
-        assert!(approx_eq(cam.state.center.z, 0.0));
+        assert!(
+            approx_eq(cam.state.center.x, 100.0),
+            "x={}",
+            cam.state.center.x
+        );
+        assert!(
+            approx_eq(cam.state.center.y, 200.0),
+            "y={}",
+            cam.state.center.y
+        );
+        assert!(
+            approx_eq(cam.state.center.z, 0.0),
+            "z={}",
+            cam.state.center.z
+        );
         assert!(cam.state.ortho.is_some());
         assert!(cam.state.perspective.is_none());
     }

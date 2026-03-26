@@ -2,9 +2,13 @@ name: CI
 
 on:
   push:
-    branches-ignore: [staging.tmp]
+    branches: [master]
   pull_request:
-    branches-ignore: [staging.tmp]
+
+# Cancel in-progress runs on the same branch/PR when a new push arrives.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   wasm-build:
@@ -26,15 +30,27 @@ jobs:
           key: ${{ runner.os }}-wasm-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-wasm-
+      - name: Get wasm-bindgen version
+        id: wbg-version
+        run: |
+          echo "version=$(grep -A1 '^name = "wasm-bindgen"$' Cargo.lock | grep '^version' | head -1 | cut -d'"' -f2)" >> $GITHUB_OUTPUT
+      - name: Cache wasm-bindgen-cli binary
+        id: cache-wasm-bindgen
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/wasm-bindgen
+          key: wasm-bindgen-cli-${{ steps.wbg-version.outputs.version }}
       - name: Install wasm-bindgen-cli
-        run: cargo install wasm-bindgen-cli --version 0.2.114 --locked
+        if: steps.cache-wasm-bindgen.outputs.cache-hit != 'true'
+        run: cargo install wasm-bindgen-cli --version ${{ steps.wbg-version.outputs.version }} --locked
       - name: Build WASM
-        run: cargo build --release --target wasm32-unknown-unknown
+        # Debug build is sufficient to verify compilation; release is only needed for deployment.
+        run: cargo build --target wasm32-unknown-unknown
       - name: Generate JS bindings
         run: |
           mkdir -p target/spout_web
           wasm-bindgen --no-typescript --out-dir target/spout_web --web \
-            target/wasm32-unknown-unknown/release/spout.wasm
+            target/wasm32-unknown-unknown/debug/spout.wasm
           sed "s/{{example}}/spout/g" wasm-resources/index.template.html \
             > target/spout_web/index.html
 
