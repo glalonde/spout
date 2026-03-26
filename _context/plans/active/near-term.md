@@ -67,6 +67,18 @@ Tasks:
 
 ---
 
+## 6. Music Playlist Randomization
+
+The `shuffled_playlist()` function in `src/audio.rs` uses `rand::rng()` (OS-seeded `ThreadRng`) which should be non-deterministic. However, the level terrain generator in `level_manager.rs` uses `fastrand::Rng::with_seed(0)` — an explicitly fixed seed — causing levels to be identical every run.
+
+Tasks:
+- [ ] Confirm whether the music shuffle is truly non-deterministic in practice (native + WASM)
+- [x] Change `fastrand::Rng::with_seed(0)` in `level_manager.rs` to `fastrand::Rng::new()` (OS-seeded) so terrain layout varies between runs
+
+Note: if level determinism is ever *wanted* (e.g. for replay or testing), expose the seed via `game_config.toml` rather than hardcoding 0.
+
+---
+
 ## Branch Audit Remainder
 
 The `legacy_wgpu` branch has been audited (see `legacy-port-inventory.md`). These branches have not yet been reviewed:
