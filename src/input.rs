@@ -309,11 +309,14 @@ struct WasmTouch {
     rotate_x: f32,        // x at latest touchmove/touchstart
     rotate_y: f32,        // y at latest touchmove/touchstart
 
-    // Accelerometer state (updated by deviceorientation listener)
-    last_gamma: f32,         // latest DeviceOrientationEvent.gamma (degrees)
-    last_beta: f32,          // latest DeviceOrientationEvent.beta (degrees)
-    accel_offset_gamma: f32, // calibration offset (set on right-side tap)
-    accel_offset_beta: f32,
+    // Accelerometer state (updated by deviceorientation listener).
+    // EMA baselines drift toward the current tilt over ~5 seconds, making
+    // the control feel relative rather than absolute.  Tap-to-reset snaps
+    // the baselines to the current values for instant recalibration.
+    last_gamma: f32,           // latest DeviceOrientationEvent.gamma (degrees)
+    last_beta: f32,            // latest DeviceOrientationEvent.beta (degrees)
+    accel_baseline_gamma: f32, // EMA baseline (degrees)
+    accel_baseline_beta: f32,
     accel_heading: Option<f32>, // computed heading from accel tilt
 }
 
@@ -499,8 +502,10 @@ impl InputCollector {
                                 s.rotate_y - s.rotate_anchor_y,
                             );
                             if drag.length_squared() < MIN_DRAG_PX * MIN_DRAG_PX {
-                                s.accel_offset_gamma = s.last_gamma;
-                                s.accel_offset_beta = s.last_beta;
+                                // Snap baseline to current orientation for
+                                // instant recalibration.
+                                s.accel_baseline_gamma = s.last_gamma;
+                                s.accel_baseline_beta = s.last_beta;
                             }
                             s.rotate_id = None;
                             s.rotate_anchor_x = 0.0;
@@ -533,15 +538,27 @@ impl InputCollector {
                 s.last_gamma = gamma_deg;
                 s.last_beta = beta_deg;
 
-                // Subtract calibration offset, convert to radians.
-                let gamma_rad = (gamma_deg - s.accel_offset_gamma).to_radians();
-                let beta_rad = (beta_deg - s.accel_offset_beta).to_radians();
+                // EMA high-pass filter: baseline drifts toward the current
+                // reading over ~5 seconds, making control feel relative.
+                // α ≈ 0.997 at ~60 Hz → τ ≈ 5.5 s.
+                const EMA_ALPHA: f32 = 0.997;
+                s.accel_baseline_gamma =
+                    s.accel_baseline_gamma * EMA_ALPHA + gamma_deg * (1.0 - EMA_ALPHA);
+                s.accel_baseline_beta =
+                    s.accel_baseline_beta * EMA_ALPHA + beta_deg * (1.0 - EMA_ALPHA);
+
+                // Subtract drifting baseline, convert to radians.
+                let gamma_rad = (gamma_deg - s.accel_baseline_gamma).to_radians();
+                let beta_rad = (beta_deg - s.accel_baseline_beta).to_radians();
 
                 // Landscape-left mapping: game-right = beta, game-up = gamma.
+                // Boost lateral (gamma) sensitivity so less tilt is needed.
+                const LATERAL_SCALE: f32 = 1.5;
+                let tilt = glam::Vec2::new(beta_rad, gamma_rad * LATERAL_SCALE);
+
                 // Negate: input direction = where the jetstream goes; ship
                 // nose points opposite.
-                let tilt = glam::Vec2::new(beta_rad, gamma_rad);
-                const MIN_TILT_RAD: f32 = 0.1; // ~6° deadzone when nearly flat
+                const MIN_TILT_RAD: f32 = 0.05; // ~3° deadzone
                 s.accel_heading = if tilt.length_squared() < MIN_TILT_RAD * MIN_TILT_RAD {
                     None
                 } else {
