@@ -21,16 +21,23 @@
 ### PR #55 — Text renderer + debug overlay (branch: text-rendering)
 - `5bed466` — **feat**: bitmap font text renderer using `fontdue` + Pixel Six TTF. GPU texture atlas, instanced glyph quad WGSL shader, nearest-neighbor filtering. FPS + score debug overlay toggled with F3. New dep: `fontdue = "0.9"`.
 
+### PR #56 — Ship collision detection (branch: collision-detection)
+- `1be8808` — **feat**: CPU-side terrain collision detection. `terrain_health_at()` queries initial level data at world position. `check_ship_collision()` tests 5 points around ship hull. Death state stops ship movement + particle emission; R to reset.
+- 7 new unit tests for terrain queries and collision. Test count: 56 → 63.
+- Known limitation: reads pre-erosion terrain, not GPU state. Accurate for upcoming terrain in upward gameplay.
+
 ## Stats
-- **Tests**: 34 → 56 (+22)
+- **Tests**: 34 → 63 (+29)
 - **Dead code removed**: 3 modules/fields/enums
 - **Unwrap calls justified**: all production code
 - **Module docs added**: 14 files
-- **New features**: text rendering, FPS overlay, macOS packaging, config disk override
+- **New features**: text rendering, FPS overlay, macOS packaging, config disk override, collision detection
 - **Per-frame allocations eliminated**: 1
+- **Draft PRs opened**: 4 (#53, #54, #55, #56)
 
 ## Findings / Notes
 - `game_config.toml` is already embedded via `include_str!` — enhanced with optional disk override for dev flexibility.
 - `glyphon` does not support wgpu 29. Hand-rolled bitmap atlas with `fontdue` was the right approach.
 - `AudioPlayer::disabled()` IS used (from `main.rs`), contradicting the initial dead code scan — always verify subagent findings before acting.
 - The only per-frame heap allocation found was the `Vec::new()` in `work_until()` — everything else in the hot path is stack-allocated or pre-allocated.
+- CPU-side terrain data is stale after GPU erosion. Collision detection is accurate for forward (un-eroded) terrain but will false-positive on destroyed terrain behind the player.
