@@ -1,3 +1,6 @@
+//! Particle color map palettes (Viridis, Magma, Inferno, Plasma) backed by
+//! the `scarlet` crate. Generates 1D GPU textures for the particle shader.
+
 use wgpu::util::DeviceExt;
 
 use std::sync::OnceLock;

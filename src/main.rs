@@ -1,3 +1,5 @@
+//! Spout entry point: game loop, state machine, and winit event handling.
+
 mod audio;
 #[path = "../examples/framework.rs"]
 mod framework;

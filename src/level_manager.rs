@@ -1,3 +1,7 @@
+//! Terrain level generation, progressive tile loading, and GPU composition.
+//! Manages a scrolling window of terrain tiles that are generated on a background
+//! budget and uploaded to the GPU as the viewport advances.
+
 use crate::buffer_util::{self, SizedBuffer};
 use web_time::Instant;
 

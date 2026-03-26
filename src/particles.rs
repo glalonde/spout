@@ -1,3 +1,7 @@
+//! GPU particle system: emission, physics simulation, terrain erosion, and
+//! rendering. All particle state lives in GPU buffers; compute shaders handle
+//! the simulation each frame.
+
 use crate::buffer_util::{self, SizedBuffer};
 
 /// Must match `@workgroup_size` in particles.wgsl, emitter.wgsl, and

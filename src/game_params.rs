@@ -1,3 +1,5 @@
+//! Game configuration structs deserialized from `game_config.toml`.
+
 use serde::{Deserialize, Serialize};
 
 // Parameters that define the game. These don't change at runtime.

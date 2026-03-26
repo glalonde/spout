@@ -1,3 +1,7 @@
+//! Input abstraction: keyboard, touch, and accelerometer → unified `InputState`.
+//! Supports desktop (winit keyboard events), mobile web (touch + DeviceOrientation),
+//! and absolute-angle heading via bang-bang controller.
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -1,5 +1,5 @@
-// Include precompiled shader bytes by specifying a path relative to the shader
-// source directory.
+//! Macro for including tera-templated WGSL shaders from the build output directory.
+
 #[macro_export]
 macro_rules! include_shader {
     ($path:literal) => {{

@@ -1,3 +1,6 @@
+//! Ship state (position, velocity, orientation), physics update, and GPU rendering
+//! (filled triangle + wireframe outline).
+
 use crate::{buffer_util::SizedBuffer, game_params};
 
 #[derive(Debug, Copy, Clone)]

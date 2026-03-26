@@ -1,3 +1,5 @@
+//! Helpers for creating wgpu buffers with tracked sizes.
+
 use wgpu::util::DeviceExt;
 
 pub struct SizedBuffer {

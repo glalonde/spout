@@ -1,3 +1,5 @@
+//! Orbital camera with orthographic projection for the game viewport.
+
 use std::f32::consts::PI;
 
 #[allow(clippy::duplicate_mod)]

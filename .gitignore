@@ -3,3 +3,4 @@
 # Generated test output PNGs (not committed; only tests/golden/ is committed).
 /tests/output/*.png
 node_modules/
+.claude/worktrees/

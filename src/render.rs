@@ -1,3 +1,6 @@
+//! Top-level render pipeline: blit game view to display resolution, apply CRT
+//! post-processing, and composite bloom into the final LDR surface output.
+
 use crate::camera;
 use crate::textured_quad;
 
