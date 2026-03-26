@@ -534,11 +534,7 @@ impl InputCollector {
 
         // Touch and keyboard are independent per axis: touch takes priority on
         // whichever axis has an active touch; keyboard fills the other.
-        let thrust = if touch_thrust {
-            1.0
-        } else {
-            keyboard_thrust
-        };
+        let thrust = if touch_thrust { 1.0 } else { keyboard_thrust };
         let rotate = touch_rotate.unwrap_or(keyboard_rotate);
 
         InputState {

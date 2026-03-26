@@ -240,7 +240,6 @@ mod tests {
         state.pos() - state.center
     }
 
-
     #[test]
     fn pos_at_north_pole() {
         // theta=0 is the "north pole" in spherical coords: camera sits directly above center on +Z axis.
