@@ -33,7 +33,7 @@ Pre- and post-upgrade housekeeping. Items identified during the pre-upgrade audi
 
 ## Architectural / longer horizon
 
-- [ ] Replace `cgmath` with `glam` — better community adoption, more active development; significant find-and-replace but cleaner to do when touching math-heavy code anyway
+- [x] Replace `cgmath` with `glam` — replaced in `camera.rs`, `textured_quad.rs`, `examples/framework.rs`; all tests pass
 - [ ] Consolidate `StagingBelt` instances: currently 6 separate belts across `particles.rs` (x2), `level_manager.rs` (x2), `render.rs`, `ship.rs` — each holding a cloned `Arc<Device>`; a single shared belt at the top level would simplify ownership and allow better chunk sizing
 - [ ] Decouple update logic from render frequency: `Spout::update_state()` is called inside `Spout::render()` (`main.rs:315`), coupling physics tick rate to display frame rate; a fixed-rate update loop (or at minimum a capped `dt`) would make behavior frame-rate-independent
 - [ ] Add unit tests for camera math (spherical→Cartesian transforms) and buffer size calculations

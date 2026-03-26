@@ -77,11 +77,7 @@ impl TexturedQuad {
         });
 
         // Model pose uniform
-        let model_pose = cgmath::Matrix4::from_translation(cgmath::Vector3 {
-            x: 0.0,
-            y: 0.0,
-            z: 0.0,
-        });
+        let model_pose = glam::Mat4::IDENTITY;
         let pose_uniform_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Uniform Buffer"),
             contents: bytemuck::cast_slice(&AsRef::<[f32; 16]>::as_ref(&model_pose)[..]),

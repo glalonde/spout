@@ -30,7 +30,7 @@ pub struct PerspectiveState {
 }
 
 pub struct CameraState {
-    pub center: cgmath::Point3<f32>,
+    pub center: glam::Vec3,
 
     // Camera in spherical coordinates.
     pub phi: f32,                              // Longitude.
@@ -43,7 +43,7 @@ pub struct CameraState {
 impl Default for CameraState {
     fn default() -> CameraState {
         CameraState {
-            center: cgmath::Point3::<f32>::new(0.0, 0.0, 0.0),
+            center: glam::Vec3::ZERO,
             phi: -PI / 2.0,
             theta: 0.0,
             radius: 1500.0,
@@ -54,18 +54,18 @@ impl Default for CameraState {
 }
 
 impl CameraState {
-    pub fn pos(&self) -> cgmath::Point3<f32> {
-        cgmath::Point3::new(
+    pub fn pos(&self) -> glam::Vec3 {
+        glam::Vec3::new(
             self.radius * self.phi.cos() * self.theta.sin(),
             self.radius * self.phi.sin() * self.theta.sin(),
             self.radius * self.theta.cos(),
-        ) + cgmath::Vector3::<f32>::new(self.center.x, self.center.y, self.center.z)
+        ) + self.center
     }
 
-    pub fn up(&self) -> cgmath::Vector3<f32> {
+    pub fn up(&self) -> glam::Vec3 {
         // Using spherical coordinates compute the vector in the global frame that corresponds to up in the camera's frame.
         let up_theta = self.theta - PI / 2.0;
-        cgmath::Vector3::new(
+        glam::Vec3::new(
             self.phi.cos() * up_theta.sin(),
             self.phi.sin() * up_theta.sin(),
             up_theta.cos(),
@@ -131,7 +131,7 @@ impl Camera {
                 let required_height = target_width / aspect;
                 let new_bottom = -required_height / 2.0;
                 let new_top = required_height / 2.0;
-                cgmath::ortho(
+                glam::Mat4::orthographic_rh_gl(
                     ortho_state.left,
                     ortho_state.right,
                     new_bottom,
@@ -144,7 +144,7 @@ impl Camera {
                 let required_width = aspect * target_height;
                 let new_left = -required_width / 2.0;
                 let new_right = required_width / 2.0;
-                cgmath::ortho(
+                glam::Mat4::orthographic_rh_gl(
                     new_left,
                     new_right,
                     ortho_state.bottom,
@@ -154,15 +154,15 @@ impl Camera {
                 )
             }
         } else if let Some(perspective_state) = &self.state.perspective {
-            cgmath::perspective(cgmath::Rad(perspective_state.fov), aspect, 1e-6, 10000.0)
+            glam::Mat4::perspective_rh_gl(perspective_state.fov, aspect, 1e-6, 10000.0)
         } else {
-            cgmath::perspective(cgmath::Deg(45f32), aspect, 1e-6, 10000.0)
+            glam::Mat4::perspective_rh_gl(45f32.to_radians(), aspect, 1e-6, 10000.0)
         };
 
         // camera_pose_world
         let cam_pos = self.state.pos();
         let cam_up = self.state.up();
-        let mx_view = cgmath::Matrix4::look_at_rh(cam_pos, self.state.center, cam_up);
+        let mx_view = glam::Mat4::look_at_rh(cam_pos, self.state.center, cam_up);
         let proj = framework::OPENGL_TO_WGPU_MATRIX * mx_projection;
         let view = framework::OPENGL_TO_WGPU_MATRIX * mx_view;
 
@@ -198,7 +198,7 @@ impl Camera {
         }
         self.state.ortho = Some(ortho_state);
         self.state.perspective = None;
-        self.state.center = cgmath::Point3::<f32>::new(center[0], center[1], 0.0);
+        self.state.center = glam::Vec3::new(center[0], center[1], 0.0);
     }
 
     pub fn perspective_look_at(
@@ -217,7 +217,7 @@ impl Camera {
 
         self.state.perspective = Some(perspective_state);
         self.state.ortho = None;
-        self.state.center = cgmath::Point3::<f32>::new(center[0], center[1], 0.0);
+        self.state.center = glam::Vec3::new(center[0], center[1], 0.0);
     }
 
     pub fn update_state(&mut self, dt: f32, input_state: &crate::input::InputState) {
