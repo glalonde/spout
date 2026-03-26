@@ -257,6 +257,123 @@ impl ShipRenderer {
     }
 }
 
+#[cfg(test)]
+mod unit_tests {
+    use super::*;
+
+    #[test]
+    fn stationary_ship_stays_put() {
+        let mut s = ShipState::default();
+        let pos = s.position;
+        s.update(1.0 / 60.0, 0.0, 0.0);
+        assert_eq!(s.position, pos);
+        assert_eq!(s.velocity, [0.0, 0.0]);
+    }
+
+    #[test]
+    fn thrust_accelerates_along_orientation() {
+        let mut s = ShipState {
+            orientation: 0.0, // pointing right (+x)
+            ..Default::default()
+        };
+        s.update(1.0, 1.0, 0.0);
+        assert!(s.velocity[0] > 0.0, "should accelerate in +x");
+        assert!(
+            s.velocity[1].abs() < 1e-6,
+            "no y component at orientation=0"
+        );
+    }
+
+    #[test]
+    fn thrust_at_90_degrees_accelerates_up() {
+        let mut s = ShipState {
+            orientation: std::f32::consts::FRAC_PI_2, // pointing up (+y)
+            ..Default::default()
+        };
+        s.update(1.0, 1.0, 0.0);
+        assert!(s.velocity[0].abs() < 1e-5, "negligible x component");
+        assert!(s.velocity[1] > 0.0, "should accelerate in +y");
+    }
+
+    #[test]
+    fn rotation_changes_orientation() {
+        let mut s = ShipState::default();
+        let initial = s.orientation;
+        s.update(1.0, 0.0, 1.0);
+        assert!(
+            (s.orientation - initial).abs() > 0.0,
+            "orientation should change"
+        );
+        assert!(
+            (s.orientation - initial - s.rotation_rate).abs() < 1e-6,
+            "should rotate by rotation_rate * dt * rotate"
+        );
+    }
+
+    #[test]
+    fn negative_rotation_goes_clockwise() {
+        let mut s = ShipState::default();
+        s.update(1.0, 0.0, -1.0);
+        assert!(s.orientation < 0.0, "negative rotate should decrease angle");
+    }
+
+    #[test]
+    fn speed_clamped_to_max() {
+        let mut s = ShipState {
+            max_speed: 5.0,
+            acceleration: 1000.0,
+            ..Default::default()
+        };
+        s.update(1.0, 1.0, 0.0);
+        let speed = (s.velocity[0] * s.velocity[0] + s.velocity[1] * s.velocity[1]).sqrt();
+        assert!(
+            (speed - 5.0).abs() < 1e-4,
+            "speed {} should be clamped to max_speed 5.0",
+            speed
+        );
+    }
+
+    #[test]
+    fn zero_dt_no_change() {
+        let mut s = ShipState::default();
+        s.velocity = [10.0, 5.0];
+        let pos = s.position;
+        let vel = s.velocity;
+        s.update(0.0, 1.0, 1.0);
+        assert_eq!(s.position, pos);
+        assert_eq!(s.velocity, vel);
+    }
+
+    #[test]
+    fn emitter_is_behind_ship() {
+        let s = ShipState {
+            position: [100.0, 100.0],
+            orientation: 0.0, // pointing right
+            ..Default::default()
+        };
+        let (pos, angle) = s.get_emitter_state();
+        // Emitter should be behind the ship (to the left, at -x)
+        assert!(pos[0] < s.position[0], "emitter x should be behind ship");
+        assert!(
+            (angle - std::f32::consts::PI).abs() < 1e-6,
+            "emitter angle should be π (opposite of 0)"
+        );
+    }
+
+    #[test]
+    fn position_integrates_velocity() {
+        let mut s = ShipState {
+            velocity: [10.0, -5.0],
+            ..Default::default()
+        };
+        let p0 = s.position;
+        let dt = 0.5;
+        s.update(dt, 0.0, 0.0);
+        assert!((s.position[0] - (p0[0] + 10.0 * dt)).abs() < 1e-6);
+        assert!((s.position[1] - (p0[1] - 5.0 * dt)).abs() < 1e-6);
+    }
+}
+
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
