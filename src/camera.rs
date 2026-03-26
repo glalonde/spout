@@ -390,4 +390,67 @@ mod tests {
         assert!(cam.state.ortho.is_some());
         assert!(cam.state.perspective.is_none());
     }
+
+    #[test]
+    fn update_zoom_in_decreases_radius() {
+        let mut state = CameraState {
+            radius: 100.0,
+            ..Default::default()
+        };
+        let motion = CameraMotion::default();
+        let mut input = crate::input::InputState::default();
+        input.cam_in = true;
+        state.update(1.0, &input, &motion);
+        assert!(state.radius < 100.0, "radius={}", state.radius);
+    }
+
+    #[test]
+    fn update_zoom_out_increases_radius() {
+        let mut state = CameraState {
+            radius: 100.0,
+            ..Default::default()
+        };
+        let motion = CameraMotion::default();
+        let mut input = crate::input::InputState::default();
+        input.cam_out = true;
+        state.update(1.0, &input, &motion);
+        assert!(state.radius > 100.0, "radius={}", state.radius);
+    }
+
+    #[test]
+    fn update_theta_clamped_to_0_pi() {
+        let mut state = CameraState {
+            theta: 0.1,
+            ..Default::default()
+        };
+        let motion = CameraMotion {
+            angular_speed: 100.0,
+            ..Default::default()
+        };
+        let mut input = crate::input::InputState::default();
+        input.cam_up = true;
+        // Large dt * speed should push theta below 0, but clamp keeps it at 0.
+        state.update(1.0, &input, &motion);
+        assert!(
+            state.theta >= 0.0,
+            "theta should be clamped >= 0, got {}",
+            state.theta
+        );
+    }
+
+    #[test]
+    fn update_no_input_no_change() {
+        let mut state = CameraState {
+            phi: 1.0,
+            theta: 1.0,
+            radius: 100.0,
+            ..Default::default()
+        };
+        let motion = CameraMotion::default();
+        let input = crate::input::InputState::default();
+        state.update(1.0, &input, &motion);
+        assert!(approx_eq(state.phi, 1.0));
+        assert!(approx_eq(state.theta, 1.0));
+        assert!(approx_eq(state.radius, 100.0));
+    }
 }
