@@ -224,3 +224,168 @@ impl Camera {
         self.state.update(dt, input_state, &self.motion_params);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const EPSILON: f32 = 1e-5;
+
+    fn approx_eq(a: f32, b: f32) -> bool {
+        (a - b).abs() < EPSILON
+    }
+
+    // pos() relative to center — same as the position vector from center to camera.
+    fn pos_vec(state: &CameraState) -> glam::Vec3 {
+        state.pos() - state.center
+    }
+
+    #[test]
+    fn pos_at_north_pole() {
+        // theta=0 is the "north pole" in spherical coords: camera sits directly above center on +Z axis.
+        let state = CameraState {
+            phi: 0.0,
+            theta: 0.0,
+            radius: 100.0,
+            center: glam::Vec3::ZERO,
+            ortho: None,
+            perspective: None,
+        };
+        let pos = state.pos();
+        // sin(0) = 0, cos(0) = 1, so x=y=0, z=radius
+        assert!(approx_eq(pos.x, 0.0), "x={}", pos.x);
+        assert!(approx_eq(pos.y, 0.0), "y={}", pos.y);
+        assert!(approx_eq(pos.z, 100.0), "z={}", pos.z);
+    }
+
+    #[test]
+    fn pos_along_positive_x_axis() {
+        // phi=0, theta=PI/2: camera on +X axis, looking at origin
+        let state = CameraState {
+            phi: 0.0,
+            theta: PI / 2.0,
+            radius: 100.0,
+            center: glam::Vec3::ZERO,
+            ortho: None,
+            perspective: None,
+        };
+        let pos = state.pos();
+        assert!(approx_eq(pos.x, 100.0), "x={}", pos.x);
+        assert!(approx_eq(pos.y, 0.0), "y={}", pos.y);
+        assert!(approx_eq(pos.z, 0.0), "z={}", pos.z);
+    }
+
+    #[test]
+    fn pos_radius_is_preserved() {
+        // At any angle, |pos - center| should equal radius.
+        for &(phi, theta) in &[
+            (0.0_f32, 0.1_f32),
+            (1.0, 1.2),
+            (-PI / 3.0, PI / 4.0),
+            (PI, PI / 6.0),
+        ] {
+            let state = CameraState {
+                phi,
+                theta,
+                radius: 250.0,
+                center: glam::Vec3::new(10.0, -5.0, 0.0),
+                ortho: None,
+                perspective: None,
+            };
+            let len = pos_vec(&state).length();
+            // Use relative tolerance: trig at f32 precision accumulates ~1e-6 relative error.
+            assert!(
+                (len - 250.0).abs() < 250.0 * 1e-5,
+                "phi={phi} theta={theta}: |pos-center|={len}"
+            );
+        }
+    }
+
+    #[test]
+    fn up_is_unit_vector() {
+        for &(phi, theta) in &[
+            (0.0_f32, 0.1_f32),
+            (1.0, 1.2),
+            (-PI / 3.0, PI / 4.0),
+            (PI / 2.0, PI / 3.0),
+        ] {
+            let state = CameraState {
+                phi,
+                theta,
+                ..Default::default()
+            };
+            let len = state.up().length();
+            assert!(approx_eq(len, 1.0), "phi={phi} theta={theta}: |up|={len}");
+        }
+    }
+
+    #[test]
+    fn up_is_orthogonal_to_look_direction() {
+        // The up vector should be perpendicular to the view direction (pos→center).
+        for &(phi, theta) in &[
+            (0.0_f32, 0.1_f32),
+            (1.0, 1.2),
+            (-PI / 3.0, PI / 4.0),
+            (PI / 2.0, PI / 3.0),
+        ] {
+            let state = CameraState {
+                phi,
+                theta,
+                radius: 100.0,
+                center: glam::Vec3::ZERO,
+                ortho: None,
+                perspective: None,
+            };
+            // Look direction = center - pos
+            let look = -pos_vec(&state);
+            let dot = look.dot(state.up());
+            assert!(
+                approx_eq(dot, 0.0),
+                "phi={phi} theta={theta}: look·up={dot} (expected ~0)"
+            );
+        }
+    }
+
+    #[test]
+    fn to_uniform_data_no_nan_or_inf() {
+        // Smoke test: ortho and perspective modes both produce finite matrix data.
+        let mut cam = Camera::default();
+        cam.ortho_look_at([0.0, 0.0], 1920.0, 1080.0, true);
+        let data = cam.to_uniform_data();
+        assert!(
+            data.iter().all(|v| v.is_finite()),
+            "ortho mode produced non-finite values"
+        );
+
+        let mut cam = Camera::default();
+        cam.perspective_look_at([0.0, 0.0], 1920.0, 1080.0, true);
+        let data = cam.to_uniform_data();
+        assert!(
+            data.iter().all(|v| v.is_finite()),
+            "perspective mode produced non-finite values"
+        );
+    }
+
+    #[test]
+    fn ortho_look_at_sets_center() {
+        let mut cam = Camera::default();
+        cam.ortho_look_at([100.0, 200.0], 1920.0, 1080.0, true);
+        assert!(
+            approx_eq(cam.state.center.x, 100.0),
+            "x={}",
+            cam.state.center.x
+        );
+        assert!(
+            approx_eq(cam.state.center.y, 200.0),
+            "y={}",
+            cam.state.center.y
+        );
+        assert!(
+            approx_eq(cam.state.center.z, 0.0),
+            "z={}",
+            cam.state.center.z
+        );
+        assert!(cam.state.ortho.is_some());
+        assert!(cam.state.perspective.is_none());
+    }
+}
