@@ -26,31 +26,31 @@ mod tests {
     }
 
     #[test]
-    fn heading_drag_right_is_zero() {
-        // Drag right → angle 0.
+    fn heading_drag_right_jetstream_right_nose_left() {
+        // Drag right → jetstream goes right → ship nose points left (π).
         let h = touch_delta_to_target_heading(100.0, 100.0, 130.0, 100.0).unwrap();
-        assert!((h - 0.0).abs() < 1e-5, "got {h}");
+        assert!((h.abs() - PI).abs() < 1e-5, "got {h}");
     }
 
     #[test]
-    fn heading_drag_up_is_pi_over_2() {
-        // Drag up in screen (y decreases) → angle π/2 in game coords.
+    fn heading_drag_up_jetstream_up_nose_down() {
+        // Drag up (screen y decreases) → jetstream up → nose down (-π/2).
         let h = touch_delta_to_target_heading(100.0, 100.0, 100.0, 70.0).unwrap();
-        assert!((h - FRAC_PI_2).abs() < 1e-5, "got {h}");
-    }
-
-    #[test]
-    fn heading_drag_down_is_neg_pi_over_2() {
-        // Drag down in screen (y increases) → angle -π/2 in game coords.
-        let h = touch_delta_to_target_heading(100.0, 100.0, 100.0, 130.0).unwrap();
         assert!((h - (-FRAC_PI_2)).abs() < 1e-5, "got {h}");
     }
 
     #[test]
-    fn heading_drag_left_is_pi() {
-        // Drag left → angle π.
+    fn heading_drag_down_jetstream_down_nose_up() {
+        // Drag down (screen y increases) → jetstream down → nose up (π/2).
+        let h = touch_delta_to_target_heading(100.0, 100.0, 100.0, 130.0).unwrap();
+        assert!((h - FRAC_PI_2).abs() < 1e-5, "got {h}");
+    }
+
+    #[test]
+    fn heading_drag_left_jetstream_left_nose_right() {
+        // Drag left → jetstream left → nose right (0).
         let h = touch_delta_to_target_heading(100.0, 100.0, 70.0, 100.0).unwrap();
-        assert!((h.abs() - PI).abs() < 1e-5, "got {h}");
+        assert!((h - 0.0).abs() < 1e-5, "got {h}");
     }
 
     // --- keyboard -------------------------------------------------------------
@@ -141,8 +141,8 @@ mod tests {
 
     #[cfg(not(target_arch = "wasm32"))]
     #[test]
-    fn touch_rotate_drag_right_heading_zero() {
-        // Drag 30px right → target heading ~0 (pointing right).
+    fn touch_rotate_drag_right_nose_left() {
+        // Drag 30px right → jetstream right → nose left (π).
         let mut c = InputCollector::default();
         c.surface_width = 200.0;
         c.rotate_id = Some(2);
@@ -151,13 +151,13 @@ mod tests {
         c.rotate_x = 180.0;
         c.rotate_y = 100.0;
         let h = c.current_state().target_heading.unwrap();
-        assert!((h - 0.0).abs() < 1e-4, "got {h}");
+        assert!((h.abs() - PI).abs() < 1e-4, "got {h}");
     }
 
     #[cfg(not(target_arch = "wasm32"))]
     #[test]
-    fn touch_rotate_drag_up_heading_pi_over_2() {
-        // Drag 30px up (screen y decreases) → target heading π/2 (game up).
+    fn touch_rotate_drag_up_nose_down() {
+        // Drag 30px up (screen y decreases) → jetstream up → nose down (-π/2).
         let mut c = InputCollector::default();
         c.surface_width = 200.0;
         c.rotate_id = Some(2);
@@ -166,7 +166,7 @@ mod tests {
         c.rotate_x = 150.0;
         c.rotate_y = 70.0;
         let h = c.current_state().target_heading.unwrap();
-        assert!((h - FRAC_PI_2).abs() < 1e-4, "got {h}");
+        assert!((h - (-FRAC_PI_2)).abs() < 1e-4, "got {h}");
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -255,7 +255,10 @@ fn touch_delta_to_target_heading(
         None
     } else {
         // Negate y: screen y increases downward, game y increases upward.
-        Some(drag.with_y(-drag.y).to_angle())
+        // Negate the whole vector: the input direction is where the exhaust/
+        // jetstream goes; the ship nose points opposite.
+        let game_drag = drag.with_y(-drag.y);
+        Some((-game_drag).to_angle())
     }
 }
 
@@ -535,12 +538,14 @@ impl InputCollector {
                 let beta_rad = (beta_deg - s.accel_offset_beta).to_radians();
 
                 // Landscape-left mapping: game-right = beta, game-up = gamma.
+                // Negate: input direction = where the jetstream goes; ship
+                // nose points opposite.
                 let tilt = glam::Vec2::new(beta_rad, gamma_rad);
                 const MIN_TILT_RAD: f32 = 0.1; // ~6° deadzone when nearly flat
                 s.accel_heading = if tilt.length_squared() < MIN_TILT_RAD * MIN_TILT_RAD {
                     None
                 } else {
-                    Some(tilt.to_angle())
+                    Some((-tilt).to_angle())
                 };
             });
             if let Some(window) = web_sys::window() {
