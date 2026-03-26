@@ -227,6 +227,7 @@ impl ShipRenderer {
             encoder,
             &self.uniform_buffer.buffer,
             0,
+            // safe: uniform_buffer.size is always > 0 (set at GPU buffer creation)
             wgpu::BufferSize::new(self.uniform_buffer.size as _).unwrap(),
         )
         .copy_from_slice(bytemuck::bytes_of(&uniform_values));

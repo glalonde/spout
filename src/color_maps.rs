@@ -1,15 +1,5 @@
 use wgpu::util::DeviceExt;
 
-#[allow(dead_code)]
-#[repr(u8)]
-#[derive(Copy, Clone)]
-enum ColorMap {
-    Viridis = 0,
-    Magma = 1,
-    Inferno = 2,
-    Plasma = 3,
-}
-
 use std::sync::OnceLock;
 
 static COLOR_MAPS: OnceLock<[scarlet::colormap::ListedColorMap; 4]> = OnceLock::new();

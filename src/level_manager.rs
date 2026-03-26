@@ -223,8 +223,6 @@ pub struct LevelManager {
     // Static params
     pub level_width: u32,
     pub level_height: u32,
-    #[allow(dead_code)]
-    stripe_level: Vec<i32>,
     pub active_interval_height: u32,
     pub active_extent_below_viewport: u32,
 
@@ -333,7 +331,6 @@ impl LevelManager {
         let mut lm = LevelManager {
             level_width: game_params.level_width,
             level_height: game_params.level_height,
-            stripe_level: make_stripe_level(game_params.level_width, game_params.level_height),
             active_interval_height,
             active_extent_below_viewport,
 
@@ -396,13 +393,13 @@ impl LevelManager {
                 log::info!("Loading level {} to gpu", level_index);
                 let buffer = self.get_unused_tile_buffer(device);
                 let level_data = &self.level_maker.levels[level_index as usize];
-                // let level_data = &self.stripe_level;
 
                 // Request data copy.
                 belt.write_buffer(
                     encoder,
                     &buffer.buffer,
                     0,
+                    // safe: buffer.size is always > 0 (set at GPU buffer creation)
                     wgpu::BufferSize::new(buffer.size as _).unwrap(),
                 )
                 .copy_from_slice(bytemuck::cast_slice(level_data));
@@ -545,6 +542,7 @@ impl TerrainRenderer {
             encoder,
             &self.uniform_buf.buffer,
             0,
+            // safe: uniform_buf.size is always > 0 (set at GPU buffer creation)
             wgpu::BufferSize::new(self.uniform_buf.size as _).unwrap(),
         )
         .copy_from_slice(bytemuck::bytes_of(&uniforms));

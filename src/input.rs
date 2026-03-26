@@ -453,6 +453,7 @@ impl InputCollector {
                     }
                 }
             });
+            // safe: canvas is a valid EventTarget; "touchstart" is a standard event
             canvas
                 .add_event_listener_with_callback("touchstart", cb.as_ref().unchecked_ref())
                 .unwrap();
@@ -475,6 +476,7 @@ impl InputCollector {
                     }
                 }
             });
+            // safe: canvas is a valid EventTarget; "touchmove" is a standard event
             canvas
                 .add_event_listener_with_callback("touchmove", cb.as_ref().unchecked_ref())
                 .unwrap();
@@ -516,6 +518,7 @@ impl InputCollector {
                     }
                 }
             });
+            // safe: canvas is a valid EventTarget; "touchend"/"touchcancel" are standard events
             let f = cb.as_ref().unchecked_ref();
             canvas
                 .add_event_listener_with_callback("touchend", f)

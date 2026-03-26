@@ -368,6 +368,7 @@ impl Render {
                 encoder,
                 &self.camera_uniform_buf,
                 0,
+                // safe: raw_uniforms always has > 0 elements (camera matrix)
                 wgpu::BufferSize::new((raw_uniforms.len() * 4) as wgpu::BufferAddress).unwrap(),
             )
             .copy_from_slice(bytemuck::cast_slice(&raw_uniforms));
