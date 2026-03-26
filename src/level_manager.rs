@@ -246,7 +246,93 @@ pub struct LevelManager {
     pub terrain_renderer: TerrainRenderer,
 }
 
+/// Query terrain health at a world position from CPU-side level data.
+///
+/// Returns the terrain health value (> 0 means solid terrain) or 0 if the
+/// position is out of bounds or the level hasn't been generated yet.
+///
+/// **Note:** This reads the initial (pre-erosion) terrain data. Terrain
+/// destroyed by particles on the GPU is not reflected here. For upward-
+/// scrolling gameplay this is accurate for terrain ahead of the player.
+fn terrain_health_at(
+    levels: &[Vec<i32>],
+    level_width: u32,
+    level_height: u32,
+    x: f32,
+    y: f32,
+) -> i32 {
+    let xi = x as i32;
+    let yi = y as i32;
+
+    if xi < 0 || xi >= level_width as i32 || yi < 0 {
+        return 0;
+    }
+
+    let level_index = yi as u32 / level_height;
+    let y_in_level = yi as u32 % level_height;
+
+    if level_index as usize >= levels.len() {
+        return 0;
+    }
+
+    let index = (y_in_level * level_width + xi as u32) as usize;
+    let level_data = &levels[level_index as usize];
+    if index >= level_data.len() {
+        return 0;
+    }
+
+    level_data[index]
+}
+
+/// Ship collision radius — approximate the triangular hull with a small circle.
+const SHIP_COLLISION_RADIUS: f32 = 4.0;
+
+/// Check if a ship position collides with terrain.
+fn check_collision(
+    levels: &[Vec<i32>],
+    level_width: u32,
+    level_height: u32,
+    ship: &crate::ship::ShipState,
+) -> bool {
+    let cx = ship.position[0];
+    let cy = ship.position[1];
+
+    // Test center + 4 cardinal points around the hull.
+    let test_points = [
+        (cx, cy),
+        (cx + SHIP_COLLISION_RADIUS, cy),
+        (cx - SHIP_COLLISION_RADIUS, cy),
+        (cx, cy + SHIP_COLLISION_RADIUS),
+        (cx, cy - SHIP_COLLISION_RADIUS),
+    ];
+
+    test_points
+        .iter()
+        .any(|&(x, y)| terrain_health_at(levels, level_width, level_height, x, y) > 0)
+}
+
 impl LevelManager {
+    /// Query terrain health at a world position.
+    pub fn terrain_health_at(&self, x: f32, y: f32) -> i32 {
+        terrain_health_at(
+            &self.level_maker.levels,
+            self.level_width,
+            self.level_height,
+            x,
+            y,
+        )
+    }
+
+    /// Check if the ship collides with terrain.
+    pub fn check_ship_collision(&self, ship: &crate::ship::ShipState) -> bool {
+        check_collision(
+            &self.level_maker.levels,
+            self.level_width,
+            self.level_height,
+            ship,
+        )
+    }
+
     fn active_tiles(&self) -> impl Iterator<Item = &TerrainTile> {
         self.loaded_tiles
             .iter()
@@ -693,6 +779,83 @@ impl TerrainRenderer {
         rpass.set_pipeline(&self.render_pipeline);
         rpass.set_bind_group(0, &self.render_bind_group, &[]);
         rpass.draw(0..4_u32, 0..1);
+    }
+}
+
+#[cfg(test)]
+mod collision_tests {
+    use super::*;
+
+    const W: u32 = 10;
+    const H: u32 = 10;
+
+    fn solid_level() -> Vec<Vec<i32>> {
+        vec![vec![1000i32; (W * H) as usize]]
+    }
+
+    fn empty_level() -> Vec<Vec<i32>> {
+        vec![vec![0i32; (W * H) as usize]]
+    }
+
+    #[test]
+    fn health_in_solid_terrain() {
+        assert_eq!(terrain_health_at(&solid_level(), W, H, 5.0, 5.0), 1000);
+    }
+
+    #[test]
+    fn health_in_empty_terrain() {
+        assert_eq!(terrain_health_at(&empty_level(), W, H, 5.0, 5.0), 0);
+    }
+
+    #[test]
+    fn health_out_of_bounds_returns_zero() {
+        let levels = solid_level();
+        assert_eq!(terrain_health_at(&levels, W, H, -1.0, 5.0), 0);
+        assert_eq!(terrain_health_at(&levels, W, H, 5.0, -1.0), 0);
+        assert_eq!(terrain_health_at(&levels, W, H, 100.0, 5.0), 0);
+        // Beyond generated levels.
+        assert_eq!(terrain_health_at(&levels, W, H, 5.0, 100.0), 0);
+    }
+
+    #[test]
+    fn health_at_level_boundary() {
+        // Two levels stacked vertically.
+        let levels = vec![
+            vec![1000i32; (W * H) as usize], // level 0: y=[0, 10)
+            vec![500i32; (W * H) as usize],  // level 1: y=[10, 20)
+        ];
+        assert_eq!(terrain_health_at(&levels, W, H, 5.0, 0.0), 1000);
+        assert_eq!(terrain_health_at(&levels, W, H, 5.0, 9.0), 1000);
+        assert_eq!(terrain_health_at(&levels, W, H, 5.0, 10.0), 500);
+        assert_eq!(terrain_health_at(&levels, W, H, 5.0, 19.0), 500);
+        assert_eq!(terrain_health_at(&levels, W, H, 5.0, 20.0), 0); // no level 2
+    }
+
+    #[test]
+    fn collision_in_solid_terrain() {
+        let ship = crate::ship::ShipState {
+            position: [5.0, 5.0],
+            ..Default::default()
+        };
+        assert!(check_collision(&solid_level(), W, H, &ship));
+    }
+
+    #[test]
+    fn no_collision_in_empty_terrain() {
+        let ship = crate::ship::ShipState {
+            position: [5.0, 5.0],
+            ..Default::default()
+        };
+        assert!(!check_collision(&empty_level(), W, H, &ship));
+    }
+
+    #[test]
+    fn no_collision_beyond_generated_levels() {
+        let ship = crate::ship::ShipState {
+            position: [5.0, 500.0], // way beyond the single 10-high level
+            ..Default::default()
+        };
+        assert!(!check_collision(&solid_level(), W, H, &ship));
     }
 }
 

@@ -37,6 +37,7 @@ struct GameState {
     score: i32,
     paused: bool,
     reset_requested: bool,
+    dead: bool,
 }
 
 struct Spout {
@@ -149,7 +150,7 @@ impl Spout {
 
     fn update_particle_system(&mut self, dt: f32, prev_ship: &ship::ShipState) {
         let current_ship = &self.state.ship_state;
-        let maybe_motion = if self.state.input_state.thrust > 0.0 {
+        let maybe_motion = if self.state.input_state.thrust > 0.0 && !self.state.dead {
             let start_emitter = prev_ship.get_emitter_state();
             let end_emitter = current_ship.get_emitter_state();
             Some(particles::EmitterMotion {
@@ -196,7 +197,23 @@ impl Spout {
 
         // Process input state integrated over passage of time.
         let prev_ship = self.state.ship_state;
-        self.update_ship(game_dt);
+        if !self.state.dead {
+            self.update_ship(game_dt);
+        }
+
+        // Check collision with terrain (CPU-side initial data).
+        if !self.state.dead
+            && self
+                .level_manager
+                .check_ship_collision(&self.state.ship_state)
+        {
+            self.state.dead = true;
+            log::info!(
+                "Ship collided with terrain at ({:.0}, {:.0})",
+                self.state.ship_state.position[0],
+                self.state.ship_state.position[1]
+            );
+        }
 
         self.update_viewport_height();
 
