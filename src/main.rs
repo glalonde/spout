@@ -596,22 +596,16 @@ impl framework::Example for Spout {
         #[cfg(feature = "profiling")]
         self.gpu_profiler.end_frame().unwrap(); // safe: begin/end always paired
 
-        // Finalize the current puffin frame (CPU scopes) before injecting GPU
-        // results. GPU results arrive 1-2 frames late and go into their own
-        // "GPU" thread in the *next* puffin frame.
+        // Process GPU results (logged only — puffin integration is unstable).
         #[cfg(feature = "profiling")]
-        puffin::GlobalProfiler::lock().new_frame();
+        {
+            let _ = self
+                .gpu_profiler
+                .process_finished_frame(queue.get_timestamp_period());
+        }
 
         #[cfg(feature = "profiling")]
-        if let Some(results) = self
-            .gpu_profiler
-            .process_finished_frame(queue.get_timestamp_period())
-        {
-            wgpu_profiler::puffin::output_frame_to_puffin(
-                &mut puffin::GlobalProfiler::lock(),
-                &results,
-            );
-        }
+        puffin::GlobalProfiler::lock().new_frame();
 
         {
             #[cfg(feature = "profiling")]

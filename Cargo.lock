@@ -4089,7 +4089,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "948e23cc220c021611e4de4072b20365192e861cde1f2d17437c1cdd7651bbc0"
 dependencies = [
  "parking_lot",
- "puffin",
  "thiserror 2.0.18",
  "wgpu",
 ]
