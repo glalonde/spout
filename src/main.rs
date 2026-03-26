@@ -15,6 +15,10 @@ use spout::ship;
 /// Time budget per frame for background level generation (≈ 1/300 s).
 const LEVEL_BUDGET: std::time::Duration = std::time::Duration::from_nanos(3_333_333);
 
+/// Maximum physics step. Caps dt so that GPU stalls or level-loading pauses
+/// don't cause the ship and particles to simulate a huge time jump.
+const MAX_FRAME_DT: std::time::Duration = std::time::Duration::from_millis(50);
+
 #[derive(Debug, Default)]
 struct GameState {
     input_state: InputState,
@@ -45,7 +49,7 @@ struct Spout {
 impl Spout {
     fn tick(&mut self) -> (f32, f32) {
         let now = Instant::now();
-        let delta_t = now - self.iteration_start;
+        let delta_t = (now - self.iteration_start).min(MAX_FRAME_DT);
         self.iteration_start = now;
 
         if self.state.paused {

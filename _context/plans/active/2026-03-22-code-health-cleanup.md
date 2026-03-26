@@ -34,7 +34,7 @@ Pre- and post-upgrade housekeeping. Items identified during the pre-upgrade audi
 ## Architectural / longer horizon
 
 - [x] Replace `cgmath` with `glam` — replaced in `camera.rs`, `textured_quad.rs`, `examples/framework.rs`; all tests pass
-- [ ] Consolidate `StagingBelt` instances: currently 6 separate belts across `particles.rs` (x2), `level_manager.rs` (x2), `render.rs`, `ship.rs` — each holding a cloned `Arc<Device>`; a single shared belt at the top level would simplify ownership and allow better chunk sizing
-- [ ] Decouple update logic from render frequency: `Spout::update_state()` is called inside `Spout::render()` (`main.rs:315`), coupling physics tick rate to display frame rate; a fixed-rate update loop (or at minimum a capped `dt`) would make behavior frame-rate-independent
+- [x] Consolidate `StagingBelt` instances: reduced from 6 to 1 shared belt in `Spout`; all write methods take `belt: &mut StagingBelt`; single `finish()`/`recall()` per frame
+- [x] Decouple update logic from render frequency: capped `dt` at 50 ms (`MAX_FRAME_DT`) in `tick()` so GPU stalls / level-loading pauses don't cause large physics jumps; a full fixed-rate loop remains a future option
 - [x] Add unit tests for camera math (spherical→Cartesian transforms) — 6 tests in `src/camera.rs` covering pos(), up(), radius invariant, orthogonality, and uniform data smoke test
-- [ ] Clean up WASM dependencies — audit and prune once WASM target is revived
+- [x] Clean up WASM dependencies — version strings tightened in Cargo.toml during fastrand/rand cleanup
