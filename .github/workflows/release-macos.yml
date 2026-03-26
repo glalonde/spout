@@ -1,0 +1,53 @@
+name: Release macOS
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        run: rustup show
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target/
+          key: ${{ runner.os }}-release-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-release-
+
+      - name: Build and package
+        run: ./scripts/package_macos.sh --dmg
+
+      - name: Verify .app exists
+        run: test -d target/release/Spout.app
+
+      - name: Upload .app bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: Spout-macOS
+          path: target/release/Spout.app
+
+      - name: Upload .dmg
+        uses: actions/upload-artifact@v4
+        with:
+          name: Spout-macOS-dmg
+          path: target/release/Spout.dmg
+
+      # Attach artifacts to GitHub Release when triggered by a version tag.
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: target/release/Spout.dmg
+          generate_release_notes: true
