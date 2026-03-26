@@ -26,6 +26,7 @@ toml = "0.8"
 scarlet = "1"
 image = "0.25"
 fastrand = "2"
+fontdue = "0.9"
 wgpu = "29"
 web-time = "1"
 oxdz = { git = "https://github.com/glalonde/oxdz", branch = "master" }

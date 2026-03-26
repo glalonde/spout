@@ -13,6 +13,7 @@ use spout::level_manager;
 use spout::particles;
 use spout::render;
 use spout::ship;
+use spout::text;
 
 /// Shortest signed angular distance from `current` to `target`, in [-π, π].
 fn angle_diff(target: f32, current: f32) -> f32 {
@@ -51,8 +52,12 @@ struct Spout {
     renderer: render::Render,
     particle_system: particles::ParticleSystem,
     ship_renderer: ship::ShipRenderer,
+    text_renderer: text::TextRenderer,
     audio: audio::AudioPlayer,
     staging_belt: wgpu::util::StagingBelt,
+    show_debug_overlay: bool,
+    frame_times: Vec<f32>,
+    tick_wall_dt: f32,
 }
 
 impl Spout {
@@ -184,6 +189,7 @@ impl Spout {
             .work_until(Instant::now() + LEVEL_BUDGET);
 
         let (game_dt, wall_dt) = self.tick();
+        self.tick_wall_dt = wall_dt;
 
         // Process input state integrated over passage of time.
         let prev_ship = self.state.ship_state;
@@ -319,6 +325,9 @@ impl framework::Example for Spout {
 
         let ship_renderer = ship::ShipRenderer::init(device);
 
+        let text_renderer =
+            text::TextRenderer::init(device, queue, config.format, config.width, config.height);
+
         staging_belt.finish();
         queue.submit(Some(init_encoder.finish()));
         staging_belt.recall();
@@ -355,8 +364,12 @@ impl framework::Example for Spout {
             renderer,
             particle_system,
             ship_renderer,
+            text_renderer,
             audio,
             staging_belt,
+            show_debug_overlay: false,
+            frame_times: Vec::with_capacity(60),
+            tick_wall_dt: 0.0,
         }
     }
 
@@ -381,6 +394,7 @@ impl framework::Example for Spout {
                     KeyCode::KeyT => self.audio.next_track(),
                     KeyCode::KeyY => self.audio.toggle(),
                     KeyCode::KeyR => self.state.reset_requested = true,
+                    KeyCode::F3 => self.show_debug_overlay = !self.show_debug_overlay,
                     _ => {}
                 }
             }
@@ -391,7 +405,7 @@ impl framework::Example for Spout {
         &mut self,
         config: &wgpu::SurfaceConfiguration,
         device: &wgpu::Device,
-        _queue: &wgpu::Queue,
+        queue: &wgpu::Queue,
     ) {
         #[cfg(not(target_arch = "wasm32"))]
         self.collector.set_surface_width(config.width as f32);
@@ -407,6 +421,8 @@ impl framework::Example for Spout {
         self.renderer
             .resize(config, device, &new_upscaled, self.bloom.bloom_view());
         self.upscaled_view = new_upscaled;
+        self.text_renderer
+            .resize(queue, config.width, config.height);
     }
 
     fn render(
@@ -485,6 +501,33 @@ impl framework::Example for Spout {
         // Composite upscaled HDR + bloom → surface (LDR).
         self.renderer.render(view, &mut encoder);
         self.level_manager.decompose_tiles(&mut encoder);
+
+        // Debug overlay (FPS counter) — renders at display resolution on top.
+        if self.show_debug_overlay {
+            // Track frame times (rolling window of last 60 frames).
+            let dt = self.tick_wall_dt;
+            if self.frame_times.len() >= 60 {
+                self.frame_times.remove(0);
+            }
+            self.frame_times.push(dt);
+
+            let avg_dt: f32 = self.frame_times.iter().sum::<f32>() / self.frame_times.len() as f32;
+            let fps = if avg_dt > 0.0 { 1.0 / avg_dt } else { 0.0 };
+            let fps_text = format!("FPS: {:.0}", fps);
+            let score_text = format!("Score: {}", self.state.score);
+
+            let white = [1.0, 1.0, 1.0, 1.0];
+            let scale = 2.0;
+            self.text_renderer.draw(
+                device,
+                &mut encoder,
+                view,
+                &[
+                    (fps_text.as_str(), 8.0, 8.0, scale, white),
+                    (score_text.as_str(), 8.0, 28.0, scale, white),
+                ],
+            );
+        }
 
         self.staging_belt.finish();
         queue.submit(Some(encoder.finish()));
