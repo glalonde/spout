@@ -362,7 +362,9 @@ impl Spawner {
 #[allow(dead_code)]
 pub fn run<E: Example>(title: &str) {
     #[cfg(not(target_arch = "wasm32"))]
-    scrub_log::init_with_filter_string("info").unwrap();
+    env_logger::Builder::from_default_env()
+        .filter_level(log::LevelFilter::Info)
+        .init();
 
     #[cfg(target_arch = "wasm32")]
     {

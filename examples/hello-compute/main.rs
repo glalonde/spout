@@ -181,7 +181,7 @@ async fn execute_gpu_inner(
 fn main() {
     #[cfg(not(target_arch = "wasm32"))]
     {
-        scrub_log::init().unwrap();
+        env_logger::init();
         pollster::block_on(run());
     }
     #[cfg(target_arch = "wasm32")]
