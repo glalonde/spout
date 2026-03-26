@@ -19,6 +19,10 @@ const LEVEL_BUDGET: std::time::Duration = std::time::Duration::from_nanos(3_333_
 
 #[derive(Debug, Default)]
 struct GameState {
+    /// Pure keyboard state — set directly by key press/release events.
+    keyboard_input: InputState,
+    /// Effective input for the current frame: keyboard_input | mobile (WASM).
+    /// Recomputed from scratch each frame so mobile releases don't latch.
     input_state: InputState,
     prev_input_state: InputState,
     ship_state: ship::ShipState,
@@ -57,7 +61,7 @@ impl Spout {
     }
 
     fn update_paused(&mut self) {
-        if self.state.input_state.pause && !self.state.prev_input_state.pause {
+        if self.state.keyboard_input.pause && !self.state.prev_input_state.pause {
             // new pause signal.
             self.state.paused = !self.state.paused;
             if self.state.paused {
@@ -113,7 +117,10 @@ impl Spout {
 
     /// Mostly responsible for updating superficial state based on new inputs.
     fn update_state(&mut self) {
-        // Merge touch / accelerometer inputs from JS (WASM only).
+        // Rebuild effective input from the clean keyboard state so that a
+        // mobile release never latches. OR-merge mobile on top so both
+        // input sources can coexist.
+        self.state.input_state = self.state.keyboard_input;
         #[cfg(target_arch = "wasm32")]
         {
             self.state.input_state.forward |= mobile_input::get_forward();
@@ -295,23 +302,23 @@ impl framework::Example for Spout {
             let pressed = state == winit::event::ElementState::Pressed;
             match key {
                 // Ship motion bindings
-                KeyCode::KeyW => self.state.input_state.forward = pressed,
-                KeyCode::KeyA => self.state.input_state.left = pressed,
-                KeyCode::KeyP => self.state.input_state.pause = pressed,
-                KeyCode::KeyD => self.state.input_state.right = pressed,
+                KeyCode::KeyW => self.state.keyboard_input.forward = pressed,
+                KeyCode::KeyA => self.state.keyboard_input.left = pressed,
+                KeyCode::KeyP => self.state.keyboard_input.pause = pressed,
+                KeyCode::KeyD => self.state.keyboard_input.right = pressed,
 
                 // Camera bindings
-                KeyCode::KeyU => self.state.input_state.cam_in = pressed,
-                KeyCode::KeyO => self.state.input_state.cam_out = pressed,
-                KeyCode::KeyI => self.state.input_state.cam_up = pressed,
-                KeyCode::KeyK => self.state.input_state.cam_down = pressed,
-                KeyCode::KeyJ => self.state.input_state.cam_left = pressed,
-                KeyCode::KeyL => self.state.input_state.cam_right = pressed,
-                KeyCode::KeyN => self.state.input_state.cam_perspective = pressed,
-                KeyCode::KeyM => self.state.input_state.cam_reset = pressed,
+                KeyCode::KeyU => self.state.keyboard_input.cam_in = pressed,
+                KeyCode::KeyO => self.state.keyboard_input.cam_out = pressed,
+                KeyCode::KeyI => self.state.keyboard_input.cam_up = pressed,
+                KeyCode::KeyK => self.state.keyboard_input.cam_down = pressed,
+                KeyCode::KeyJ => self.state.keyboard_input.cam_left = pressed,
+                KeyCode::KeyL => self.state.keyboard_input.cam_right = pressed,
+                KeyCode::KeyN => self.state.keyboard_input.cam_perspective = pressed,
+                KeyCode::KeyM => self.state.keyboard_input.cam_reset = pressed,
 
                 // Full screen
-                KeyCode::KeyF => self.state.input_state.fullscreen = pressed,
+                KeyCode::KeyF => self.state.keyboard_input.fullscreen = pressed,
 
                 // Skip to next music track (on key-down only)
                 KeyCode::KeyT => {
@@ -360,7 +367,7 @@ impl framework::Example for Spout {
         window: &winit::window::Window,
     ) {
         {
-            if !self.state.prev_input_state.fullscreen && self.state.input_state.fullscreen {
+            if !self.state.prev_input_state.fullscreen && self.state.keyboard_input.fullscreen {
                 if window.fullscreen().is_some() {
                     // Set unfullscreen.
                     log::info!("Setting windowed mode.");
