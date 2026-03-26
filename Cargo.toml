@@ -5,6 +5,7 @@ authors = ["Geoffrey Lalonde <lalondegeoffrey@gmail.com>"]
 edition = "2021"
 rust-version = "1.94.0"
 resolver = "2"
+default-run = "spout"
 
 [profile.release]
 debug = true
