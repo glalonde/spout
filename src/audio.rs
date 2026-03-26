@@ -148,32 +148,71 @@ mod native {
     use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
     use std::sync::{
         atomic::{AtomicBool, AtomicUsize, Ordering},
-        mpsc, Arc,
+        mpsc, Arc, RwLock,
     };
+
+    /// Shared sample buffer that the cpal callback reads from. Swapping the
+    /// inner `Vec` is enough to change tracks without rebuilding the stream.
+    struct SharedBuffer {
+        samples: RwLock<Arc<Vec<f32>>>,
+        pos: AtomicUsize,
+        finished: AtomicBool,
+    }
+
+    impl SharedBuffer {
+        fn new() -> Arc<Self> {
+            Arc::new(SharedBuffer {
+                // Start with a single silent stereo frame so the stream callback
+                // always has something to read (avoids division-by-zero on len).
+                samples: RwLock::new(Arc::new(vec![0.0, 0.0])),
+                pos: AtomicUsize::new(0),
+                finished: AtomicBool::new(false),
+            })
+        }
+
+        fn swap(&self, new_samples: Vec<f32>) {
+            *self.samples.write().expect("audio lock poisoned") = Arc::new(new_samples);
+            self.pos.store(0, Ordering::Relaxed);
+            self.finished.store(false, Ordering::Relaxed);
+        }
+
+        fn silence(&self) {
+            self.swap(vec![0.0, 0.0]);
+        }
+
+        fn read_into(&self, out: &mut [f32]) {
+            let buf = self.samples.read().expect("audio lock poisoned").clone();
+            let len = buf.len();
+            for sample in out.iter_mut() {
+                let i = self.pos.fetch_add(1, Ordering::Relaxed);
+                if i < len {
+                    *sample = buf[i];
+                } else {
+                    *sample = 0.0;
+                    self.finished.store(true, Ordering::Relaxed);
+                }
+            }
+        }
+    }
 
     pub struct NativeBackend {
         _stream: Option<cpal::Stream>,
-        /// Set by the cpal callback when playback reaches the end of the buffer.
-        finished: Arc<AtomicBool>,
+        buffer: Arc<SharedBuffer>,
         pending: Option<mpsc::Receiver<Vec<f32>>>,
-        /// Old stream kept alive until the next frame so its Drop doesn't
-        /// block the frame where we start the new track.
-        _retiring: Option<cpal::Stream>,
     }
 
     impl Backend for NativeBackend {
         fn new_backend() -> Self {
+            let buffer = SharedBuffer::new();
+            let stream = build_cpal_stream(Arc::clone(&buffer));
             NativeBackend {
-                _stream: None,
-                finished: Arc::new(AtomicBool::new(false)),
+                _stream: stream,
+                buffer,
                 pending: None,
-                _retiring: None,
             }
         }
 
         fn start_track(&mut self, index: usize) {
-            self._stream = None; // drop current stream immediately
-            self.finished.store(false, Ordering::Relaxed);
             let (tx, rx) = mpsc::channel();
 
             let track_bytes: &'static [u8] = TRACKS[index];
@@ -187,27 +226,21 @@ mod native {
         }
 
         fn stop_current(&mut self) {
-            // Move to _retiring instead of dropping immediately — cpal stream
-            // Drop can block waiting for the audio callback to finish.
-            self._retiring = self._stream.take();
-            self.finished.store(false, Ordering::Relaxed);
+            // Swap in silence; the stream keeps running.
+            self.buffer.silence();
         }
 
         fn poll(&mut self, playing: bool) {
-            // Drop any retired stream from the previous frame.
-            self._retiring = None;
-
             if let Some(rx) = self.pending.take() {
                 match rx.try_recv() {
                     Ok(samples) => {
-                        if let Some(stream) = build_cpal_stream(samples, Arc::clone(&self.finished))
-                        {
-                            if playing {
+                        self.buffer.swap(samples);
+                        if playing {
+                            if let Some(stream) = &self._stream {
                                 if let Err(e) = stream.play() {
                                     log::error!("audio: failed to start stream: {e}");
                                 }
                             }
-                            self._stream = Some(stream);
                         }
                     }
                     Err(mpsc::TryRecvError::Empty) => self.pending = Some(rx),
@@ -232,12 +265,12 @@ mod native {
 
         fn is_finished(&self) -> bool {
             self._stream.is_some()
-                && self.finished.load(Ordering::Relaxed)
+                && self.buffer.finished.load(Ordering::Relaxed)
                 && self.pending.is_none()
         }
     }
 
-    fn build_cpal_stream(samples: Vec<f32>, finished: Arc<AtomicBool>) -> Option<cpal::Stream> {
+    fn build_cpal_stream(buffer: Arc<SharedBuffer>) -> Option<cpal::Stream> {
         let host = cpal::default_host();
         let device = host.default_output_device().or_else(|| {
             log::error!("audio: no output device found");
@@ -250,25 +283,11 @@ mod native {
             buffer_size: cpal::BufferSize::Default,
         };
 
-        let samples = Arc::new(samples);
-        let pos = Arc::new(AtomicUsize::new(0));
-        let s = samples.clone();
-        let p = pos;
-
         device
             .build_output_stream(
                 &config,
                 move |out: &mut [f32], _| {
-                    let len = s.len();
-                    for sample in out.iter_mut() {
-                        let i = p.fetch_add(1, Ordering::Relaxed);
-                        if i < len {
-                            *sample = s[i];
-                        } else {
-                            *sample = 0.0;
-                            finished.store(true, Ordering::Relaxed);
-                        }
-                    }
+                    buffer.read_into(out);
                 },
                 |e| log::error!("audio stream error: {e}"),
                 None,
