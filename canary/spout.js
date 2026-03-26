@@ -138,6 +138,10 @@ function __wbg_get_imports() {
             const ret = arg0.clientX;
             return ret;
         },
+        __wbg_clientY_2cf964b439a5974f: function(arg0) {
+            const ret = arg0.clientY;
+            return ret;
+        },
         __wbg_close_ab55423854e61546: function(arg0) {
             arg0.close();
         },
@@ -1586,7 +1590,7 @@ function __wbg_get_imports() {
             return ret;
         },
         __wbindgen_cast_0000000000000001: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { dtor_idx: 422, function: Function { arguments: [NamedExternref("TouchEvent")], shim_idx: 423, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { dtor_idx: 420, function: Function { arguments: [NamedExternref("TouchEvent")], shim_idx: 421, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm.wasm_bindgen__closure__destroy__h08443e702c41cabf, wasm_bindgen__convert__closures_____invoke__h09ea201dddca302f);
             return ret;
         },
