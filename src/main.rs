@@ -27,6 +27,7 @@ struct GameState {
     viewport_offset: i32,
     score: i32,
     paused: bool,
+    reset_requested: bool,
 }
 
 struct Spout {
@@ -49,6 +50,45 @@ struct Spout {
 }
 
 impl Spout {
+    fn reset(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
+        self.state = GameState {
+            ship_state: ship::ShipState::init(
+                &self.game_params.ship_params,
+                [
+                    (self.game_params.viewport_width / 2) as f32 + 0.5,
+                    (self.game_params.viewport_height / 2) as f32 + 0.5,
+                ],
+            ),
+            ..Default::default()
+        };
+        self.game_time = std::time::Duration::default();
+        self.iteration_start = Instant::now();
+
+        let mut init_encoder =
+            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+
+        self.level_manager = level_manager::LevelManager::init(
+            device,
+            &self.game_params,
+            0,
+            &mut init_encoder,
+            &mut self.staging_belt,
+        );
+
+        self.particle_system = particles::ParticleSystem::new(
+            device,
+            &self.game_params,
+            &mut init_encoder,
+            &self.level_manager,
+        );
+
+        self.staging_belt.finish();
+        queue.submit(Some(init_encoder.finish()));
+        self.staging_belt.recall();
+
+        log::info!("Game reset");
+    }
+
     fn tick(&mut self) -> (f32, f32) {
         let now = Instant::now();
         let delta_t = (now - self.iteration_start).min(MAX_FRAME_DT);
@@ -377,6 +417,7 @@ impl framework::Example for Spout {
                 match key {
                     KeyCode::KeyT => self.audio.next_track(),
                     KeyCode::KeyY => self.audio.toggle(),
+                    KeyCode::KeyR => self.state.reset_requested = true,
                     _ => {}
                 }
             }
@@ -415,6 +456,10 @@ impl framework::Example for Spout {
     ) {
         #[cfg(feature = "profiling")]
         puffin::profile_function!();
+
+        if self.state.reset_requested {
+            self.reset(device, queue);
+        }
 
         {
             if !self.state.prev_input_state.fullscreen && self.state.input_state.fullscreen {
