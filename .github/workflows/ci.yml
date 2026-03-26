@@ -2,9 +2,8 @@ name: CI
 
 on:
   push:
-    branches-ignore: [staging.tmp]
+    branches: [master]
   pull_request:
-    branches-ignore: [staging.tmp]
 
 # Cancel in-progress runs on the same branch/PR when a new push arrives.
 concurrency:
