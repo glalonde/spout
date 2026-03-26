@@ -72,7 +72,7 @@ Tasks:
 The `shuffled_playlist()` function in `src/audio.rs` uses `rand::rng()` (OS-seeded `ThreadRng`) which should be non-deterministic. However, the level terrain generator in `level_manager.rs` uses `fastrand::Rng::with_seed(0)` — an explicitly fixed seed — causing levels to be identical every run.
 
 Tasks:
-- [ ] Confirm whether the music shuffle is truly non-deterministic in practice (native + WASM)
+- [x] Fix music shuffle determinism — replaced `rand::rng()` (broken due to rand 0.8/0.9 conflict) with `fastrand::Rng::new()` Fisher-Yates; also removed `rand` dep from Cargo.toml entirely
 - [x] Change `fastrand::Rng::with_seed(0)` in `level_manager.rs` to `fastrand::Rng::new()` (OS-seeded) so terrain layout varies between runs
 
 Note: if level determinism is ever *wanted* (e.g. for replay or testing), expose the seed via `game_config.toml` rather than hardcoding 0.
