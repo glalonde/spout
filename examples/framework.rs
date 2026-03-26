@@ -301,10 +301,7 @@ impl<E: Example> ApplicationHandler for FrameworkApp<E> {
                                 wgpu::CurrentSurfaceTexture::Success(f)
                                 | wgpu::CurrentSurfaceTexture::Suboptimal(f) => f,
                                 other => {
-                                    log::warn!(
-                                        "get_current_texture retry failed: {:?}",
-                                        other
-                                    );
+                                    log::warn!("get_current_texture retry failed: {:?}", other);
                                     return;
                                 }
                             }

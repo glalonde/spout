@@ -355,20 +355,21 @@ impl framework::Example for Spout {
         };
 
         #[cfg(feature = "profiling")]
-        let gpu_profiler = wgpu_profiler::GpuProfiler::new(device, wgpu_profiler::GpuProfilerSettings {
-            enable_timer_queries: device
-                .features()
-                .contains(wgpu::Features::TIMESTAMP_QUERY),
-            enable_debug_groups: true,
-            ..Default::default()
-        })
+        let gpu_profiler = wgpu_profiler::GpuProfiler::new(
+            device,
+            wgpu_profiler::GpuProfilerSettings {
+                enable_timer_queries: device.features().contains(wgpu::Features::TIMESTAMP_QUERY),
+                enable_debug_groups: true,
+                ..Default::default()
+            },
+        )
         .expect("Failed to create GPU profiler"); // safe: settings are valid
 
         #[cfg(feature = "profiling")]
         {
             let server_addr = format!("0.0.0.0:{}", puffin_http::DEFAULT_PORT);
-            let _server = puffin_http::Server::new(&server_addr)
-                .expect("Failed to start puffin server"); // safe: port should be free
+            let _server =
+                puffin_http::Server::new(&server_addr).expect("Failed to start puffin server"); // safe: port should be free
             log::info!(
                 "Puffin profiling server started on {}. Run `puffin_viewer` to connect.",
                 server_addr
@@ -505,9 +506,7 @@ impl framework::Example for Spout {
 
         {
             #[cfg(feature = "profiling")]
-            let mut encoder =
-                self.gpu_profiler
-                    .scope("sync_height", &mut encoder);
+            let mut encoder = self.gpu_profiler.scope("sync_height", &mut encoder);
             self.level_manager.sync_height(
                 device,
                 self.state.viewport_offset,
@@ -519,26 +518,23 @@ impl framework::Example for Spout {
 
         {
             #[cfg(feature = "profiling")]
-            let mut encoder =
-                self.gpu_profiler
-                    .scope("compose_tiles", &mut encoder);
+            let mut encoder = self.gpu_profiler.scope("compose_tiles", &mut encoder);
             self.level_manager.compose_tiles(&mut encoder);
         }
 
         {
             #[cfg(feature = "profiling")]
-            let mut encoder =
-                self.gpu_profiler
-                    .scope("particle_compute", &mut encoder);
-            self.particle_system
-                .run_compute(&self.level_manager, &mut encoder, &mut self.staging_belt);
+            let mut encoder = self.gpu_profiler.scope("particle_compute", &mut encoder);
+            self.particle_system.run_compute(
+                &self.level_manager,
+                &mut encoder,
+                &mut self.staging_belt,
+            );
         }
 
         {
             #[cfg(feature = "profiling")]
-            let mut encoder =
-                self.gpu_profiler
-                    .scope("terrain_render", &mut encoder);
+            let mut encoder = self.gpu_profiler.scope("terrain_render", &mut encoder);
             self.level_manager
                 .terrain_renderer
                 .render(&self.game_view_texture, &mut encoder);
@@ -546,17 +542,14 @@ impl framework::Example for Spout {
 
         {
             #[cfg(feature = "profiling")]
-            let mut encoder =
-                self.gpu_profiler
-                    .scope("particle_render", &mut encoder);
+            let mut encoder = self.gpu_profiler.scope("particle_render", &mut encoder);
             self.particle_system
                 .render(&self.game_view_texture, &mut encoder);
         }
 
         if self.game_params.render_ship {
             #[cfg(feature = "profiling")]
-            let mut encoder =
-                self.gpu_profiler.scope("ship_render", &mut encoder);
+            let mut encoder = self.gpu_profiler.scope("ship_render", &mut encoder);
             self.ship_renderer.render(
                 &self.state.ship_state,
                 &self.game_params,
@@ -569,32 +562,26 @@ impl framework::Example for Spout {
 
         {
             #[cfg(feature = "profiling")]
-            let mut encoder =
-                self.gpu_profiler.scope("blit", &mut encoder);
+            let mut encoder = self.gpu_profiler.scope("blit", &mut encoder);
             self.renderer
                 .blit(&self.upscaled_view, &mut encoder, &mut self.staging_belt);
         }
 
         {
             #[cfg(feature = "profiling")]
-            let mut encoder =
-                self.gpu_profiler.scope("bloom", &mut encoder);
+            let mut encoder = self.gpu_profiler.scope("bloom", &mut encoder);
             self.bloom.render(&mut encoder);
         }
 
         {
             #[cfg(feature = "profiling")]
-            let mut encoder =
-                self.gpu_profiler
-                    .scope("composite", &mut encoder);
+            let mut encoder = self.gpu_profiler.scope("composite", &mut encoder);
             self.renderer.render(view, &mut encoder);
         }
 
         {
             #[cfg(feature = "profiling")]
-            let mut encoder =
-                self.gpu_profiler
-                    .scope("decompose_tiles", &mut encoder);
+            let mut encoder = self.gpu_profiler.scope("decompose_tiles", &mut encoder);
             self.level_manager.decompose_tiles(&mut encoder);
         }
 
@@ -614,7 +601,10 @@ impl framework::Example for Spout {
         self.gpu_profiler.end_frame().unwrap(); // safe: begin/end always paired
 
         #[cfg(feature = "profiling")]
-        if let Some(results) = self.gpu_profiler.process_finished_frame(queue.get_timestamp_period()) {
+        if let Some(results) = self
+            .gpu_profiler
+            .process_finished_frame(queue.get_timestamp_period())
+        {
             puffin_wgpu_log(&results, 0);
         }
 

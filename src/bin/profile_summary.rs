@@ -37,8 +37,7 @@ fn main() {
         frame_durations_ns.push(duration_ns);
 
         for stream_info in unpacked.thread_streams.values() {
-            let Ok(top_scopes) =
-                puffin::Reader::from_start(&stream_info.stream).read_top_scopes()
+            let Ok(top_scopes) = puffin::Reader::from_start(&stream_info.stream).read_top_scopes()
             else {
                 continue;
             };
@@ -130,9 +129,7 @@ fn collect_scopes(
 
         // Recurse into children.
         if scope.child_begin_position < scope.child_end_position {
-            if let Ok(reader) =
-                puffin::Reader::with_offset(stream, scope.child_begin_position)
-            {
+            if let Ok(reader) = puffin::Reader::with_offset(stream, scope.child_begin_position) {
                 if let Ok(children) = reader.read_top_scopes() {
                     let children: Vec<_> = children
                         .into_iter()

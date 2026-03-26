@@ -191,8 +191,7 @@ mod native {
             if let Some(rx) = self.pending.take() {
                 match rx.try_recv() {
                     Ok(samples) => {
-                        if let Some(stream) =
-                            build_cpal_stream(samples, Arc::clone(&self.finished))
+                        if let Some(stream) = build_cpal_stream(samples, Arc::clone(&self.finished))
                         {
                             if playing {
                                 if let Err(e) = stream.play() {
@@ -339,9 +338,7 @@ mod wasm_audio {
             if let Some(samples) = samples {
                 match &self.context {
                     Some(ctx) => {
-                        if let Some(src) =
-                            make_source(ctx, &samples, Rc::clone(&self.finished))
-                        {
+                        if let Some(src) = make_source(ctx, &samples, Rc::clone(&self.finished)) {
                             if let Some(old) = self.source.replace(src) {
                                 let _ = std::ops::Deref::deref(&old).stop_with_when(0.0);
                             }
@@ -382,9 +379,7 @@ mod wasm_audio {
         }
 
         fn is_finished(&self) -> bool {
-            self.source.is_some()
-                && self.finished.get()
-                && self.pending.borrow().is_none()
+            self.source.is_some() && self.finished.get() && self.pending.borrow().is_none()
         }
     }
 
