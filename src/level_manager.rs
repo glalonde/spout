@@ -124,20 +124,22 @@ impl LevelMaker {
 
     pub fn work_until(&mut self, deadline: Instant) {
         while !self.wip_levels.is_empty() && Instant::now() < deadline {
-            let mut to_remove = Vec::new();
-            // Generate levels in order of level index.
+            // Generate levels in order of level index. The break below means
+            // at most one level completes per iteration, so we track a single
+            // key to remove instead of allocating a Vec.
+            let mut finished_key = None;
             for (key, value) in &mut self.wip_levels {
                 if value.done() {
                     log::info!("Finished generating level: {}", key);
-                    to_remove.push(*key);
+                    finished_key = Some(*key);
                     self.levels.push(std::mem::take(&mut value.data));
                 } else {
                     value.work_until(deadline);
                     break;
                 }
             }
-            for key in to_remove.iter() {
-                self.wip_levels.remove(key);
+            if let Some(key) = finished_key {
+                self.wip_levels.remove(&key);
             }
         }
     }
