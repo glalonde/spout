@@ -2,51 +2,46 @@
 mod tests {
     use super::*;
 
-    // --- touch_x_to_rotate ----------------------------------------------------
+    // --- touch_delta_to_rotate ------------------------------------------------
 
     #[test]
-    fn rotate_zero_half_width() {
-        assert_eq!(touch_x_to_rotate(50.0, 50.0, 0.0), 0.0);
+    fn rotate_no_movement_is_zero() {
+        // Finger has not moved from anchor → zero output.
+        assert_eq!(touch_delta_to_rotate(100.0, 100.0), 0.0);
     }
 
     #[test]
-    fn rotate_at_zone_center() {
-        // Center of any zone → in deadzone → 0.0
-        assert_eq!(touch_x_to_rotate(50.0, 50.0, 50.0), 0.0);
+    fn rotate_within_deadzone_is_zero() {
+        // 3px left — below DEADZONE_PX (4px) → zero.
+        assert_eq!(touch_delta_to_rotate(100.0, 97.0), 0.0);
+        // 3px right
+        assert_eq!(touch_delta_to_rotate(100.0, 103.0), 0.0);
     }
 
     #[test]
-    fn rotate_left_edge_full_ccw() {
-        // Left edge of zone → signed = 1.0 → +1.0 (CCW)
-        assert_eq!(touch_x_to_rotate(0.0, 50.0, 50.0), 1.0);
+    fn rotate_left_is_ccw_positive() {
+        // 30px left of anchor → full CCW (+1.0).
+        assert_eq!(touch_delta_to_rotate(100.0, 70.0), 1.0);
     }
 
     #[test]
-    fn rotate_right_edge_full_cw() {
-        // Right edge of zone → signed = -1.0 → -1.0 (CW)
-        assert_eq!(touch_x_to_rotate(100.0, 50.0, 50.0), -1.0);
+    fn rotate_right_is_cw_negative() {
+        // 30px right of anchor → full CW (-1.0).
+        assert_eq!(touch_delta_to_rotate(100.0, 130.0), -1.0);
     }
 
     #[test]
-    fn rotate_at_deadzone_boundary_is_zero() {
-        // signed = exactly 0.1 → (0.1 - 0.1) / 0.9 = 0.0
-        // touch_x=45, center=50, half=50 → signed = -(45-50)/50 = 0.1
-        let result = touch_x_to_rotate(45.0, 50.0, 50.0);
-        assert_eq!(result, 0.0);
+    fn rotate_beyond_full_range_clamped() {
+        // Way beyond 30px → still clamped to ±1.0.
+        assert_eq!(touch_delta_to_rotate(100.0, -999.0), 1.0);
+        assert_eq!(touch_delta_to_rotate(100.0, 999.0), -1.0);
     }
 
     #[test]
-    fn rotate_just_outside_deadzone_is_nonzero() {
-        // signed ≈ 0.12 → positive nonzero
-        // touch_x=44, center=50, half=50 → signed = 0.12
-        let result = touch_x_to_rotate(44.0, 50.0, 50.0);
+    fn rotate_halfway_is_between_zero_and_one() {
+        // ~17px left ≈ halfway through active range → between 0 and 1.
+        let result = touch_delta_to_rotate(100.0, 83.0);
         assert!(result > 0.0 && result < 1.0, "got {result}");
-    }
-
-    #[test]
-    fn rotate_beyond_zone_edge_clamped() {
-        assert_eq!(touch_x_to_rotate(-999.0, 50.0, 50.0), 1.0);
-        assert_eq!(touch_x_to_rotate(999.0, 50.0, 50.0), -1.0);
     }
 
     // --- keyboard -------------------------------------------------------------
@@ -121,42 +116,50 @@ mod tests {
 
     #[cfg(not(target_arch = "wasm32"))]
     #[test]
-    fn touch_right_zone_center_is_zero_rotation() {
+    fn touch_rotate_at_anchor_is_zero() {
+        // Finger down, not moved → anchor == current → zero rotation.
         let mut c = InputCollector::default();
         c.surface_width = 200.0;
         c.rotate_id = Some(2);
-        c.rotate_x = 150.0; // center of right half → deadzone
+        c.rotate_anchor_x = 150.0;
+        c.rotate_x = 150.0;
         assert_eq!(c.current_state().rotate, 0.0);
     }
 
     #[cfg(not(target_arch = "wasm32"))]
     #[test]
-    fn touch_right_zone_left_edge_full_ccw() {
+    fn touch_rotate_left_full_ccw() {
+        // 30px left of anchor → full CCW (+1.0).
         let mut c = InputCollector::default();
         c.surface_width = 200.0;
         c.rotate_id = Some(2);
-        c.rotate_x = 100.0; // left edge of right half
+        c.rotate_anchor_x = 150.0;
+        c.rotate_x = 120.0;
         assert_eq!(c.current_state().rotate, 1.0);
     }
 
     #[cfg(not(target_arch = "wasm32"))]
     #[test]
-    fn touch_right_zone_right_edge_full_cw() {
+    fn touch_rotate_right_full_cw() {
+        // 30px right of anchor → full CW (-1.0).
         let mut c = InputCollector::default();
         c.surface_width = 200.0;
         c.rotate_id = Some(2);
-        c.rotate_x = 200.0; // right edge
+        c.rotate_anchor_x = 150.0;
+        c.rotate_x = 180.0;
         assert_eq!(c.current_state().rotate, -1.0);
     }
 
     #[cfg(not(target_arch = "wasm32"))]
     #[test]
     fn touch_both_zones_independent() {
+        // Thrust from left zone + full CCW rotation simultaneously.
         let mut c = InputCollector::default();
         c.surface_width = 200.0;
         c.thrust_id = Some(1);
         c.rotate_id = Some(2);
-        c.rotate_x = 100.0; // left edge of right half → CCW
+        c.rotate_anchor_x = 150.0;
+        c.rotate_x = 120.0; // 30px left → full CCW
         let state = c.current_state();
         assert_eq!(state.thrust, 1.0);
         assert_eq!(state.rotate, 1.0);
@@ -191,22 +194,22 @@ mod tests {
     }
 }
 
-/// Maps a touch x position within a zone to a rotation scalar.
+/// Maps touch displacement from the anchor (touch-down point) to a rotation scalar.
 ///
-/// `zone_center` and `zone_half_width` define the zone in the same unit as `touch_x`.
-/// Returns [-1.0, 1.0]: positive = CCW/left, negative = CW/right.
-fn touch_x_to_rotate(touch_x: f32, zone_center: f32, zone_half_width: f32) -> f32 {
-    if zone_half_width <= 0.0 {
-        return 0.0;
-    }
-    // Positive raw = right of zone center = CW → negate to get negative rotate.
-    let signed = -(touch_x - zone_center) / zone_half_width;
-    const DEADZONE: f32 = 0.1;
-    let abs = signed.abs();
-    if abs < DEADZONE {
+/// Moving left (negative delta) = CCW = positive; moving right = CW = negative.
+/// `FULL_ROTATION_PX` pixels of travel reaches ±1.0. A small pixel deadzone
+/// prevents drift when the finger is stationary.
+fn touch_delta_to_rotate(anchor_x: f32, current_x: f32) -> f32 {
+    /// Pixels of travel from anchor → full rotation speed.
+    const FULL_ROTATION_PX: f32 = 30.0;
+    /// Pixels below which output is zero (prevents drift at rest).
+    const DEADZONE_PX: f32 = 4.0;
+    let delta = anchor_x - current_x; // left of anchor → positive → CCW
+    let abs = delta.abs();
+    if abs < DEADZONE_PX {
         0.0
     } else {
-        signed.signum() * ((abs - DEADZONE) / (1.0 - DEADZONE)).clamp(0.0, 1.0)
+        (delta.signum() * (abs - DEADZONE_PX) / (FULL_ROTATION_PX - DEADZONE_PX)).clamp(-1.0, 1.0)
     }
 }
 
@@ -248,7 +251,8 @@ struct WasmTouch {
     canvas_width: f32, // CSS px, refreshed each event
     thrust_id: Option<i32>,
     rotate_id: Option<i32>,
-    rotate_x: f32, // CSS px
+    rotate_anchor_x: f32, // x at touchstart — the zero point for delta steering
+    rotate_x: f32,        // x at latest touchmove
 }
 
 /// Accumulates raw platform events and produces a logical [`InputState`] each frame.
@@ -281,6 +285,8 @@ pub struct InputCollector {
     #[cfg(not(target_arch = "wasm32"))]
     rotate_id: Option<u64>,
     #[cfg(not(target_arch = "wasm32"))]
+    rotate_anchor_x: f32, // x at touchstart — the zero point for delta steering
+    #[cfg(not(target_arch = "wasm32"))]
     rotate_x: f32,
 
     // WASM touch (shared with JS closures via Rc; closures are forgotten and kept
@@ -311,6 +317,8 @@ impl Default for InputCollector {
             thrust_id: None,
             #[cfg(not(target_arch = "wasm32"))]
             rotate_id: None,
+            #[cfg(not(target_arch = "wasm32"))]
+            rotate_anchor_x: 0.0,
             #[cfg(not(target_arch = "wasm32"))]
             rotate_x: 0.0,
             #[cfg(target_arch = "wasm32")]
@@ -363,6 +371,7 @@ impl InputCollector {
                             }
                         } else if s.rotate_id.is_none() {
                             s.rotate_id = Some(id);
+                            s.rotate_anchor_x = x;
                             s.rotate_x = x;
                         }
                     }
@@ -410,6 +419,7 @@ impl InputCollector {
                         }
                         if Some(id) == s.rotate_id {
                             s.rotate_id = None;
+                            s.rotate_anchor_x = 0.0;
                             s.rotate_x = 0.0;
                         }
                     }
@@ -479,6 +489,7 @@ impl InputCollector {
                         }
                     } else if self.rotate_id.is_none() {
                         self.rotate_id = Some(touch.id);
+                        self.rotate_anchor_x = x;
                         self.rotate_x = x;
                     }
                 }
@@ -493,6 +504,7 @@ impl InputCollector {
                     }
                     if Some(touch.id) == self.rotate_id {
                         self.rotate_id = None;
+                        self.rotate_anchor_x = 0.0;
                         self.rotate_x = 0.0;
                     }
                 }
@@ -511,12 +523,9 @@ impl InputCollector {
         #[cfg(not(target_arch = "wasm32"))]
         let (touch_thrust, touch_rotate) = {
             let thrust = self.thrust_id.is_some();
-            let rotate = self.rotate_id.map(|_| {
-                // Right half: center at 3W/4, half-width W/4.
-                let center = self.surface_width * 3.0 / 4.0;
-                let half = self.surface_width / 4.0;
-                touch_x_to_rotate(self.rotate_x, center, half)
-            });
+            let rotate = self
+                .rotate_id
+                .map(|_| touch_delta_to_rotate(self.rotate_anchor_x, self.rotate_x));
             (thrust, rotate)
         };
 
@@ -524,11 +533,9 @@ impl InputCollector {
         let (touch_thrust, touch_rotate) = {
             let s = self.wasm_touch.borrow();
             let thrust = s.thrust_id.is_some();
-            let rotate = s.rotate_id.map(|_| {
-                let center = s.canvas_width * 3.0 / 4.0;
-                let half = s.canvas_width / 4.0;
-                touch_x_to_rotate(s.rotate_x, center, half)
-            });
+            let rotate = s
+                .rotate_id
+                .map(|_| touch_delta_to_rotate(s.rotate_anchor_x, s.rotate_x));
             (thrust, rotate)
         };
 
