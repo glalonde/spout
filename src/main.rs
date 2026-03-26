@@ -44,6 +44,8 @@ struct Spout {
     ship_renderer: ship::ShipRenderer,
     audio: audio::AudioPlayer,
     staging_belt: wgpu::util::StagingBelt,
+    #[cfg(feature = "profiling")]
+    gpu_profiler: wgpu_profiler::GpuProfiler,
 }
 
 impl Spout {
@@ -111,7 +113,14 @@ impl Spout {
 
     /// Mostly responsible for updating superficial state based on new inputs.
     fn update_state(&mut self) {
-        self.audio.poll();
+        #[cfg(feature = "profiling")]
+        puffin::profile_function!();
+
+        {
+            #[cfg(feature = "profiling")]
+            puffin::profile_scope!("audio_poll");
+            self.audio.poll();
+        }
 
         // Snapshot all input sources into logical InputState for this frame.
         self.state.prev_input_state = self.state.input_state;
@@ -119,26 +128,34 @@ impl Spout {
 
         self.update_paused();
 
-        self.level_manager
-            .level_maker
-            .work_until(Instant::now() + LEVEL_BUDGET);
+        {
+            #[cfg(feature = "profiling")]
+            puffin::profile_scope!("level_gen");
+            self.level_manager
+                .level_maker
+                .work_until(Instant::now() + LEVEL_BUDGET);
+        }
 
         let (game_dt, wall_dt) = self.tick();
 
-        // Process input state integrated over passage of time.
-        let prev_ship = self.state.ship_state;
-        self.update_ship(game_dt);
+        {
+            #[cfg(feature = "profiling")]
+            puffin::profile_scope!("physics");
+            let prev_ship = self.state.ship_state;
+            self.update_ship(game_dt);
+            self.update_viewport_height();
+            self.update_particle_system(game_dt, &prev_ship);
+        }
 
-        self.update_viewport_height();
-
-        self.update_particle_system(game_dt, &prev_ship);
-
-        // Update camera state.
-        self.renderer.update_state(
-            wall_dt,
-            &self.state.input_state,
-            &self.state.prev_input_state,
-        );
+        {
+            #[cfg(feature = "profiling")]
+            puffin::profile_scope!("camera_update");
+            self.renderer.update_state(
+                wall_dt,
+                &self.state.input_state,
+                &self.state.prev_input_state,
+            );
+        }
     }
 
     fn select_fullscreen_video_mode(
@@ -179,6 +196,16 @@ impl Spout {
 }
 
 impl framework::Example for Spout {
+    fn optional_features() -> wgpu::Features {
+        if cfg!(feature = "profiling") {
+            wgpu::Features::TIMESTAMP_QUERY
+                | wgpu::Features::TIMESTAMP_QUERY_INSIDE_ENCODERS
+                | wgpu::Features::TIMESTAMP_QUERY_INSIDE_PASSES
+        } else {
+            wgpu::Features::empty()
+        }
+    }
+
     fn required_limits() -> wgpu::Limits {
         wgpu::Limits::downlevel_defaults()
     }
@@ -269,6 +296,34 @@ impl framework::Example for Spout {
             audio::AudioPlayer::disabled()
         };
 
+        #[cfg(feature = "profiling")]
+        let gpu_profiler = wgpu_profiler::GpuProfiler::new(device, wgpu_profiler::GpuProfilerSettings {
+            enable_timer_queries: device
+                .features()
+                .contains(wgpu::Features::TIMESTAMP_QUERY),
+            enable_debug_groups: true,
+            ..Default::default()
+        })
+        .expect("Failed to create GPU profiler"); // safe: settings are valid
+
+        #[cfg(feature = "profiling")]
+        {
+            let server_addr = format!("0.0.0.0:{}", puffin_http::DEFAULT_PORT);
+            let _server = puffin_http::Server::new(&server_addr)
+                .expect("Failed to start puffin server"); // safe: port should be free
+            log::info!(
+                "Puffin profiling server started on {}. Run `puffin_viewer` to connect.",
+                server_addr
+            );
+            puffin::set_scopes_on(true);
+            // Leak the server handle so it lives for the program's lifetime.
+            std::mem::forget(_server);
+
+            // Initialize the global frame view so it starts collecting frames.
+            // GlobalFrameView::default() registers its own sink with the profiler.
+            std::sync::LazyLock::force(&PROFILE_FRAMES);
+        }
+
         let mut collector = InputCollector::default();
 
         #[cfg(not(target_arch = "wasm32"))]
@@ -297,6 +352,8 @@ impl framework::Example for Spout {
             ship_renderer,
             audio,
             staging_belt,
+            #[cfg(feature = "profiling")]
+            gpu_profiler,
         }
     }
 
@@ -356,6 +413,9 @@ impl framework::Example for Spout {
         _spawner: &framework::Spawner,
         window: &winit::window::Window,
     ) {
+        #[cfg(feature = "profiling")]
+        puffin::profile_function!();
+
         {
             if !self.state.prev_input_state.fullscreen && self.state.input_state.fullscreen {
                 if window.fullscreen().is_some() {
@@ -376,30 +436,64 @@ impl framework::Example for Spout {
 
         self.update_state();
 
-        self.level_manager.sync_height(
-            device,
-            self.state.viewport_offset,
-            &mut encoder,
-            &self.game_params,
-            &mut self.staging_belt,
-        );
+        // --- GPU-profiled passes ---
+        // Each scope wraps encoder operations; Scope derefs to CommandEncoder
+        // so existing methods work unchanged.
 
-        // Run compute pipeline(s).
-        self.level_manager.compose_tiles(&mut encoder);
-        self.particle_system
-            .run_compute(&self.level_manager, &mut encoder, &mut self.staging_belt);
+        {
+            #[cfg(feature = "profiling")]
+            let mut encoder =
+                self.gpu_profiler
+                    .scope("sync_height", &mut encoder);
+            self.level_manager.sync_height(
+                device,
+                self.state.viewport_offset,
+                &mut encoder,
+                &self.game_params,
+                &mut self.staging_belt,
+            );
+        }
 
-        // Render terrain.
-        self.level_manager
-            .terrain_renderer
-            .render(&self.game_view_texture, &mut encoder);
+        {
+            #[cfg(feature = "profiling")]
+            let mut encoder =
+                self.gpu_profiler
+                    .scope("compose_tiles", &mut encoder);
+            self.level_manager.compose_tiles(&mut encoder);
+        }
 
-        // Render particles.
-        self.particle_system
-            .render(&self.game_view_texture, &mut encoder);
+        {
+            #[cfg(feature = "profiling")]
+            let mut encoder =
+                self.gpu_profiler
+                    .scope("particle_compute", &mut encoder);
+            self.particle_system
+                .run_compute(&self.level_manager, &mut encoder, &mut self.staging_belt);
+        }
 
-        // Render ship
+        {
+            #[cfg(feature = "profiling")]
+            let mut encoder =
+                self.gpu_profiler
+                    .scope("terrain_render", &mut encoder);
+            self.level_manager
+                .terrain_renderer
+                .render(&self.game_view_texture, &mut encoder);
+        }
+
+        {
+            #[cfg(feature = "profiling")]
+            let mut encoder =
+                self.gpu_profiler
+                    .scope("particle_render", &mut encoder);
+            self.particle_system
+                .render(&self.game_view_texture, &mut encoder);
+        }
+
         if self.game_params.render_ship {
+            #[cfg(feature = "profiling")]
+            let mut encoder =
+                self.gpu_profiler.scope("ship_render", &mut encoder);
             self.ship_renderer.render(
                 &self.state.ship_state,
                 &self.game_params,
@@ -410,23 +504,63 @@ impl framework::Example for Spout {
             );
         }
 
-        // Blit game view (240×135) → upscaled HDR (surface resolution).
-        self.renderer
-            .blit(&self.upscaled_view, &mut encoder, &mut self.staging_belt);
-
-        // Run bloom post-process at full surface resolution (threshold + blur).
-        self.bloom.render(&mut encoder);
-
-        // Composite upscaled HDR + bloom → surface (LDR).
-        self.renderer.render(view, &mut encoder);
-        self.level_manager.decompose_tiles(&mut encoder);
-
-        self.staging_belt.finish();
-        queue.submit(Some(encoder.finish()));
-        self.staging_belt.recall();
+        {
+            #[cfg(feature = "profiling")]
+            let mut encoder =
+                self.gpu_profiler.scope("blit", &mut encoder);
+            self.renderer
+                .blit(&self.upscaled_view, &mut encoder, &mut self.staging_belt);
+        }
 
         {
-            // After rendering, do some "async" work:
+            #[cfg(feature = "profiling")]
+            let mut encoder =
+                self.gpu_profiler.scope("bloom", &mut encoder);
+            self.bloom.render(&mut encoder);
+        }
+
+        {
+            #[cfg(feature = "profiling")]
+            let mut encoder =
+                self.gpu_profiler
+                    .scope("composite", &mut encoder);
+            self.renderer.render(view, &mut encoder);
+        }
+
+        {
+            #[cfg(feature = "profiling")]
+            let mut encoder =
+                self.gpu_profiler
+                    .scope("decompose_tiles", &mut encoder);
+            self.level_manager.decompose_tiles(&mut encoder);
+        }
+
+        {
+            #[cfg(feature = "profiling")]
+            puffin::profile_scope!("submit");
+            self.staging_belt.finish();
+
+            #[cfg(feature = "profiling")]
+            self.gpu_profiler.resolve_queries(&mut encoder);
+
+            queue.submit(Some(encoder.finish()));
+            self.staging_belt.recall();
+        }
+
+        #[cfg(feature = "profiling")]
+        self.gpu_profiler.end_frame().unwrap(); // safe: begin/end always paired
+
+        #[cfg(feature = "profiling")]
+        if let Some(results) = self.gpu_profiler.process_finished_frame(queue.get_timestamp_period()) {
+            puffin_wgpu_log(&results, 0);
+        }
+
+        #[cfg(feature = "profiling")]
+        puffin::GlobalProfiler::lock().new_frame();
+
+        {
+            #[cfg(feature = "profiling")]
+            puffin::profile_scope!("level_gen_post");
             let deadline = self.iteration_start + LEVEL_BUDGET;
             self.level_manager.level_maker.work_until(deadline);
         }
@@ -452,6 +586,38 @@ fn make_texture(device: &wgpu::Device, width: u32, height: u32) -> wgpu::Texture
         .create_view(&wgpu::TextureViewDescriptor::default())
 }
 
+#[cfg(feature = "profiling")]
+static PROFILE_FRAMES: std::sync::LazyLock<puffin::GlobalFrameView> =
+    std::sync::LazyLock::new(puffin::GlobalFrameView::default);
+
+#[cfg(feature = "profiling")]
+fn save_puffin_profile() {
+    let path = "profile.puffin";
+    let view = PROFILE_FRAMES.lock();
+    match std::fs::File::create(path) {
+        Ok(mut f) => match view.write(&mut f) {
+            Ok(()) => log::info!("Saved profiling data to {path}"),
+            Err(e) => log::error!("Failed to write profiling data: {e}"),
+        },
+        Err(e) => log::error!("Failed to create {path}: {e}"),
+    }
+}
+
+#[cfg(feature = "profiling")]
+fn puffin_wgpu_log(results: &[wgpu_profiler::GpuTimerQueryResult], depth: usize) {
+    for r in results {
+        if let Some(ref time) = r.time {
+            let dur_ms = (time.end - time.start) * 1000.0;
+            let indent = "  ".repeat(depth);
+            log::info!("{indent}[GPU] {}: {dur_ms:.3}ms", r.label);
+        }
+        puffin_wgpu_log(&r.nested_queries, depth + 1);
+    }
+}
+
 fn main() {
     framework::run::<Spout>("Spout");
+
+    #[cfg(feature = "profiling")]
+    save_puffin_profile();
 }

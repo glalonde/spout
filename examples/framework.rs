@@ -269,6 +269,9 @@ impl<E: Example> ApplicationHandler for FrameworkApp<E> {
                 }
             }
             WindowEvent::RedrawRequested => {
+                #[cfg(feature = "profiling")]
+                puffin::profile_scope!("redraw");
+
                 self.accum_time += self.last_frame.elapsed().as_secs_f32();
                 self.last_frame = Instant::now();
                 self.frame_count += 1;
@@ -286,23 +289,30 @@ impl<E: Example> ApplicationHandler for FrameworkApp<E> {
                 let gpu = self.gpu.as_mut().unwrap(); // safe: checked above
                 let window = self.window.as_ref().unwrap(); // safe: set before gpu
 
-                let frame = match gpu.surface.get_current_texture() {
-                    wgpu::CurrentSurfaceTexture::Success(frame) => frame,
-                    wgpu::CurrentSurfaceTexture::Suboptimal(frame) => frame,
-                    wgpu::CurrentSurfaceTexture::Outdated => {
-                        gpu.surface.configure(&gpu.device, &gpu.config);
-                        match gpu.surface.get_current_texture() {
-                            wgpu::CurrentSurfaceTexture::Success(f)
-                            | wgpu::CurrentSurfaceTexture::Suboptimal(f) => f,
-                            other => {
-                                log::warn!("get_current_texture retry failed: {:?}", other);
-                                return;
+                let frame = {
+                    #[cfg(feature = "profiling")]
+                    puffin::profile_scope!("acquire_frame");
+                    match gpu.surface.get_current_texture() {
+                        wgpu::CurrentSurfaceTexture::Success(frame) => frame,
+                        wgpu::CurrentSurfaceTexture::Suboptimal(frame) => frame,
+                        wgpu::CurrentSurfaceTexture::Outdated => {
+                            gpu.surface.configure(&gpu.device, &gpu.config);
+                            match gpu.surface.get_current_texture() {
+                                wgpu::CurrentSurfaceTexture::Success(f)
+                                | wgpu::CurrentSurfaceTexture::Suboptimal(f) => f,
+                                other => {
+                                    log::warn!(
+                                        "get_current_texture retry failed: {:?}",
+                                        other
+                                    );
+                                    return;
+                                }
                             }
                         }
-                    }
-                    other => {
-                        log::warn!("get_current_texture: {:?}", other);
-                        return;
+                        other => {
+                            log::warn!("get_current_texture: {:?}", other);
+                            return;
+                        }
                     }
                 };
 
@@ -312,7 +322,12 @@ impl<E: Example> ApplicationHandler for FrameworkApp<E> {
 
                 gpu.example
                     .render(&view, &gpu.device, &gpu.queue, &self.spawner, window);
-                frame.present();
+
+                {
+                    #[cfg(feature = "profiling")]
+                    puffin::profile_scope!("present");
+                    frame.present();
+                }
             }
             event => {
                 if let Some(gpu) = self.gpu.as_mut() {
