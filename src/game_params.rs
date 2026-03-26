@@ -144,16 +144,32 @@ impl Default for GameParams {
     }
 }
 
+/// Embedded default config, baked in at compile time.
+const EMBEDDED_CONFIG: &str = include_str!("../game_config.toml");
+
+/// Load game config. Tries `game_config.toml` in the current directory first
+/// (for development / user overrides), then falls back to the embedded default.
+/// This way packaged .app bundles work without an external config file.
 pub fn get_game_config_from_default_file() -> GameParams {
-    let config_data = include_str!("../game_config.toml");
-    match config_data.parse() {
+    #[cfg(not(target_arch = "wasm32"))]
+    if let Ok(disk_config) = std::fs::read_to_string("game_config.toml") {
+        match disk_config.parse() {
+            Ok(params) => {
+                log::info!("Loaded config from disk: game_config.toml");
+                return params;
+            }
+            Err(e) => {
+                log::warn!(
+                    "Failed to parse game_config.toml from disk: {e}; using embedded default"
+                );
+            }
+        }
+    }
+
+    match EMBEDDED_CONFIG.parse() {
         Ok(params) => params,
         Err(e) => {
-            log::error!(
-                "Failed to parse config file({}): {:?}",
-                "../game_config.toml",
-                e
-            );
+            log::error!("Failed to parse embedded config: {:?}", e);
             GameParams::default()
         }
     }
