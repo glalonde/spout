@@ -64,6 +64,8 @@ web-sys = { version = "0.3", features = [
     "Touch",
     "TouchEvent",
     "TouchList",
+    # Accelerometer
+    "DeviceOrientationEvent",
 ]}
 js-sys = "0.3"
 

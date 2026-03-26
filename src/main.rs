@@ -12,6 +12,12 @@ use spout::particles;
 use spout::render;
 use spout::ship;
 
+/// Shortest signed angular distance from `current` to `target`, in [-π, π].
+fn angle_diff(target: f32, current: f32) -> f32 {
+    let d = glam::Vec2::from_angle(target - current);
+    d.y.atan2(d.x) // equivalent to wrapping (target-current) to [-π, π]
+}
+
 /// Time budget per frame for background level generation (≈ 1/300 s).
 const LEVEL_BUDGET: std::time::Duration = std::time::Duration::from_nanos(3_333_333);
 
@@ -116,9 +122,21 @@ impl Spout {
 
     fn update_ship(&mut self, dt: f32) {
         let input_state = self.state.input_state;
-        self.state
-            .ship_state
-            .update(dt, input_state.thrust, input_state.rotate);
+        let rotate = if let Some(target) = input_state.target_heading {
+            // Bang-bang controller: rotate at full speed toward target heading,
+            // stop when within one frame's worth of rotation to avoid oscillation.
+            let current = self.state.ship_state.orientation;
+            let error = angle_diff(target, current);
+            let dead = self.state.ship_state.rotation_rate * dt;
+            if error.abs() <= dead {
+                0.0
+            } else {
+                error.signum()
+            }
+        } else {
+            input_state.rotate
+        };
+        self.state.ship_state.update(dt, input_state.thrust, rotate);
     }
 
     fn update_particle_system(&mut self, dt: f32, prev_ship: &ship::ShipState) {

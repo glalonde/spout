@@ -2,7 +2,7 @@
 //!
 //! Pre-renders one full loop of a tracker file to f32 PCM on a background
 //! thread, then plays it in a looping cpal stream (native) or Web Audio
-//! AudioBuffer (WASM, Phase 2).
+//! AudioBuffer (WASM).
 //!
 //! Usage:
 //!   let mut player = AudioPlayer::new();   // kicks off background render
@@ -26,26 +26,16 @@ const TRACKS: &[&[u8]] = &[
     include_bytes!("../assets/music/z_bviinaaa.mod"),
 ];
 
-/// Clock-based seed that varies between program launches on all platforms.
-fn time_seed() -> u64 {
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            // Safe: system clock is always after the epoch on any real OS.
-            .expect("system clock before UNIX epoch")
-            .as_nanos() as u64
-    }
-    #[cfg(target_arch = "wasm32")]
-    {
-        js_sys::Date::now() as u64
-    }
-}
-
 /// Returns a randomly shuffled sequence of track indices covering the whole playlist.
 fn shuffled_playlist() -> Vec<usize> {
     let mut indices: Vec<usize> = (0..TRACKS.len()).collect();
-    fastrand::Rng::with_seed(time_seed()).shuffle(&mut indices);
+    // Seed from wall-clock time so the order differs between launches.
+    // fastrand::Rng::new() can be deterministic on some platforms (notably WASM).
+    let seed = web_time::SystemTime::now()
+        .duration_since(web_time::SystemTime::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos() as u64;
+    fastrand::Rng::with_seed(seed).shuffle(&mut indices);
     indices
 }
 
@@ -77,113 +67,104 @@ fn render_track(bytes: &[u8]) -> Option<Vec<f32>> {
     Some(out)
 }
 
-// ── Native implementation ────────────────────────────────────────────────────
+// ── Platform backend trait ───────────────────────────────────────────────────
+
+/// Platform-specific audio output. Implementations handle the actual playback
+/// machinery; playlist management lives in the shared `AudioPlayer`.
+trait Backend {
+    fn new_backend() -> Self;
+    fn start_track(&mut self, index: usize);
+    fn stop_current(&mut self);
+    /// Called once per frame. `playing` reflects the shared playing state.
+    fn poll(&mut self, playing: bool);
+    fn set_playing(&mut self, playing: bool);
+    /// Returns true when the current track has finished playing.
+    fn is_finished(&self) -> bool;
+}
+
+// ── Shared AudioPlayer ──────────────────────────────────────────────────────
+
+pub struct AudioPlayer {
+    backend: PlatformBackend,
+    playlist: Vec<usize>,
+    playlist_pos: usize,
+    playing: bool,
+}
+
+impl AudioPlayer {
+    pub fn new() -> Self {
+        let playlist = shuffled_playlist();
+        let first = playlist[0];
+        let mut player = AudioPlayer {
+            backend: PlatformBackend::new_backend(),
+            playlist,
+            playlist_pos: 0,
+            playing: true,
+        };
+        player.backend.start_track(first);
+        player
+    }
+
+    pub fn disabled() -> Self {
+        AudioPlayer {
+            backend: PlatformBackend::new_backend(),
+            playlist: shuffled_playlist(),
+            playlist_pos: 0,
+            playing: false,
+        }
+    }
+
+    pub fn poll(&mut self) {
+        self.backend.poll(self.playing);
+
+        // Auto-advance when the current track finishes.
+        if self.playing && self.backend.is_finished() {
+            self.next_track();
+        }
+    }
+
+    pub fn toggle(&mut self) {
+        self.playing = !self.playing;
+        self.backend.set_playing(self.playing);
+    }
+
+    pub fn next_track(&mut self) {
+        self.playing = true;
+        self.backend.stop_current();
+        self.playlist_pos = (self.playlist_pos + 1) % self.playlist.len();
+        let next = self.playlist[self.playlist_pos];
+        self.backend.start_track(next);
+    }
+}
+
+// ── Native backend (cpal) ───────────────────────────────────────────────────
 
 #[cfg(not(target_arch = "wasm32"))]
-pub use native::AudioPlayer;
+type PlatformBackend = native::NativeBackend;
 
 #[cfg(not(target_arch = "wasm32"))]
 mod native {
-    use super::{render_track, TRACKS};
+    use super::{render_track, Backend, TRACKS};
     use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
     use std::sync::{
         atomic::{AtomicBool, AtomicUsize, Ordering},
         mpsc, Arc,
     };
 
-    pub struct AudioPlayer {
-        /// Held alive to keep the cpal stream running.
+    pub struct NativeBackend {
         _stream: Option<cpal::Stream>,
         /// Set by the cpal callback when playback reaches the end of the buffer.
         finished: Arc<AtomicBool>,
-        /// Receives rendered PCM from the background thread; stream is built
-        /// on the main thread (cpal::Stream is not Send on CoreAudio/macOS).
         pending: Option<mpsc::Receiver<Vec<f32>>>,
-        /// Shuffled play order; wraps around when exhausted.
-        playlist: Vec<usize>,
-        playlist_pos: usize,
-        playing: bool,
     }
 
-    impl AudioPlayer {
-        pub fn new() -> Self {
-            let playlist = super::shuffled_playlist();
-            let first = playlist[0];
-            let mut player = AudioPlayer {
+    impl Backend for NativeBackend {
+        fn new_backend() -> Self {
+            NativeBackend {
                 _stream: None,
                 finished: Arc::new(AtomicBool::new(false)),
                 pending: None,
-                playlist,
-                playlist_pos: 0,
-                playing: true,
-            };
-            player.start_track(first);
-            player
-        }
-
-        pub fn disabled() -> Self {
-            AudioPlayer {
-                _stream: None,
-                finished: Arc::new(AtomicBool::new(false)),
-                pending: None,
-                playlist: (0..super::TRACKS.len()).collect(),
-                playlist_pos: 0,
-                playing: false,
             }
-        }
-
-        /// Call once per frame. Picks up rendered PCM, starts the cpal stream,
-        /// and auto-advances to the next track when the current one ends.
-        pub fn poll(&mut self) {
-            // Auto-advance when the current track finishes.
-            if self._stream.is_some()
-                && self.finished.load(Ordering::Relaxed)
-                && self.playing
-                && self.pending.is_none()
-            {
-                self.next_track();
-                return;
-            }
-
-            if let Some(rx) = self.pending.take() {
-                match rx.try_recv() {
-                    Ok(samples) => {
-                        if let Some(stream) = build_cpal_stream(samples, Arc::clone(&self.finished))
-                        {
-                            if self.playing {
-                                if let Err(e) = stream.play() {
-                                    log::error!("audio: failed to start stream: {e}");
-                                }
-                            }
-                            self._stream = Some(stream);
-                        }
-                    }
-                    Err(mpsc::TryRecvError::Empty) => self.pending = Some(rx),
-                    Err(mpsc::TryRecvError::Disconnected) => {
-                        log::warn!("audio: render thread exited without sending samples");
-                    }
-                }
-            }
-        }
-
-        /// Toggle music on/off. Pauses or resumes the current cpal stream.
-        pub fn toggle(&mut self) {
-            self.playing = !self.playing;
-            if let Some(stream) = &self._stream {
-                if self.playing {
-                    if let Err(e) = stream.play() {
-                        log::error!("audio: failed to resume: {e}");
-                    }
-                } else if let Err(e) = stream.pause() {
-                    log::error!("audio: failed to pause: {e}");
-                }
-            }
-        }
-
-        pub fn next_track(&mut self) {
-            self.playlist_pos = (self.playlist_pos + 1) % self.playlist.len();
-            let next = self.playlist[self.playlist_pos];
-            self.start_track(next);
         }
 
         fn start_track(&mut self, index: usize) {
@@ -199,6 +180,52 @@ mod native {
             });
 
             self.pending = Some(rx);
+        }
+
+        fn stop_current(&mut self) {
+            self._stream = None;
+            self.finished.store(false, Ordering::Relaxed);
+        }
+
+        fn poll(&mut self, playing: bool) {
+            if let Some(rx) = self.pending.take() {
+                match rx.try_recv() {
+                    Ok(samples) => {
+                        if let Some(stream) =
+                            build_cpal_stream(samples, Arc::clone(&self.finished))
+                        {
+                            if playing {
+                                if let Err(e) = stream.play() {
+                                    log::error!("audio: failed to start stream: {e}");
+                                }
+                            }
+                            self._stream = Some(stream);
+                        }
+                    }
+                    Err(mpsc::TryRecvError::Empty) => self.pending = Some(rx),
+                    Err(mpsc::TryRecvError::Disconnected) => {
+                        log::warn!("audio: render thread exited without sending samples");
+                    }
+                }
+            }
+        }
+
+        fn set_playing(&mut self, playing: bool) {
+            if let Some(stream) = &self._stream {
+                if playing {
+                    if let Err(e) = stream.play() {
+                        log::error!("audio: failed to resume: {e}");
+                    }
+                } else if let Err(e) = stream.pause() {
+                    log::error!("audio: failed to pause: {e}");
+                }
+            }
+        }
+
+        fn is_finished(&self) -> bool {
+            self._stream.is_some()
+                && self.finished.load(Ordering::Relaxed)
+                && self.pending.is_none()
         }
     }
 
@@ -243,14 +270,14 @@ mod native {
     }
 }
 
-// ── WASM implementation (Web Audio API) ──────────────────────────────────────
+// ── WASM backend (Web Audio API) ────────────────────────────────────────────
 
 #[cfg(target_arch = "wasm32")]
-pub use wasm_audio::AudioPlayer;
+type PlatformBackend = wasm_audio::WasmBackend;
 
 #[cfg(target_arch = "wasm32")]
 mod wasm_audio {
-    use super::{render_track, TRACKS};
+    use super::{render_track, Backend, TRACKS};
     use std::cell::{Cell, RefCell};
     use std::rc::Rc;
     use wasm_bindgen::JsCast;
@@ -259,63 +286,47 @@ mod wasm_audio {
     // render (from a skipped track) is silently discarded.
     type Pending = Rc<RefCell<Option<(usize, Vec<f32>)>>>;
 
-    pub struct AudioPlayer {
+    pub struct WasmBackend {
         pending: Pending,
         generation: usize,
-        /// Shuffled play order; wraps around when exhausted.
-        playlist: Vec<usize>,
-        playlist_pos: usize,
         context: Option<web_sys::AudioContext>,
         source: Option<web_sys::AudioBufferSourceNode>,
         /// Set by the `onended` callback when the current track finishes.
         finished: Rc<Cell<bool>>,
-        playing: bool,
     }
 
-    impl AudioPlayer {
-        pub fn new() -> Self {
-            let playlist = super::shuffled_playlist();
-            let first = playlist[0];
-            let mut player = AudioPlayer {
+    impl Backend for WasmBackend {
+        fn new_backend() -> Self {
+            WasmBackend {
                 pending: Rc::new(RefCell::new(None)),
                 generation: 0,
-                playlist,
-                playlist_pos: 0,
                 context: None,
                 source: None,
                 finished: Rc::new(Cell::new(false)),
-                playing: true,
-            };
-            player.start_render(first);
-            player
-        }
-
-        pub fn disabled() -> Self {
-            AudioPlayer {
-                pending: Rc::new(RefCell::new(None)),
-                generation: 0,
-                playlist: (0..super::TRACKS.len()).collect(),
-                playlist_pos: 0,
-                context: None,
-                source: None,
-                finished: Rc::new(Cell::new(false)),
-                playing: false,
             }
         }
 
-        /// Call once per frame. Picks up rendered PCM, creates/resumes the
-        /// AudioContext, swaps in a new source, and auto-advances when done.
-        pub fn poll(&mut self) {
-            // Auto-advance when the current track finishes.
-            if self.source.is_some()
-                && self.finished.get()
-                && self.playing
-                && self.pending.borrow().is_none()
-            {
-                self.next_track();
-                return;
-            }
+        fn start_track(&mut self, index: usize) {
+            self.generation += 1;
+            self.finished.set(false);
+            let gen = self.generation;
+            let pending = Rc::clone(&self.pending);
+            let track_bytes: &'static [u8] = TRACKS[index];
+            wasm_bindgen_futures::spawn_local(async move {
+                if let Some(samples) = render_track(track_bytes) {
+                    *pending.borrow_mut() = Some((gen, samples));
+                }
+            });
+        }
 
+        fn stop_current(&mut self) {
+            if let Some(src) = self.source.take() {
+                let _ = std::ops::Deref::deref(&src).stop_with_when(0.0);
+            }
+            self.finished.set(false);
+        }
+
+        fn poll(&mut self, playing: bool) {
             // Consume pending samples only if they belong to the current generation.
             let samples = {
                 let mut p = self.pending.borrow_mut();
@@ -328,35 +339,30 @@ mod wasm_audio {
             if let Some(samples) = samples {
                 match &self.context {
                     Some(ctx) => {
-                        // AudioContext already exists — just swap in a new source.
-                        if let Some(src) = make_source(ctx, &samples, Rc::clone(&self.finished)) {
+                        if let Some(src) =
+                            make_source(ctx, &samples, Rc::clone(&self.finished))
+                        {
                             if let Some(old) = self.source.replace(src) {
                                 let _ = std::ops::Deref::deref(&old).stop_with_when(0.0);
                             }
                         }
                     }
-                    None => {
-                        // First track: create the AudioContext.
-                        match web_sys::AudioContext::new() {
-                            Ok(ctx) => {
-                                if let Some(src) =
-                                    make_source(&ctx, &samples, Rc::clone(&self.finished))
-                                {
-                                    self.source = Some(src);
-                                }
-                                self.context = Some(ctx);
+                    None => match web_sys::AudioContext::new() {
+                        Ok(ctx) => {
+                            if let Some(src) =
+                                make_source(&ctx, &samples, Rc::clone(&self.finished))
+                            {
+                                self.source = Some(src);
                             }
-                            Err(e) => log::error!("audio: AudioContext::new failed: {:?}", e),
+                            self.context = Some(ctx);
                         }
-                    }
+                        Err(e) => log::error!("audio: AudioContext::new failed: {:?}", e),
+                    },
                 }
             }
 
             // Browsers suspend AudioContext until the first user gesture.
-            // Call resume() every frame until it transitions to Running; it is a
-            // no-op once running and is ignored (without error) before a gesture.
-            // Only do this when music is enabled.
-            if self.playing {
+            if playing {
                 if let Some(ctx) = &self.context {
                     if ctx.state() != web_sys::AudioContextState::Running {
                         let _ = ctx.resume();
@@ -365,10 +371,9 @@ mod wasm_audio {
             }
         }
 
-        pub fn toggle(&mut self) {
-            self.playing = !self.playing;
+        fn set_playing(&mut self, playing: bool) {
             if let Some(ctx) = &self.context {
-                if self.playing {
+                if playing {
                     let _ = ctx.resume();
                 } else {
                     let _ = ctx.suspend();
@@ -376,28 +381,10 @@ mod wasm_audio {
             }
         }
 
-        pub fn next_track(&mut self) {
-            // Stop the current source immediately; poll() will start the next one
-            // once its render completes.
-            if let Some(src) = self.source.take() {
-                let _ = std::ops::Deref::deref(&src).stop_with_when(0.0);
-            }
-            self.finished.set(false);
-            self.playlist_pos = (self.playlist_pos + 1) % self.playlist.len();
-            let next = self.playlist[self.playlist_pos];
-            self.start_render(next);
-        }
-
-        fn start_render(&mut self, index: usize) {
-            self.generation += 1;
-            let gen = self.generation;
-            let pending = Rc::clone(&self.pending);
-            let track_bytes: &'static [u8] = TRACKS[index];
-            wasm_bindgen_futures::spawn_local(async move {
-                if let Some(samples) = render_track(track_bytes) {
-                    *pending.borrow_mut() = Some((gen, samples));
-                }
-            });
+        fn is_finished(&self) -> bool {
+            self.source.is_some()
+                && self.finished.get()
+                && self.pending.borrow().is_none()
         }
     }
 
