@@ -82,7 +82,23 @@ already a transitive dep.
 - `T` key = next track, `Y` key = toggle music on/off
 - `music_starts_on = false` default in `game_config.toml`
 
-### Phase 3 — Future
+### Phase 3 — Non-blocking render (WASM)
+
+**Problem:** On WASM, `render_track` is called inside `wasm_bindgen_futures::spawn_local`. Because WASM is single-threaded, `spawn_local` does not run on a separate thread — it runs on the JS event loop. `render_track` is synchronous and CPU-heavy (decodes a full tracker file, ~2–4 s), so it blocks the main thread: no rendering, no input, visible freeze until the track is ready.
+
+On native this is already correct — `std::thread::spawn` puts the render on a real background thread.
+
+**Fix options:**
+- **Web Worker** (proper fix): run `render_track` inside a dedicated Web Worker via `wasm-bindgen-rayon` or `gloo-worker`. Requires `SharedArrayBuffer` + COOP/COEP headers, which GitHub Pages supports.
+- **Chunked/async render** (no-worker fallback): restructure `render_track` into an async generator that yields between frames, so the browser event loop can breathe. More complex to implement correctly.
+
+**Recommended:** Web Worker approach. The worker compiles `oxdz`, renders the PCM buffer, posts it back to the main thread, and `poll()` picks it up — same as the existing native channel pattern.
+
+- [ ] Add `wasm-bindgen-rayon` (or equivalent worker crate) to WASM deps
+- [ ] Move `render_track` call into a worker; post result back via `postMessage`
+- [ ] Verify no freeze on WASM when starting a new track
+
+### Phase 4 — Future
 - Volume control (game config or key binding)
 - Crossfade on track change
 
