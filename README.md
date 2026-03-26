@@ -28,6 +28,8 @@ Or try the live demo: [https://glalonde.github.io/spout/](https://glalonde.githu
 
 ## Controls
 
+### Keyboard (desktop)
+
 | Key | Action |
 |-----|--------|
 | W | Thrust |
@@ -36,6 +38,17 @@ Or try the live demo: [https://glalonde.github.io/spout/](https://glalonde.githu
 | Y | Toggle music |
 | F | Fullscreen |
 | P | Pause |
+
+### Mobile Web (touch + accelerometer)
+
+The screen is split into two zones in landscape orientation:
+
+- **Left half** — touch anywhere to thrust.
+- **Right half** — drag to steer. The drag direction controls where the ship's exhaust points; the ship nose faces the opposite way. Lift and re-place to reset the anchor.
+
+**Accelerometer steering** is also active on supported devices (Android, non-iOS). Tilt the phone to steer — the control is relative, so your current holding position gradually becomes the new neutral over ~5 seconds. Tap the right half (without dragging) to instantly recalibrate the neutral orientation.
+
+Touch steering always takes priority over the accelerometer.
 
 ## Browser Requirements
 
