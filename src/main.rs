@@ -53,6 +53,35 @@ struct Spout {
     staging_belt: wgpu::util::StagingBelt,
     #[cfg(feature = "profiling")]
     gpu_profiler: wgpu_profiler::GpuProfiler,
+    #[cfg(feature = "profiling")]
+    gpu_stats: std::collections::BTreeMap<String, GpuScopeStats>,
+}
+
+#[cfg(feature = "profiling")]
+#[derive(Default)]
+struct GpuScopeStats {
+    count: u64,
+    total_ms: f64,
+    min_ms: f64,
+    max_ms: f64,
+}
+
+#[cfg(feature = "profiling")]
+impl GpuScopeStats {
+    fn record(&mut self, ms: f64) {
+        self.count += 1;
+        self.total_ms += ms;
+        if self.count == 1 {
+            self.min_ms = ms;
+            self.max_ms = ms;
+        } else {
+            self.min_ms = self.min_ms.min(ms);
+            self.max_ms = self.max_ms.max(ms);
+        }
+    }
+    fn avg_ms(&self) -> f64 {
+        self.total_ms / self.count as f64
+    }
 }
 
 impl Spout {
@@ -409,6 +438,8 @@ impl framework::Example for Spout {
             staging_belt,
             #[cfg(feature = "profiling")]
             gpu_profiler,
+            #[cfg(feature = "profiling")]
+            gpu_stats: std::collections::BTreeMap::new(),
         }
     }
 
@@ -596,12 +627,12 @@ impl framework::Example for Spout {
         #[cfg(feature = "profiling")]
         self.gpu_profiler.end_frame().unwrap(); // safe: begin/end always paired
 
-        // Process GPU results (logged only — puffin integration is unstable).
         #[cfg(feature = "profiling")]
+        if let Some(results) = self
+            .gpu_profiler
+            .process_finished_frame(queue.get_timestamp_period())
         {
-            let _ = self
-                .gpu_profiler
-                .process_finished_frame(queue.get_timestamp_period());
+            collect_gpu_stats(&results, &mut self.gpu_stats);
         }
 
         #[cfg(feature = "profiling")]
@@ -633,6 +664,50 @@ fn make_texture(device: &wgpu::Device, width: u32, height: u32) -> wgpu::Texture
             view_formats: &[],
         })
         .create_view(&wgpu::TextureViewDescriptor::default())
+}
+
+#[cfg(feature = "profiling")]
+fn collect_gpu_stats(
+    results: &[wgpu_profiler::GpuTimerQueryResult],
+    stats: &mut std::collections::BTreeMap<String, GpuScopeStats>,
+) {
+    for r in results {
+        if let Some(ref time) = r.time {
+            let ms = (time.end - time.start) * 1000.0;
+            stats.entry(r.label.clone()).or_default().record(ms);
+        }
+        collect_gpu_stats(&r.nested_queries, stats);
+    }
+}
+
+#[cfg(feature = "profiling")]
+impl Drop for Spout {
+    fn drop(&mut self) {
+        if self.gpu_stats.is_empty() {
+            return;
+        }
+        log::info!("=== GPU Profile Summary ===");
+        log::info!(
+            "{:<25} {:>6} {:>10} {:>10} {:>10}",
+            "Scope",
+            "Count",
+            "Avg(ms)",
+            "Min(ms)",
+            "Max(ms)"
+        );
+        let mut sorted: Vec<_> = self.gpu_stats.iter().collect();
+        sorted.sort_by(|a, b| b.1.avg_ms().partial_cmp(&a.1.avg_ms()).unwrap());
+        for (name, s) in &sorted {
+            log::info!(
+                "{:<25} {:>6} {:>10.3} {:>10.3} {:>10.3}",
+                name,
+                s.count,
+                s.avg_ms(),
+                s.min_ms,
+                s.max_ms
+            );
+        }
+    }
 }
 
 fn main() {
