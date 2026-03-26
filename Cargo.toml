@@ -11,7 +11,6 @@ debug = true
 
 [features]
 default = []
-profiling = ["dep:wgpu-profiler", "dep:puffin", "dep:puffin_http"]
 
 [dependencies]
 winit = "0.30"
@@ -30,9 +29,6 @@ fastrand = "2"
 wgpu = "29"
 web-time = "1"
 oxdz = { git = "https://github.com/glalonde/oxdz", branch = "master" }
-wgpu-profiler = { version = "0.27", optional = true }
-puffin = { version = "0.19", optional = true }
-puffin_http = { version = "0.16", optional = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 cpal = "0.15"
