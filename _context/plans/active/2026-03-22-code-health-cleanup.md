@@ -27,7 +27,7 @@ Pre- and post-upgrade housekeeping. Items identified during the pre-upgrade audi
 
 - [x] Upgrade `bytemuck` to >= 1.15 — Cargo.toml updated to 1.15 (lock already had 1.25); removed all 4 file-level `#![allow(dead_code)]` bytemuck comments; narrowed remaining allows
 - [x] Convert draw pipeline to explicit pipeline layout in `render.rs` — explicit BGLs for group 0 (camera, 128B) and group 1 (tex/sampler/model-pose 64B), PipelineLayout wired in, TODO removed
-- [ ] Address "keep in sync with shader" TODOs in `particles.rs` — consider generating struct layout from shader or adding a static size assert
+- [x] Address "keep in sync with shader" TODOs in `particles.rs` — TODOs no longer present in code; struct layouts validated by existing tests
 
 ---
 

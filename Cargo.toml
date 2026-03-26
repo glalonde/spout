@@ -35,7 +35,6 @@ oxdz = { git = "https://github.com/glalonde/oxdz", branch = "master" }
 cpal = "0.15"
 
 
-# TODO(wasm-revival): update these when reviving the WASM target
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 getrandom = { version = "0.3", features = ["wasm_js"] }
 console_error_panic_hook = "0.1.6"

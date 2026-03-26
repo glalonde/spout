@@ -86,6 +86,5 @@ already a transitive dep.
 - Volume control (game config or key binding)
 - Crossfade on track change
 
-## Cleanup tasks (can do any time)
-- Delete `assets/music/output/` OGG directory (32 MB, regeneratable from source)
-- Consider gitignoring the OGG output dir if kept for local reference
+## Cleanup tasks
+- [x] Delete `assets/music/output/` OGG directory (32 MB, regeneratable from source) — removed via `git rm`
