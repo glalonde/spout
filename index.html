@@ -1,7 +1,13 @@
 <html>
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--
+      user-scalable=no / maximum-scale=1 prevents the browser from
+      double-tap-zooming or pinch-zooming while the game is running.
+    -->
+    <meta name="viewport"
+          content="width=device-width, initial-scale=1.0,
+                   user-scalable=no, maximum-scale=1.0" />
     <style>
       html, body {
         margin: 0;
@@ -15,14 +21,247 @@
         display: block;
         width: 100%;
         height: 100%;
+        /* Prevent browser from consuming touch events for scroll / zoom. */
+        touch-action: none;
+      }
+
+      /* ── Mobile control overlay ───────────────────────────────────────── */
+
+      #mobile-ui {
+        display: none;          /* shown only when a touch device is detected */
+        position: fixed;
+        inset: 0;
+        pointer-events: none;   /* pass-through except for the actual buttons */
+        z-index: 10;
+        font-family: monospace;
+      }
+
+      /* Rotate buttons sit in the bottom corners */
+      .steer-btn {
+        position: absolute;
+        bottom: 24px;
+        width: 80px;
+        height: 80px;
+        border-radius: 50%;
+        background: rgba(255,255,255,0.15);
+        border: 2px solid rgba(255,255,255,0.4);
+        color: rgba(255,255,255,0.8);
+        font-size: 28px;
+        line-height: 80px;
+        text-align: center;
+        pointer-events: auto;
+        /* No text selection highlight on long-press */
+        user-select: none;
+        -webkit-user-select: none;
+        cursor: pointer;
+      }
+      #btn-left  { left:  24px; }
+      #btn-right { right: 24px; }
+
+      /* Thrust button: large area in the bottom-center */
+      #btn-thrust {
+        position: absolute;
+        bottom: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 100px;
+        height: 100px;
+        border-radius: 50%;
+        background: rgba(255,100,0,0.2);
+        border: 2px solid rgba(255,140,0,0.6);
+        color: rgba(255,200,100,0.9);
+        font-size: 28px;
+        line-height: 100px;
+        text-align: center;
+        pointer-events: auto;
+        user-select: none;
+        -webkit-user-select: none;
+        cursor: pointer;
+      }
+
+      /* Hint label shown briefly on first visit */
+      #tilt-hint {
+        position: absolute;
+        top: 16px;
+        left: 50%;
+        transform: translateX(-50%);
+        color: rgba(255,255,255,0.7);
+        font-size: 13px;
+        white-space: nowrap;
+        pointer-events: none;
+        transition: opacity 1s;
+      }
+
+      /* iOS DeviceOrientation permission button */
+      #accel-permission {
+        display: none;
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        padding: 14px 28px;
+        background: rgba(255,255,255,0.15);
+        border: 2px solid rgba(255,255,255,0.5);
+        border-radius: 8px;
+        color: #fff;
+        font-size: 15px;
+        pointer-events: auto;
+        cursor: pointer;
+        text-align: center;
       }
     </style>
   </head>
   <body>
+    <!-- Mobile control overlay (hidden on desktop) -->
+    <div id="mobile-ui">
+      <div id="tilt-hint">Tilt to steer · Hold ▲ to thrust</div>
+      <div class="steer-btn" id="btn-left">◄</div>
+      <div id="btn-thrust">▲</div>
+      <div class="steer-btn" id="btn-right">►</div>
+      <div id="accel-permission">Enable tilt steering</div>
+    </div>
+
     <script type="module">
-      import init from "./spout.js";
-      window.addEventListener("load", () => {
-        init();
+      import init, {
+        set_mobile_forward,
+        set_mobile_left,
+        set_mobile_right,
+      } from "./spout.js";
+
+      // ── Helpers ──────────────────────────────────────────────────────────
+
+      const isTouchDevice = () =>
+        navigator.maxTouchPoints > 0 || "ontouchstart" in window;
+
+      // True when the phone is held in portrait orientation.
+      // (gamma = left/right tilt; beta = forward/back tilt)
+
+      // ── DeviceOrientation (accelerometer steering) ────────────────────
+
+      // Tilt threshold in degrees before we count it as "turning"
+      const TILT_THRESHOLD = 15;
+
+      function onOrientation(e) {
+        // gamma: −90 (left) … +90 (right), null when not supported
+        const gamma = e.gamma ?? 0;
+        set_mobile_left(gamma < -TILT_THRESHOLD);
+        set_mobile_right(gamma > TILT_THRESHOLD);
+      }
+
+      function setupAccelerometer() {
+        window.addEventListener("deviceorientation", onOrientation);
+        document.getElementById("tilt-hint").textContent =
+          "Tilt to steer · Hold ▲ to thrust";
+      }
+
+      // iOS 13+ requires an explicit user-gesture call to
+      // DeviceOrientationEvent.requestPermission() before the API fires.
+      function setupAccelerometerWithPermission() {
+        const permBtn = document.getElementById("accel-permission");
+        permBtn.style.display = "block";
+        permBtn.addEventListener("click", async () => {
+          try {
+            const result = await DeviceOrientationEvent.requestPermission();
+            if (result === "granted") {
+              setupAccelerometer();
+            }
+          } catch (err) {
+            console.warn("DeviceOrientation permission error:", err);
+          }
+          permBtn.style.display = "none";
+        }, { once: true });
+      }
+
+      // ── Touch controls ────────────────────────────────────────────────
+
+      // Track active touch IDs for each virtual button so multi-touch works.
+      const thrustTouches = new Set();
+      const leftTouches   = new Set();
+      const rightTouches  = new Set();
+
+      function bindButton(el, touchSet, setter) {
+        el.addEventListener("touchstart", (e) => {
+          e.preventDefault();
+          for (const t of e.changedTouches) touchSet.add(t.identifier);
+          setter(true);
+        }, { passive: false });
+
+        el.addEventListener("touchend", (e) => {
+          e.preventDefault();
+          for (const t of e.changedTouches) touchSet.delete(t.identifier);
+          if (touchSet.size === 0) setter(false);
+        }, { passive: false });
+
+        el.addEventListener("touchcancel", (e) => {
+          for (const t of e.changedTouches) touchSet.delete(t.identifier);
+          if (touchSet.size === 0) setter(false);
+        });
+      }
+
+      // ── Initialise ────────────────────────────────────────────────────
+
+      window.addEventListener("load", async () => {
+        try {
+          await init();
+        } catch (e) {
+          // winit (0.30) on WASM throws a JS exception after registering
+          // requestAnimationFrame callbacks as a control-flow trick to unwind
+          // the synchronous startup stack.  The game loop is already running
+          // at this point; swallow the expected error and continue setup.
+          if (
+            typeof e?.message !== "string" ||
+            !e.message.includes("Using exceptions for control flow")
+          ) {
+            console.error("Unexpected error during WASM init:", e);
+          }
+        }
+
+        if (!isTouchDevice()) {
+          // Desktop: no overlay needed.
+          return;
+        }
+
+        // Show the mobile UI overlay.
+        document.getElementById("mobile-ui").style.display = "block";
+
+        // Wire up the three buttons.
+        bindButton(
+          document.getElementById("btn-thrust"),
+          thrustTouches,
+          set_mobile_forward,
+        );
+        bindButton(
+          document.getElementById("btn-left"),
+          leftTouches,
+          set_mobile_left,
+        );
+        bindButton(
+          document.getElementById("btn-right"),
+          rightTouches,
+          set_mobile_right,
+        );
+
+        // Set up accelerometer.
+        if (
+          typeof DeviceOrientationEvent !== "undefined" &&
+          typeof DeviceOrientationEvent.requestPermission === "function"
+        ) {
+          // iOS 13+ — needs explicit permission.
+          setupAccelerometerWithPermission();
+        } else if (typeof DeviceOrientationEvent !== "undefined") {
+          // Android / older iOS — fires without permission.
+          setupAccelerometer();
+        } else {
+          // No accelerometer — fall back to buttons-only hint.
+          document.getElementById("tilt-hint").textContent =
+            "Use ◄ ► to steer · Hold ▲ to thrust";
+        }
+
+        // Fade out hint after 4 s.
+        setTimeout(() => {
+          const hint = document.getElementById("tilt-hint");
+          if (hint) hint.style.opacity = "0";
+        }, 4000);
       });
     </script>
   </body>
