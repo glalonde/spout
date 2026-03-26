@@ -64,6 +64,12 @@ jobs:
           sed "s/{{example}}/spout/g" wasm-resources/index.template.html \
             > target/spout_web/index.html
 
+      - name: Validate WASM exports match HTML imports
+        run: |
+          python3 scripts/check_wasm_exports.py \
+            target/spout_web/spout.js \
+            wasm-resources/index.template.html
+
       - name: Deploy to gh-pages (root)
         uses: peaceiris/actions-gh-pages@v4
         with:

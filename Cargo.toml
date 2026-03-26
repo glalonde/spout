@@ -52,6 +52,13 @@ web-sys = { version = "0.3", features = [
     "AudioScheduledSourceNode",
     "AudioNode",
     "AudioDestinationNode",
+    # Touch input
+    "Event",
+    "EventTarget",
+    "HtmlCanvasElement",
+    "Touch",
+    "TouchEvent",
+    "TouchList",
 ]}
 js-sys = "0.3"
 

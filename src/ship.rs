@@ -1,14 +1,5 @@
 use crate::{buffer_util::SizedBuffer, game_params};
 
-#[allow(clippy::upper_case_acronyms)]
-#[repr(i8)]
-#[derive(Copy, Clone)]
-pub enum RotationDirection {
-    CW = -1,
-    None = 0,
-    CCW = 1,
-}
-
 #[derive(Debug, Copy, Clone)]
 pub struct ShipState {
     // This is the state in a kinematics sense, will move to the GPU eventually.
@@ -45,13 +36,14 @@ impl ShipState {
         }
     }
 
-    pub fn update(&mut self, dt: f32, accelerate: bool, rotation: RotationDirection) {
+    /// `thrust` in [0.0, 1.0]; `rotate` in [-1.0, 1.0] (positive = CCW/left, negative = CW/right).
+    pub fn update(&mut self, dt: f32, thrust: f32, rotate: f32) {
         self.position[0] += dt * self.velocity[0];
         self.position[1] += dt * self.velocity[1];
 
-        if accelerate {
-            self.velocity[0] += dt * self.acceleration * self.orientation.cos();
-            self.velocity[1] += dt * self.acceleration * self.orientation.sin();
+        if thrust > 0.0 {
+            self.velocity[0] += dt * self.acceleration * thrust * self.orientation.cos();
+            self.velocity[1] += dt * self.acceleration * thrust * self.orientation.sin();
         }
         {
             let speed =
@@ -63,8 +55,7 @@ impl ShipState {
             }
         }
 
-        let angle_delta = dt * (rotation as i8 as f32) * self.rotation_rate;
-        self.orientation += angle_delta;
+        self.orientation += dt * rotate * self.rotation_rate;
     }
 
     pub fn get_emitter_state(&self) -> ([f32; 2], f32) {
