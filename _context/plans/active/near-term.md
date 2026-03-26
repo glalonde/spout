@@ -67,15 +67,21 @@ Tasks:
 
 ---
 
-## 6. Music Playlist Randomization
+## 6. Music Playlist Randomization ✅
 
-The `shuffled_playlist()` function in `src/audio.rs` uses `rand::rng()` (OS-seeded `ThreadRng`) which should be non-deterministic. However, the level terrain generator in `level_manager.rs` uses `fastrand::Rng::with_seed(0)` — an explicitly fixed seed — causing levels to be identical every run.
+Fixed: `rand` dep removed, `fastrand::Rng::new().shuffle()` used instead. Level terrain also randomized per-run. See `music.md` for details.
+
+---
+
+## 7. Music: Non-Blocking Track Render (WASM)
+
+`render_track` runs synchronously inside `spawn_local` on WASM, blocking the main thread for ~2–4 s while a tracker file decodes. Visible as a freeze when a track loads.
+
+Native is already correct (background thread via `std::thread::spawn`).
 
 Tasks:
-- [x] Fix music shuffle determinism — replaced `rand::rng()` (broken due to rand 0.8/0.9 conflict) with `fastrand::Rng::new()` Fisher-Yates; also removed `rand` dep from Cargo.toml entirely
-- [x] Change `fastrand::Rng::with_seed(0)` in `level_manager.rs` to `fastrand::Rng::new()` (OS-seeded) so terrain layout varies between runs
-
-Note: if level determinism is ever *wanted* (e.g. for replay or testing), expose the seed via `game_config.toml` rather than hardcoding 0.
+- [ ] Move `render_track` to a Web Worker on WASM (see `music.md` Phase 3 for options)
+- [ ] Verify no main-thread freeze when starting / cycling tracks in the browser
 
 ---
 
