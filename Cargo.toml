@@ -20,7 +20,7 @@ scrub_log = "0.2"
 bytemuck = { version = "1.15", features = ["derive"] }
 async-executor = "1.0"
 rand = "0.9"
-cgmath = "0.18"
+glam = "0.29"
 anyhow = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 toml = "0.8"
