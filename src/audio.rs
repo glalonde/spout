@@ -28,9 +28,8 @@ const TRACKS: &[&[u8]] = &[
 
 /// Returns a randomly shuffled sequence of track indices covering the whole playlist.
 fn shuffled_playlist() -> Vec<usize> {
-    use rand::seq::SliceRandom;
     let mut indices: Vec<usize> = (0..TRACKS.len()).collect();
-    indices.shuffle(&mut rand::rng());
+    fastrand::Rng::new().shuffle(&mut indices);
     indices
 }
 

@@ -19,14 +19,13 @@ pollster = "0.3"
 scrub_log = "0.2"
 bytemuck = { version = "1.15", features = ["derive"] }
 async-executor = "1.0"
-rand = "0.9"
 glam = "0.29"
 anyhow = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 toml = "0.8"
 scarlet = "1"
 image = "0.25"
-fastrand = "1.7"
+fastrand = "2"
 wgpu = "29"
 web-time = "1"
 oxdz = { git = "https://github.com/glalonde/oxdz", branch = "master" }
@@ -39,9 +38,9 @@ cpal = "0.15"
 getrandom = { version = "0.3", features = ["wasm_js"] }
 console_error_panic_hook = "0.1.6"
 console_log = { version = "0.2", features = ["color"] }
-wasm-bindgen-futures = "0.4.20"
-wasm-bindgen = "0.2.78"
-web-sys = { version = "0.3.55", features = [
+wasm-bindgen-futures = "0.4"
+wasm-bindgen = "0.2"
+web-sys = { version = "0.3", features = [
     "Document",
     "Window",
     "Element",
@@ -54,7 +53,7 @@ web-sys = { version = "0.3.55", features = [
     "AudioNode",
     "AudioDestinationNode",
 ]}
-js-sys = "0.3.50"
+js-sys = "0.3"
 
 
 [dev-dependencies]

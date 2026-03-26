@@ -33,7 +33,7 @@ impl WIPRectangleLevel {
             height: level_height,
             data,
             max_dimension,
-            rng: fastrand::Rng::with_seed(0),
+            rng: fastrand::Rng::new(),
             num_vacancies,
             completed_vacancies: 0,
         }
