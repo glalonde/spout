@@ -605,7 +605,10 @@ impl framework::Example for Spout {
             .gpu_profiler
             .process_finished_frame(queue.get_timestamp_period())
         {
-            puffin_wgpu_log(&results, 0);
+            wgpu_profiler::puffin::output_frame_to_puffin(
+                &mut puffin::GlobalProfiler::lock(),
+                &results,
+            );
         }
 
         #[cfg(feature = "profiling")]
@@ -653,18 +656,6 @@ fn save_puffin_profile() {
             Err(e) => log::error!("Failed to write profiling data: {e}"),
         },
         Err(e) => log::error!("Failed to create {path}: {e}"),
-    }
-}
-
-#[cfg(feature = "profiling")]
-fn puffin_wgpu_log(results: &[wgpu_profiler::GpuTimerQueryResult], depth: usize) {
-    for r in results {
-        if let Some(ref time) = r.time {
-            let dur_ms = (time.end - time.start) * 1000.0;
-            let indent = "  ".repeat(depth);
-            log::info!("{indent}[GPU] {}: {dur_ms:.3}ms", r.label);
-        }
-        puffin_wgpu_log(&r.nested_queries, depth + 1);
     }
 }
 
