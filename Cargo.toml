@@ -5,7 +5,6 @@ authors = ["Geoffrey Lalonde <lalondegeoffrey@gmail.com>"]
 edition = "2021"
 rust-version = "1.94.0"
 resolver = "2"
-default-run = "spout"
 
 [profile.release]
 debug = true
@@ -32,7 +31,7 @@ wgpu = "29"
 web-time = "1"
 oxdz = { git = "https://github.com/glalonde/oxdz", branch = "master" }
 wgpu-profiler = { version = "0.27", optional = true, features = ["puffin"] }
-puffin = { version = "0.19", optional = true, features = ["serialization"] }
+puffin = { version = "0.19", optional = true }
 puffin_http = { version = "0.16", optional = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
@@ -74,10 +73,6 @@ js-sys = "0.3"
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 async-executor = "1.0"
 pollster = "0.3"
-
-[[bin]]
-name = "profile_summary"
-required-features = ["profiling"]
 
 [build-dependencies]
 tera="1"

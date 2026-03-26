@@ -377,10 +377,6 @@ impl framework::Example for Spout {
             puffin::set_scopes_on(true);
             // Leak the server handle so it lives for the program's lifetime.
             std::mem::forget(_server);
-
-            // Initialize the global frame view so it starts collecting frames.
-            // GlobalFrameView::default() registers its own sink with the profiler.
-            std::sync::LazyLock::force(&PROFILE_FRAMES);
         }
 
         let mut collector = InputCollector::default();
@@ -645,26 +641,6 @@ fn make_texture(device: &wgpu::Device, width: u32, height: u32) -> wgpu::Texture
         .create_view(&wgpu::TextureViewDescriptor::default())
 }
 
-#[cfg(feature = "profiling")]
-static PROFILE_FRAMES: std::sync::LazyLock<puffin::GlobalFrameView> =
-    std::sync::LazyLock::new(puffin::GlobalFrameView::default);
-
-#[cfg(feature = "profiling")]
-fn save_puffin_profile() {
-    let path = "profile.puffin";
-    let view = PROFILE_FRAMES.lock();
-    match std::fs::File::create(path) {
-        Ok(mut f) => match view.write(&mut f) {
-            Ok(()) => log::info!("Saved profiling data to {path}"),
-            Err(e) => log::error!("Failed to write profiling data: {e}"),
-        },
-        Err(e) => log::error!("Failed to create {path}: {e}"),
-    }
-}
-
 fn main() {
     framework::run::<Spout>("Spout");
-
-    #[cfg(feature = "profiling")]
-    save_puffin_profile();
 }

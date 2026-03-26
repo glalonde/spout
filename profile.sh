@@ -1,11 +1,12 @@
 #!/bin/bash
-# Profile Spout: build with profiling, run the game, then open puffin_viewer
-# with the saved data.
+# Profile Spout: build with profiling, run the game with puffin_viewer
+# connected for live profiling.
 #
 # Usage: ./profile.sh
 #
-# Play the game, then quit (Escape). A profile.puffin file is saved on exit.
-# puffin_viewer then opens the saved file so you can explore the data.
+# puffin_viewer connects to the game's puffin_http server and shows
+# live CPU + GPU profiling data. When you quit the game (Escape),
+# the viewer stays open with the accumulated data.
 #
 # Prerequisites:
 #   cargo install puffin_viewer
@@ -21,13 +22,26 @@ fi
 echo "Building with profiling..."
 cargo build --features profiling --release 2>&1
 
-echo "Starting game... (quit with Escape when done)"
-./target/release/spout || true
+echo "Starting game..."
+./target/release/spout &
+GAME_PID=$!
 
-if [ ! -f profile.puffin ]; then
-    echo "Error: profile.puffin was not created."
-    exit 1
-fi
+# Wait for the puffin HTTP server to start accepting connections.
+echo "Waiting for puffin server..."
+for i in $(seq 1 20); do
+    if nc -z 127.0.0.1 8585 2>/dev/null; then
+        break
+    fi
+    sleep 0.25
+done
 
-echo "Opening profiling data in puffin_viewer..."
-puffin_viewer profile.puffin
+echo "Starting puffin_viewer (connects to 127.0.0.1:8585)..."
+puffin_viewer --url 127.0.0.1:8585 &
+VIEWER_PID=$!
+
+# Wait for the game to exit (user quits with Escape).
+wait $GAME_PID 2>/dev/null || true
+echo ""
+echo "Game exited. puffin_viewer is still open with the profiling data."
+echo "Close the viewer window when done."
+wait $VIEWER_PID 2>/dev/null || true
