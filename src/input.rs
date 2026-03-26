@@ -231,6 +231,10 @@ mod tests {
     }
 }
 
+/// Minimum drag distance (px) before a touch heading is committed.
+/// Also used to detect "taps" (touchend with displacement below this threshold).
+const MIN_DRAG_PX: f32 = 8.0;
+
 /// Converts a 2-D touch drag into an absolute target heading in radians.
 ///
 /// Returns `None` when the drag is too small to reliably determine a direction
@@ -246,8 +250,6 @@ fn touch_delta_to_target_heading(
     current_x: f32,
     current_y: f32,
 ) -> Option<f32> {
-    /// Minimum drag distance (px) before a heading is committed.
-    const MIN_DRAG_PX: f32 = 8.0;
     let drag = glam::Vec2::new(current_x - anchor_x, current_y - anchor_y);
     if drag.length_squared() < MIN_DRAG_PX * MIN_DRAG_PX {
         None
@@ -303,6 +305,13 @@ struct WasmTouch {
     rotate_anchor_y: f32, // y at touchstart
     rotate_x: f32,        // x at latest touchmove/touchstart
     rotate_y: f32,        // y at latest touchmove/touchstart
+
+    // Accelerometer state (updated by deviceorientation listener)
+    last_gamma: f32,         // latest DeviceOrientationEvent.gamma (degrees)
+    last_beta: f32,          // latest DeviceOrientationEvent.beta (degrees)
+    accel_offset_gamma: f32, // calibration offset (set on right-side tap)
+    accel_offset_beta: f32,
+    accel_heading: Option<f32>, // computed heading from accel tilt
 }
 
 /// Accumulates raw platform events and produces a logical [`InputState`] each frame.
@@ -480,6 +489,16 @@ impl InputCollector {
                             s.thrust_id = None;
                         }
                         if Some(id) == s.rotate_id {
+                            // Tap detection: if finger lifted without dragging,
+                            // reset the accelerometer calibration offset.
+                            let drag = glam::Vec2::new(
+                                s.rotate_x - s.rotate_anchor_x,
+                                s.rotate_y - s.rotate_anchor_y,
+                            );
+                            if drag.length_squared() < MIN_DRAG_PX * MIN_DRAG_PX {
+                                s.accel_offset_gamma = s.last_gamma;
+                                s.accel_offset_beta = s.last_beta;
+                            }
                             s.rotate_id = None;
                             s.rotate_anchor_x = 0.0;
                             s.rotate_anchor_y = 0.0;
@@ -496,6 +515,43 @@ impl InputCollector {
             canvas
                 .add_event_listener_with_callback("touchcancel", f)
                 .unwrap();
+            cb.forget();
+        }
+
+        // deviceorientation: map phone tilt to target heading.
+        // Fires on Android/desktop without permission; requires explicit
+        // requestPermission() on iOS 13+ (not yet implemented — touch still works).
+        {
+            let state = std::rc::Rc::clone(&self.wasm_touch);
+            let cb = Closure::<dyn FnMut(_)>::new(move |event: web_sys::DeviceOrientationEvent| {
+                let gamma_deg = event.gamma().unwrap_or(0.0) as f32;
+                let beta_deg = event.beta().unwrap_or(0.0) as f32;
+                let mut s = state.borrow_mut();
+                s.last_gamma = gamma_deg;
+                s.last_beta = beta_deg;
+
+                // Subtract calibration offset, convert to radians.
+                let gamma_rad = (gamma_deg - s.accel_offset_gamma).to_radians();
+                let beta_rad = (beta_deg - s.accel_offset_beta).to_radians();
+
+                // Landscape-left mapping: game-right = beta, game-up = gamma.
+                let tilt = glam::Vec2::new(beta_rad, gamma_rad);
+                const MIN_TILT_RAD: f32 = 0.1; // ~6° deadzone when nearly flat
+                s.accel_heading = if tilt.length_squared() < MIN_TILT_RAD * MIN_TILT_RAD {
+                    None
+                } else {
+                    Some(tilt.to_angle())
+                };
+            });
+            if let Some(window) = web_sys::window() {
+                // The unwrap is safe: Window always implements EventTarget.
+                window
+                    .add_event_listener_with_callback(
+                        "deviceorientation",
+                        cb.as_ref().unchecked_ref(),
+                    )
+                    .unwrap();
+            }
             cb.forget();
         }
     }
@@ -612,6 +668,7 @@ impl InputCollector {
             let s = self.wasm_touch.borrow();
             let thrust = s.thrust_id.is_some();
             let (has_rotate, heading) = if s.rotate_id.is_some() {
+                // Touch drag takes highest priority.
                 let h = touch_delta_to_target_heading(
                     s.rotate_anchor_x,
                     s.rotate_anchor_y,
@@ -619,6 +676,9 @@ impl InputCollector {
                     s.rotate_y,
                 );
                 (true, h)
+            } else if s.accel_heading.is_some() {
+                // Accelerometer provides heading when no rotate touch is active.
+                (true, s.accel_heading)
             } else {
                 (false, None)
             };
