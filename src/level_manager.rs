@@ -119,7 +119,7 @@ impl LevelMaker {
     }
 
     pub fn work_until(&mut self, deadline: Instant) {
-        while Instant::now() < deadline {
+        while !self.wip_levels.is_empty() && Instant::now() < deadline {
             let mut to_remove = Vec::new();
             // Generate levels in order of level index.
             for (key, value) in &mut self.wip_levels {
