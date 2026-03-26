@@ -236,8 +236,6 @@ pub struct LevelManager {
 
     unused_buffers: Vec<SizedBuffer>,
 
-    staging_belt: wgpu::util::StagingBelt,
-
     pub level_maker: LevelMaker,
 
     pub terrain_renderer: TerrainRenderer,
@@ -302,6 +300,7 @@ impl LevelManager {
         game_params: &super::game_params::GameParams,
         viewport_offset: i32,
         init_encoder: &mut wgpu::CommandEncoder,
+        belt: &mut wgpu::util::StagingBelt,
     ) -> Self {
         let level_width = game_params.level_width;
         let level_height = game_params.level_height;
@@ -329,8 +328,6 @@ impl LevelManager {
             active_interval_height as usize,
             "CompositeTerrainBuffer",
         );
-        let staging_belt =
-            wgpu::util::StagingBelt::new(device.clone(), (unused_buffers[0].size / 2) as u64);
         let renderer = TerrainRenderer::init(device, game_params, &composite_tile_buffer);
 
         let mut lm = LevelManager {
@@ -347,7 +344,6 @@ impl LevelManager {
             },
 
             unused_buffers,
-            staging_belt,
             level_maker: LevelMaker::init(
                 level_width,
                 level_height,
@@ -356,7 +352,7 @@ impl LevelManager {
             terrain_renderer: renderer,
         };
 
-        lm.sync_height(device, viewport_offset, init_encoder, game_params);
+        lm.sync_height(device, viewport_offset, init_encoder, game_params, belt);
         lm
     }
 
@@ -387,13 +383,13 @@ impl LevelManager {
         device: &wgpu::Device,
         encoder: &mut wgpu::CommandEncoder,
         active_levels: Interval,
+        belt: &mut wgpu::util::StagingBelt,
     ) {
         for level_index in active_levels.start..active_levels.end {
             assert!(level_index < self.level_maker.levels.len() as i32);
             // Check if this level has a buffer, if not, find it one.
-            // self.level_maker.use_level(check_level_index, action);
             // entry() API can't be used here: the block borrows self mutably
-            // (get_unused_tile_buffer, staging_belt) which conflicts with holding an Entry.
+            // (get_unused_tile_buffer) which conflicts with holding an Entry.
             #[allow(clippy::map_entry)]
             if !self.loaded_tiles.contains_key(&level_index) {
                 // Tile isn't loaded, find a buffer.
@@ -403,14 +399,13 @@ impl LevelManager {
                 // let level_data = &self.stripe_level;
 
                 // Request data copy.
-                self.staging_belt
-                    .write_buffer(
-                        encoder,
-                        &buffer.buffer,
-                        0,
-                        wgpu::BufferSize::new(buffer.size as _).unwrap(),
-                    )
-                    .copy_from_slice(bytemuck::cast_slice(level_data));
+                belt.write_buffer(
+                    encoder,
+                    &buffer.buffer,
+                    0,
+                    wgpu::BufferSize::new(buffer.size as _).unwrap(),
+                )
+                .copy_from_slice(bytemuck::cast_slice(level_data));
                 let level_start = level_index * self.level_height as i32;
                 self.loaded_tiles.insert(
                     level_index,
@@ -424,8 +419,6 @@ impl LevelManager {
                 );
             }
         }
-
-        self.staging_belt.finish();
     }
 
     pub fn get_active_interval(
@@ -461,6 +454,7 @@ impl LevelManager {
         viewport_offset: i32,
         encoder: &mut wgpu::CommandEncoder,
         game_params: &crate::game_params::GameParams,
+        belt: &mut wgpu::util::StagingBelt,
     ) {
         log::debug!("Syncing to height: {}", viewport_offset);
         self.update_active_interval(viewport_offset);
@@ -491,7 +485,7 @@ impl LevelManager {
 
         // Find levels we need, make sure they're done (blocking) and loaded into the gpu(blocking)
         self.block_on_levels(active_levels);
-        self.load_active_levels(device, encoder, active_levels);
+        self.load_active_levels(device, encoder, active_levels, belt);
 
         // TODO when a level is no longer needed, recycle the buffer.
 
@@ -500,12 +494,8 @@ impl LevelManager {
             viewport_offset,
             self.composite_tile.shape.start,
             encoder,
+            belt,
         );
-    }
-
-    pub fn after_queue_submission(&mut self) {
-        self.terrain_renderer.after_queue_submission();
-        self.staging_belt.recall();
     }
 }
 
@@ -522,7 +512,6 @@ pub struct TerrainRenderer {
     pub render_bind_group: wgpu::BindGroup,
     pub render_pipeline: wgpu::RenderPipeline,
     pub uniform_buf: SizedBuffer,
-    staging_belt: wgpu::util::StagingBelt,
 }
 
 #[repr(C)]
@@ -542,6 +531,7 @@ impl TerrainRenderer {
         viewport_offset: i32,
         terrain_buffer_offset: i32,
         encoder: &mut wgpu::CommandEncoder,
+        belt: &mut wgpu::util::StagingBelt,
     ) {
         let uniforms = FragmentUniforms {
             viewport_width: game_params.level_width,
@@ -551,15 +541,13 @@ impl TerrainRenderer {
         };
 
         // Update uniforms
-        self.staging_belt
-            .write_buffer(
-                encoder,
-                &self.uniform_buf.buffer,
-                0,
-                wgpu::BufferSize::new(self.uniform_buf.size as _).unwrap(),
-            )
-            .copy_from_slice(bytemuck::bytes_of(&uniforms));
-        self.staging_belt.finish();
+        belt.write_buffer(
+            encoder,
+            &self.uniform_buf.buffer,
+            0,
+            wgpu::BufferSize::new(self.uniform_buf.size as _).unwrap(),
+        )
+        .copy_from_slice(bytemuck::bytes_of(&uniforms));
     }
 
     pub fn init(
@@ -668,13 +656,10 @@ impl TerrainRenderer {
             multiview_mask: None,
         });
 
-        let staging_belt = wgpu::util::StagingBelt::new(device.clone(), uniform_buf.size);
-
         TerrainRenderer {
             render_bind_group,
             render_pipeline,
             uniform_buf,
-            staging_belt,
         }
     }
 
@@ -703,10 +688,6 @@ impl TerrainRenderer {
         rpass.set_pipeline(&self.render_pipeline);
         rpass.set_bind_group(0, &self.render_bind_group, &[]);
         rpass.draw(0..4_u32, 0..1);
-    }
-
-    pub fn after_queue_submission(&mut self) {
-        self.staging_belt.recall();
     }
 }
 
@@ -752,10 +733,11 @@ mod tests {
         let staging_buffer = gpu::create_readback_buffer(&device, TEST_W, TEST_H, 8);
 
         let mut renderer = TerrainRenderer::init(&device, &game_params, &terrain_buffer);
+        let mut belt = wgpu::util::StagingBelt::new(device.clone(), 256);
 
         let mut encoder =
             device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-        renderer.update_render_state(&game_params, 0, 0, &mut encoder);
+        renderer.update_render_state(&game_params, 0, 0, &mut encoder, &mut belt);
         renderer.render(&target.view, &mut encoder);
         gpu::encode_texture_readback(
             &mut encoder,
@@ -765,8 +747,9 @@ mod tests {
             TEST_H,
             8,
         );
+        belt.finish();
         queue.submit(Some(encoder.finish()));
-        renderer.after_queue_submission();
+        belt.recall();
 
         let raw = gpu::readback_pixels(&device, &staging_buffer);
 

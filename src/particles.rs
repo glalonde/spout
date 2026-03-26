@@ -38,7 +38,6 @@ pub struct Emitter {
     uniform_buffer: SizedBuffer,
     pub particle_buffer: SizedBuffer,
     compute_pipeline: wgpu::ComputePipeline,
-    staging_belt: wgpu::util::StagingBelt,
 }
 
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -225,8 +224,6 @@ impl Emitter {
             ],
         });
 
-        let staging_belt = wgpu::util::StagingBelt::new(device.clone(), uniform_buffer.size);
-
         Emitter {
             params: EmitterParams {
                 num_particles: max_num_particles,
@@ -249,7 +246,6 @@ impl Emitter {
             uniform_buffer,
             particle_buffer,
             compute_pipeline,
-            staging_belt,
         }
     }
 
@@ -278,19 +274,21 @@ impl Emitter {
         }
     }
 
-    pub fn run_compute(&mut self, encoder: &mut wgpu::CommandEncoder) {
+    pub fn run_compute(
+        &mut self,
+        encoder: &mut wgpu::CommandEncoder,
+        belt: &mut wgpu::util::StagingBelt,
+    ) {
         if let Some(emit_params) = &self.emit_params {
             // Update uniforms
             // TODO reference https://toji.github.io/webgpu-best-practices/buffer-uploads.html
-            self.staging_belt
-                .write_buffer(
-                    encoder,
-                    &self.uniform_buffer.buffer,
-                    0,
-                    wgpu::BufferSize::new(self.uniform_buffer.size as _).unwrap(),
-                )
-                .copy_from_slice(bytemuck::bytes_of(emit_params));
-            self.staging_belt.finish();
+            belt.write_buffer(
+                encoder,
+                &self.uniform_buffer.buffer,
+                0,
+                wgpu::BufferSize::new(self.uniform_buffer.size as _).unwrap(),
+            )
+            .copy_from_slice(bytemuck::bytes_of(emit_params));
 
             {
                 let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
@@ -314,10 +312,6 @@ impl Emitter {
             self.emit_params = None;
         }
     }
-
-    pub fn after_queue_submission(&mut self) {
-        self.staging_belt.recall();
-    }
 }
 
 pub struct ParticleSystem {
@@ -326,7 +320,6 @@ pub struct ParticleSystem {
 
     // GPU interface cruft
     uniform_buffer: SizedBuffer,
-    staging_belt: wgpu::util::StagingBelt,
 
     update_particles_work_groups: u32,
     update_particles_pipeline: wgpu::ComputePipeline,
@@ -620,7 +613,6 @@ impl ParticleSystem {
 
         let emitter = Emitter::new(device, game_params);
 
-        let staging_belt = wgpu::util::StagingBelt::new(device.clone(), uniform_buffer.size);
         let renderer = ParticleRenderer::init(device, game_params, &density_buffer, init_encoder);
 
         // Set up all the clear density buffer compute pass.
@@ -641,7 +633,6 @@ impl ParticleSystem {
             emitter,
             uniform_values,
             uniform_buffer,
-            staging_belt,
 
             update_particles_work_groups,
             update_particles_pipeline,
@@ -659,8 +650,9 @@ impl ParticleSystem {
         &mut self,
         level_manager: &crate::level_manager::LevelManager,
         encoder: &mut wgpu::CommandEncoder,
+        belt: &mut wgpu::util::StagingBelt,
     ) {
-        self.emitter.run_compute(encoder);
+        self.emitter.run_compute(encoder, belt);
 
         // Clear density buffer.
         // See https://docs.rs/wgpu/latest/wgpu/struct.CommandEncoder.html#method.clear_buffer
@@ -691,15 +683,13 @@ impl ParticleSystem {
 
         {
             // Update uniforms
-            self.staging_belt
-                .write_buffer(
-                    encoder,
-                    &self.uniform_buffer.buffer,
-                    0,
-                    wgpu::BufferSize::new(self.uniform_buffer.size as _).unwrap(),
-                )
-                .copy_from_slice(bytemuck::bytes_of(&self.uniform_values));
-            self.staging_belt.finish();
+            belt.write_buffer(
+                encoder,
+                &self.uniform_buffer.buffer,
+                0,
+                wgpu::BufferSize::new(self.uniform_buffer.size as _).unwrap(),
+            )
+            .copy_from_slice(bytemuck::bytes_of(&self.uniform_values));
 
             let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                 label: Some("Particle System"),
@@ -718,11 +708,6 @@ impl ParticleSystem {
         encoder: &mut wgpu::CommandEncoder,
     ) {
         self.renderer.render(encoder, game_view_texture);
-    }
-
-    pub fn after_queue_submission(&mut self) {
-        self.emitter.after_queue_submission();
-        self.staging_belt.recall();
     }
 }
 
@@ -953,10 +938,11 @@ mod tests {
             mapped_at_creation: false,
         });
 
+        let mut belt = wgpu::util::StagingBelt::new(device.clone(), 256);
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("Compute test encoder"),
         });
-        emitter.run_compute(&mut encoder);
+        emitter.run_compute(&mut encoder, &mut belt);
         encoder.copy_buffer_to_buffer(
             &emitter.particle_buffer.buffer,
             0,
@@ -964,8 +950,9 @@ mod tests {
             0,
             emitter.particle_buffer.size,
         );
+        belt.finish();
         queue.submit(Some(encoder.finish()));
-        emitter.after_queue_submission();
+        belt.recall();
 
         let buffer_slice = staging_buffer.slice(..);
         buffer_slice.map_async(wgpu::MapMode::Read, |_| {});

@@ -12,7 +12,6 @@ pub struct Render {
     draw_pipeline: wgpu::RenderPipeline,
 
     model: textured_quad::TexturedQuad,
-    staging_belt: wgpu::util::StagingBelt,
 
     // Composite pass: upscaled HDR + bloom → surface (LDR).
     composite_bgl: wgpu::BindGroupLayout,
@@ -338,7 +337,6 @@ impl Render {
             camera_uniform_buf,
             draw_pipeline,
             model: textured_quad,
-            staging_belt: wgpu::util::StagingBelt::new(device.clone(), 0x100),
             composite_bgl,
             composite_pipeline,
             composite_bind_group,
@@ -358,19 +356,21 @@ impl Render {
     }
 
     /// Blit the game view (240×135) into the upscaled HDR texture at surface resolution.
-    pub fn blit(&mut self, upscaled_view: &wgpu::TextureView, encoder: &mut wgpu::CommandEncoder) {
+    pub fn blit(
+        &mut self,
+        upscaled_view: &wgpu::TextureView,
+        encoder: &mut wgpu::CommandEncoder,
+        belt: &mut wgpu::util::StagingBelt,
+    ) {
         {
             let raw_uniforms = self.camera.to_uniform_data();
-            self.staging_belt
-                .write_buffer(
-                    encoder,
-                    &self.camera_uniform_buf,
-                    0,
-                    wgpu::BufferSize::new((raw_uniforms.len() * 4) as wgpu::BufferAddress).unwrap(),
-                )
-                .copy_from_slice(bytemuck::cast_slice(&raw_uniforms));
-
-            self.staging_belt.finish();
+            belt.write_buffer(
+                encoder,
+                &self.camera_uniform_buf,
+                0,
+                wgpu::BufferSize::new((raw_uniforms.len() * 4) as wgpu::BufferAddress).unwrap(),
+            )
+            .copy_from_slice(bytemuck::cast_slice(&raw_uniforms));
         }
 
         {
@@ -429,9 +429,5 @@ impl Render {
         rpass.set_pipeline(&self.composite_pipeline);
         rpass.set_bind_group(0, &self.composite_bind_group, &[]);
         rpass.draw(0..4, 0..1);
-    }
-
-    pub fn after_queue_submission(&mut self) {
-        self.staging_belt.recall();
     }
 }

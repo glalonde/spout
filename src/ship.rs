@@ -83,7 +83,6 @@ pub struct ShipRenderer {
     render_bind_group: wgpu::BindGroup,
     render_pipeline: wgpu::RenderPipeline,
     outline_pipeline: wgpu::RenderPipeline,
-    staging_belt: wgpu::util::StagingBelt,
 }
 
 impl ShipRenderer {
@@ -199,13 +198,11 @@ impl ShipRenderer {
             multiview_mask: None,
         });
 
-        let staging_belt = wgpu::util::StagingBelt::new(device.clone(), uniform_buffer.size);
         ShipRenderer {
             uniform_buffer,
             render_bind_group,
             render_pipeline,
             outline_pipeline,
-            staging_belt,
         }
     }
 
@@ -216,6 +213,7 @@ impl ShipRenderer {
         viewport_offset: i32,
         output_texture_view: &wgpu::TextureView,
         encoder: &mut wgpu::CommandEncoder,
+        belt: &mut wgpu::util::StagingBelt,
     ) {
         // Update uniforms
         let uniform_values = ShipRendererUniforms {
@@ -225,15 +223,13 @@ impl ShipRenderer {
             viewport_height: game_params.viewport_height,
             viewport_offset,
         };
-        self.staging_belt
-            .write_buffer(
-                encoder,
-                &self.uniform_buffer.buffer,
-                0,
-                wgpu::BufferSize::new(self.uniform_buffer.size as _).unwrap(),
-            )
-            .copy_from_slice(bytemuck::bytes_of(&uniform_values));
-        self.staging_belt.finish();
+        belt.write_buffer(
+            encoder,
+            &self.uniform_buffer.buffer,
+            0,
+            wgpu::BufferSize::new(self.uniform_buffer.size as _).unwrap(),
+        )
+        .copy_from_slice(bytemuck::bytes_of(&uniform_values));
 
         let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: None,
@@ -257,10 +253,6 @@ impl ShipRenderer {
 
         rpass.set_pipeline(&self.outline_pipeline);
         rpass.draw(0..5_u32, 0..1);
-    }
-
-    pub fn after_queue_submission(&mut self) {
-        self.staging_belt.recall();
     }
 }
 
@@ -297,11 +289,19 @@ mod tests {
         let staging_buffer = gpu::create_readback_buffer(&device, TEST_W, TEST_H, 8);
 
         let mut renderer = ShipRenderer::init(&device);
+        let mut belt = wgpu::util::StagingBelt::new(device.clone(), 256);
 
         let mut encoder =
             device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
         gpu::encode_clear_texture(&mut encoder, &target.view);
-        renderer.render(&state, &game_params, 0, &target.view, &mut encoder);
+        renderer.render(
+            &state,
+            &game_params,
+            0,
+            &target.view,
+            &mut encoder,
+            &mut belt,
+        );
         gpu::encode_texture_readback(
             &mut encoder,
             &target.texture,
@@ -310,8 +310,9 @@ mod tests {
             TEST_H,
             8,
         );
+        belt.finish();
         queue.submit(Some(encoder.finish()));
-        renderer.after_queue_submission();
+        belt.recall();
 
         let raw = gpu::readback_pixels(&device, &staging_buffer);
         let rgba = gpu::rgba16f_to_rgba8(&raw, TEST_W, TEST_H);
