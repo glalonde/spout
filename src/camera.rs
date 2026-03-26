@@ -39,7 +39,7 @@ pub struct CameraState {
     pub theta: f32,                            // Latitude.
     pub radius: f32,                           // Radial distance.
     pub ortho: Option<OrthoState>,             // Orthographic projection.
-    pub perspective: Option<PerspectiveState>, // Orthographic projection.
+    pub perspective: Option<PerspectiveState>, // Perspective projection.
 }
 
 impl Default for CameraState {
