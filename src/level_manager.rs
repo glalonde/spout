@@ -73,7 +73,8 @@ impl WIPRectangleLevel {
     }
 }
 
-pub fn make_stripe_level(width: u32, height: u32) -> Vec<i32> {
+#[cfg(test)]
+fn make_stripe_level(width: u32, height: u32) -> Vec<i32> {
     let mut data: Vec<i32> = vec![0; (width * height) as usize];
     let mut i = 0;
     for _ in 0..height {
