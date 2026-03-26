@@ -26,10 +26,26 @@ const TRACKS: &[&[u8]] = &[
     include_bytes!("../assets/music/z_bviinaaa.mod"),
 ];
 
+/// Clock-based seed that varies between program launches on all platforms.
+fn time_seed() -> u64 {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            // Safe: system clock is always after the epoch on any real OS.
+            .expect("system clock before UNIX epoch")
+            .as_nanos() as u64
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        js_sys::Date::now() as u64
+    }
+}
+
 /// Returns a randomly shuffled sequence of track indices covering the whole playlist.
 fn shuffled_playlist() -> Vec<usize> {
     let mut indices: Vec<usize> = (0..TRACKS.len()).collect();
-    fastrand::Rng::new().shuffle(&mut indices);
+    fastrand::Rng::with_seed(time_seed()).shuffle(&mut indices);
     indices
 }
 
