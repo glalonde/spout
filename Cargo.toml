@@ -16,7 +16,7 @@ default = []
 winit = "0.30"
 log = "0.4"
 pollster = "0.3"
-scrub_log = "0.2"
+env_logger = "0.11"
 bytemuck = { version = "1.15", features = ["derive"] }
 async-executor = "1.0"
 glam = "0.29"
