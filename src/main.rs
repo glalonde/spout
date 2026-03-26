@@ -39,6 +39,7 @@ struct Spout {
     particle_system: particles::ParticleSystem,
     ship_renderer: ship::ShipRenderer,
     audio: audio::AudioPlayer,
+    staging_belt: wgpu::util::StagingBelt,
 }
 
 impl Spout {
@@ -224,8 +225,19 @@ impl framework::Example for Spout {
         let mut init_encoder =
             device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
 
-        let level_manager =
-            level_manager::LevelManager::init(device, &game_params, 0, &mut init_encoder);
+        // Chunk size covers one terrain tile upload; the belt grows as needed.
+        let mut staging_belt = wgpu::util::StagingBelt::new(
+            device.clone(),
+            (game_params.level_width * game_params.level_height * 4) as u64,
+        );
+
+        let level_manager = level_manager::LevelManager::init(
+            device,
+            &game_params,
+            0,
+            &mut init_encoder,
+            &mut staging_belt,
+        );
 
         let renderer = render::Render::init(
             config,
@@ -243,7 +255,9 @@ impl framework::Example for Spout {
 
         let ship_renderer = ship::ShipRenderer::init(device);
 
+        staging_belt.finish();
         queue.submit(Some(init_encoder.finish()));
+        staging_belt.recall();
 
         let audio = if game_params.music_starts_on {
             audio::AudioPlayer::new()
@@ -278,6 +292,7 @@ impl framework::Example for Spout {
             particle_system,
             ship_renderer,
             audio,
+            staging_belt,
         }
     }
 
@@ -362,12 +377,13 @@ impl framework::Example for Spout {
             self.state.viewport_offset,
             &mut encoder,
             &self.game_params,
+            &mut self.staging_belt,
         );
 
         // Run compute pipeline(s).
         self.level_manager.compose_tiles(&mut encoder);
         self.particle_system
-            .run_compute(&self.level_manager, &mut encoder);
+            .run_compute(&self.level_manager, &mut encoder, &mut self.staging_belt);
 
         // Render terrain.
         self.level_manager
@@ -386,11 +402,13 @@ impl framework::Example for Spout {
                 self.state.viewport_offset,
                 &self.game_view_texture,
                 &mut encoder,
+                &mut self.staging_belt,
             );
         }
 
         // Blit game view (240×135) → upscaled HDR (surface resolution).
-        self.renderer.blit(&self.upscaled_view, &mut encoder);
+        self.renderer
+            .blit(&self.upscaled_view, &mut encoder, &mut self.staging_belt);
 
         // Run bloom post-process at full surface resolution (threshold + blur).
         self.bloom.render(&mut encoder);
@@ -399,11 +417,9 @@ impl framework::Example for Spout {
         self.renderer.render(view, &mut encoder);
         self.level_manager.decompose_tiles(&mut encoder);
 
+        self.staging_belt.finish();
         queue.submit(Some(encoder.finish()));
-        self.ship_renderer.after_queue_submission();
-        self.particle_system.after_queue_submission();
-        self.renderer.after_queue_submission();
-        self.level_manager.after_queue_submission();
+        self.staging_belt.recall();
 
         {
             // After rendering, do some "async" work:
