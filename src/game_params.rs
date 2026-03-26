@@ -179,12 +179,57 @@ mod tests {
             visual_params: VisualParams::default(),
         };
         let serialized = toml::to_string(&params).unwrap();
-        println!("serialized = {}", serialized);
         let deserialized: GameParams = toml::from_str(&serialized).unwrap();
-        println!("deserialized = {:?}", deserialized);
         assert_eq!(params.viewport_width, deserialized.viewport_width);
         assert_eq!(params.viewport_height, deserialized.viewport_height);
         assert_eq!(params.level_width, deserialized.level_width);
         assert_eq!(params.level_height, deserialized.level_height);
+    }
+
+    #[test]
+    fn embedded_config_parses() {
+        let params = get_game_config_from_default_file();
+        assert!(params.viewport_width > 0);
+        assert!(params.viewport_height > 0);
+        assert!(params.fps > 0.0);
+    }
+
+    #[test]
+    fn default_has_sane_values() {
+        let d = GameParams::default();
+        assert!(d.viewport_width > 0);
+        assert!(d.viewport_height > 0);
+        assert!(d.level_width >= d.viewport_width);
+        assert!(d.level_height > d.viewport_height);
+        assert!(d.fps > 0.0);
+    }
+
+    #[test]
+    fn from_str_with_missing_optional_sections() {
+        let minimal = r#"
+            viewport_width = 100
+            viewport_height = 50
+            level_width = 100
+            level_height = 200
+            fps = 30.0
+            music_starts_on = true
+            render_ship = false
+        "#;
+        let params: GameParams = minimal.parse().unwrap();
+        assert_eq!(params.viewport_width, 100);
+        assert_eq!(
+            params.particle_system_params.emission_rate,
+            ParticleSystemParams::default().emission_rate
+        );
+        assert_eq!(
+            params.ship_params.acceleration,
+            ShipParams::default().acceleration
+        );
+    }
+
+    #[test]
+    fn from_str_invalid_toml_returns_error() {
+        let bad = "this is not valid toml {{{{";
+        assert!(bad.parse::<GameParams>().is_err());
     }
 }

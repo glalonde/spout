@@ -84,3 +84,21 @@ pub fn create_color_map(
 
     texture
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn all_four_color_maps_accessible() {
+        for i in 0..4 {
+            let _cm = get_color_map_from_index(i);
+        }
+    }
+
+    #[test]
+    #[should_panic]
+    fn out_of_bounds_panics() {
+        let _cm = get_color_map_from_index(4);
+    }
+}
