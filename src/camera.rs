@@ -235,24 +235,6 @@ mod tests {
         (a - b).abs() < EPSILON
     }
 
-    fn vec_len(v: cgmath::Vector3<f32>) -> f32 {
-        (v.x * v.x + v.y * v.y + v.z * v.z).sqrt()
-    }
-
-    fn vec_dot(a: cgmath::Vector3<f32>, b: cgmath::Vector3<f32>) -> f32 {
-        a.x * b.x + a.y * b.y + a.z * b.z
-    }
-
-    // pos() relative to center — same as the position vector from center to camera.
-    fn pos_vec(state: &CameraState) -> cgmath::Vector3<f32> {
-        let p = state.pos();
-        cgmath::Vector3::new(
-            p.x - state.center.x,
-            p.y - state.center.y,
-            p.z - state.center.z,
-        )
-    }
-
     #[test]
     fn pos_at_north_pole() {
         // theta=0 is the "north pole" in spherical coords: camera sits directly above center on +Z axis.
@@ -260,7 +242,7 @@ mod tests {
             phi: 0.0,
             theta: 0.0,
             radius: 100.0,
-            center: cgmath::Point3::new(0.0, 0.0, 0.0),
+            center: glam::Vec3::ZERO,
             ortho: None,
             perspective: None,
         };
@@ -278,7 +260,7 @@ mod tests {
             phi: 0.0,
             theta: PI / 2.0,
             radius: 100.0,
-            center: cgmath::Point3::new(0.0, 0.0, 0.0),
+            center: glam::Vec3::ZERO,
             ortho: None,
             perspective: None,
         };
@@ -301,11 +283,11 @@ mod tests {
                 phi,
                 theta,
                 radius: 250.0,
-                center: cgmath::Point3::new(10.0, -5.0, 0.0),
+                center: glam::Vec3::new(10.0, -5.0, 0.0),
                 ortho: None,
                 perspective: None,
             };
-            let len = vec_len(state.pos() - cgmath::Point3::new(10.0, -5.0, 0.0));
+            let len = (state.pos() - state.center).length();
             // Use relative tolerance: trig at f32 precision accumulates ~1e-6 relative error.
             assert!(
                 (len - 250.0).abs() < 250.0 * 1e-5,
@@ -327,7 +309,7 @@ mod tests {
                 theta,
                 ..Default::default()
             };
-            let len = vec_len(state.up());
+            let len = state.up().length();
             assert!(approx_eq(len, 1.0), "phi={phi} theta={theta}: |up|={len}");
         }
     }
@@ -345,14 +327,13 @@ mod tests {
                 phi,
                 theta,
                 radius: 100.0,
-                center: cgmath::Point3::new(0.0, 0.0, 0.0),
+                center: glam::Vec3::ZERO,
                 ortho: None,
                 perspective: None,
             };
-            // Look direction = center - pos (normalized)
-            let look = -pos_vec(&state);
-            let up = state.up();
-            let dot = vec_dot(look, up);
+            // Look direction = center - pos
+            let look = state.center - state.pos();
+            let dot = look.dot(state.up());
             assert!(
                 approx_eq(dot, 0.0),
                 "phi={phi} theta={theta}: look·up={dot} (expected ~0)"

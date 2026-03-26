@@ -1,14 +1,12 @@
 mod audio;
 #[path = "../examples/framework.rs"]
 mod framework;
-#[cfg(target_arch = "wasm32")]
-mod mobile_input;
 
 use web_time::Instant;
 
 use spout::bloom;
 use spout::game_params;
-use spout::input::InputState;
+use spout::input::{InputCollector, InputState};
 use spout::level_manager;
 use spout::particles;
 use spout::render;
@@ -19,10 +17,6 @@ const LEVEL_BUDGET: std::time::Duration = std::time::Duration::from_nanos(3_333_
 
 #[derive(Debug, Default)]
 struct GameState {
-    /// Pure keyboard state — set directly by key press/release events.
-    keyboard_input: InputState,
-    /// Effective input for the current frame: keyboard_input | mobile (WASM).
-    /// Recomputed from scratch each frame so mobile releases don't latch.
     input_state: InputState,
     prev_input_state: InputState,
     ship_state: ship::ShipState,
@@ -34,6 +28,7 @@ struct GameState {
 struct Spout {
     game_params: game_params::GameParams,
     state: GameState,
+    collector: InputCollector,
     level_manager: level_manager::LevelManager,
     game_time: std::time::Duration,
     iteration_start: Instant,
@@ -61,7 +56,7 @@ impl Spout {
     }
 
     fn update_paused(&mut self) {
-        if self.state.keyboard_input.pause && !self.state.prev_input_state.pause {
+        if self.state.input_state.pause && !self.state.prev_input_state.pause {
             // new pause signal.
             self.state.paused = !self.state.paused;
             if self.state.paused {
@@ -74,20 +69,14 @@ impl Spout {
 
     fn update_ship(&mut self, dt: f32) {
         let input_state = self.state.input_state;
-        let ship_state = &mut self.state.ship_state;
-
-        // Update "ship"
-        let rotation: ship::RotationDirection = match (input_state.left, input_state.right) {
-            (true, false) => ship::RotationDirection::CCW,
-            (false, true) => ship::RotationDirection::CW,
-            _ => ship::RotationDirection::None,
-        };
-        ship_state.update(dt, input_state.forward, rotation);
+        self.state
+            .ship_state
+            .update(dt, input_state.thrust, input_state.rotate);
     }
 
     fn update_particle_system(&mut self, dt: f32, prev_ship: &ship::ShipState) {
         let current_ship = &self.state.ship_state;
-        let maybe_motion = if self.state.input_state.forward {
+        let maybe_motion = if self.state.input_state.thrust > 0.0 {
             let start_emitter = prev_ship.get_emitter_state();
             let end_emitter = current_ship.get_emitter_state();
             Some(particles::EmitterMotion {
@@ -117,18 +106,12 @@ impl Spout {
 
     /// Mostly responsible for updating superficial state based on new inputs.
     fn update_state(&mut self) {
-        // Rebuild effective input from the clean keyboard state so that a
-        // mobile release never latches. OR-merge mobile on top so both
-        // input sources can coexist.
-        self.state.input_state = self.state.keyboard_input;
-        #[cfg(target_arch = "wasm32")]
-        {
-            self.state.input_state.forward |= mobile_input::get_forward();
-            self.state.input_state.left |= mobile_input::get_left();
-            self.state.input_state.right |= mobile_input::get_right();
-        }
-
         self.audio.poll();
+
+        // Snapshot all input sources into logical InputState for this frame.
+        self.state.prev_input_state = self.state.input_state;
+        self.state.input_state = self.collector.current_state();
+
         self.update_paused();
 
         self.level_manager
@@ -151,9 +134,6 @@ impl Spout {
             &self.state.input_state,
             &self.state.prev_input_state,
         );
-
-        // Finished processing input, set previous input state.
-        self.state.prev_input_state = self.state.input_state;
     }
 
     fn select_fullscreen_video_mode(
@@ -271,9 +251,23 @@ impl framework::Example for Spout {
             audio::AudioPlayer::disabled()
         };
 
+        let mut collector = InputCollector::default();
+
+        #[cfg(not(target_arch = "wasm32"))]
+        collector.set_surface_width(config.width as f32);
+
+        #[cfg(target_arch = "wasm32")]
+        {
+            use winit::platform::web::WindowExtWebSys;
+            if let Some(canvas) = window.canvas() {
+                collector.init_touch(canvas);
+            }
+        }
+
         Spout {
             game_params,
             state: game_state,
+            collector,
             level_manager,
             game_time: std::time::Duration::default(),
             iteration_start: Instant::now(),
@@ -288,6 +282,10 @@ impl framework::Example for Spout {
     }
 
     fn update(&mut self, event: winit::event::WindowEvent) {
+        self.collector.handle_winit_event(&event);
+
+        // One-shot audio actions are handled here directly since they are
+        // immediate commands, not held state.
         use winit::keyboard::{KeyCode, PhysicalKey};
         if let winit::event::WindowEvent::KeyboardInput {
             event:
@@ -299,42 +297,12 @@ impl framework::Example for Spout {
             ..
         } = event
         {
-            let pressed = state == winit::event::ElementState::Pressed;
-            match key {
-                // Ship motion bindings
-                KeyCode::KeyW => self.state.keyboard_input.forward = pressed,
-                KeyCode::KeyA => self.state.keyboard_input.left = pressed,
-                KeyCode::KeyP => self.state.keyboard_input.pause = pressed,
-                KeyCode::KeyD => self.state.keyboard_input.right = pressed,
-
-                // Camera bindings
-                KeyCode::KeyU => self.state.keyboard_input.cam_in = pressed,
-                KeyCode::KeyO => self.state.keyboard_input.cam_out = pressed,
-                KeyCode::KeyI => self.state.keyboard_input.cam_up = pressed,
-                KeyCode::KeyK => self.state.keyboard_input.cam_down = pressed,
-                KeyCode::KeyJ => self.state.keyboard_input.cam_left = pressed,
-                KeyCode::KeyL => self.state.keyboard_input.cam_right = pressed,
-                KeyCode::KeyN => self.state.keyboard_input.cam_perspective = pressed,
-                KeyCode::KeyM => self.state.keyboard_input.cam_reset = pressed,
-
-                // Full screen
-                KeyCode::KeyF => self.state.keyboard_input.fullscreen = pressed,
-
-                // Skip to next music track (on key-down only)
-                KeyCode::KeyT => {
-                    if pressed {
-                        self.audio.next_track();
-                    }
+            if state == winit::event::ElementState::Pressed {
+                match key {
+                    KeyCode::KeyT => self.audio.next_track(),
+                    KeyCode::KeyY => self.audio.toggle(),
+                    _ => {}
                 }
-
-                // Toggle music on/off (on key-down only)
-                KeyCode::KeyY => {
-                    if pressed {
-                        self.audio.toggle();
-                    }
-                }
-
-                _ => {}
             }
         }
     }
@@ -345,6 +313,9 @@ impl framework::Example for Spout {
         device: &wgpu::Device,
         _queue: &wgpu::Queue,
     ) {
+        #[cfg(not(target_arch = "wasm32"))]
+        self.collector.set_surface_width(config.width as f32);
+
         let new_upscaled = make_texture(device, config.width, config.height);
         self.bloom = bloom::Bloom::new(
             device,
@@ -367,7 +338,7 @@ impl framework::Example for Spout {
         window: &winit::window::Window,
     ) {
         {
-            if !self.state.prev_input_state.fullscreen && self.state.keyboard_input.fullscreen {
+            if !self.state.prev_input_state.fullscreen && self.state.input_state.fullscreen {
                 if window.fullscreen().is_some() {
                     // Set unfullscreen.
                     log::info!("Setting windowed mode.");
