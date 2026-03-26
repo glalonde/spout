@@ -156,6 +156,9 @@ mod native {
         /// Set by the cpal callback when playback reaches the end of the buffer.
         finished: Arc<AtomicBool>,
         pending: Option<mpsc::Receiver<Vec<f32>>>,
+        /// Old stream kept alive until the next frame so its Drop doesn't
+        /// block the frame where we start the new track.
+        _retiring: Option<cpal::Stream>,
     }
 
     impl Backend for NativeBackend {
@@ -164,6 +167,7 @@ mod native {
                 _stream: None,
                 finished: Arc::new(AtomicBool::new(false)),
                 pending: None,
+                _retiring: None,
             }
         }
 
@@ -183,11 +187,16 @@ mod native {
         }
 
         fn stop_current(&mut self) {
-            self._stream = None;
+            // Move to _retiring instead of dropping immediately — cpal stream
+            // Drop can block waiting for the audio callback to finish.
+            self._retiring = self._stream.take();
             self.finished.store(false, Ordering::Relaxed);
         }
 
         fn poll(&mut self, playing: bool) {
+            // Drop any retired stream from the previous frame.
+            self._retiring = None;
+
             if let Some(rx) = self.pending.take() {
                 match rx.try_recv() {
                     Ok(samples) => {
