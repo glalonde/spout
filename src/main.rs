@@ -600,6 +600,12 @@ impl framework::Example for Spout {
         #[cfg(feature = "profiling")]
         self.gpu_profiler.end_frame().unwrap(); // safe: begin/end always paired
 
+        // Finalize the current puffin frame (CPU scopes) before injecting GPU
+        // results. GPU results arrive 1-2 frames late and go into their own
+        // "GPU" thread in the *next* puffin frame.
+        #[cfg(feature = "profiling")]
+        puffin::GlobalProfiler::lock().new_frame();
+
         #[cfg(feature = "profiling")]
         if let Some(results) = self
             .gpu_profiler
@@ -610,9 +616,6 @@ impl framework::Example for Spout {
                 &results,
             );
         }
-
-        #[cfg(feature = "profiling")]
-        puffin::GlobalProfiler::lock().new_frame();
 
         {
             #[cfg(feature = "profiling")]
