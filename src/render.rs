@@ -298,9 +298,15 @@ impl Render {
             immediate_size: 0,
         });
 
+        // When the surface format is non-sRGB (e.g. WASM WebGPU returns
+        // Rgba8Unorm), the shader must apply the linear→sRGB transfer
+        // function manually. On native with Bgra8UnormSrgb the hardware
+        // handles it.
+        let apply_srgb = if config.format.is_srgb() { 0.0 } else { 1.0 };
         let composite_constants = [
             ("bloom_strength", visual_params.bloom_strength as f64),
             ("crt_strength", visual_params.crt_strength as f64),
+            ("apply_srgb", apply_srgb),
         ];
 
         let composite_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {

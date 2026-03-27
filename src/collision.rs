@@ -4,6 +4,9 @@
 //! previous to current position, checking the GPU terrain buffer. Returns
 //! a hit flag and the axis-aligned contact normal for bouncing.
 
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+
 use wgpu::util::DeviceExt;
 
 use crate::buffer_util::SizedBuffer;
@@ -40,8 +43,12 @@ pub struct CollisionDetector {
     result_buffer: wgpu::Buffer,
     /// CPU-readable staging buffer for async readback.
     staging_buffer: wgpu::Buffer,
-    /// Whether a readback is in flight.
+    /// Whether a readback copy has been queued (dispatch called).
     pending_readback: bool,
+    /// Whether `map_async` has been initiated for the current readback.
+    mapping_started: bool,
+    /// Set to `true` by the `map_async` callback when the mapping completes.
+    map_ready: Arc<AtomicBool>,
     /// Last collision result read from the GPU.
     pub result: CollisionResult,
 }
@@ -140,6 +147,8 @@ impl CollisionDetector {
             result_buffer,
             staging_buffer,
             pending_readback: false,
+            mapping_started: false,
+            map_ready: Arc::new(AtomicBool::new(false)),
             result: CollisionResult::default(),
         }
     }
@@ -211,18 +220,38 @@ impl CollisionDetector {
         self.pending_readback = true;
     }
 
+    /// Initiate async mapping of the staging buffer. Call after `queue.submit()`
+    /// so the GPU copy has been submitted. On native, the callback fires during
+    /// the next `device.poll()`; on WASM it fires on the next microtask.
+    pub fn start_readback(&mut self) {
+        if !self.pending_readback || self.mapping_started {
+            return;
+        }
+        let slice = self.staging_buffer.slice(..);
+        let ready = Arc::clone(&self.map_ready);
+        ready.store(false, Ordering::Release);
+        slice.map_async(wgpu::MapMode::Read, move |_| {
+            ready.store(true, Ordering::Release);
+        });
+        self.mapping_started = true;
+    }
+
     /// Poll for the async readback result. Updates `self.result`.
+    /// Returns immediately if the mapping hasn't completed yet (WASM-safe).
     pub fn poll_result(&mut self, device: &wgpu::Device) {
-        if !self.pending_readback {
+        if !self.pending_readback || !self.mapping_started {
             return;
         }
 
-        let slice = self.staging_buffer.slice(..);
-        slice.map_async(wgpu::MapMode::Read, |_| {});
-        // safe: wait_indefinitely always resolves after GPU work completes
-        device.poll(wgpu::PollType::wait_indefinitely()).unwrap();
+        // Drive the GPU to process pending callbacks.
+        // safe: poll always returns on both native and WASM
+        device.poll(wgpu::PollType::wait_indefinitely()).ok();
 
-        let data = slice.get_mapped_range();
+        if !self.map_ready.load(Ordering::Acquire) {
+            return; // Not ready yet — will check again next frame.
+        }
+
+        let data = self.staging_buffer.slice(..).get_mapped_range();
         let values: &[u32] = bytemuck::cast_slice(&data[..12]);
         self.result = CollisionResult {
             hit: values[0] != 0,
@@ -232,5 +261,84 @@ impl CollisionDetector {
         self.staging_buffer.unmap();
 
         self.pending_readback = false;
+        self.mapping_started = false;
+    }
+}
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod tests {
+    use super::*;
+    use crate::gpu_test_utils as gpu;
+
+    /// Run the full dispatch → submit → start_readback → poll_result cycle.
+    /// This catches the WASM bug where poll_result tried to read the staging
+    /// buffer before the map_async callback had fired.
+    #[test]
+    fn test_collision_readback_lifecycle() {
+        let Some((device, queue)) = gpu::try_create_headless_device() else {
+            eprintln!("No GPU adapter available — skipping test_collision_readback_lifecycle");
+            return;
+        };
+
+        let mut detector = CollisionDetector::init(&device);
+
+        // Create a minimal empty terrain buffer (ship in empty space = no collision).
+        let terrain_width = 64u32;
+        let terrain_height = 64u32;
+        let terrain_data = vec![0i32; (terrain_width * terrain_height) as usize];
+        let terrain_buffer = crate::buffer_util::SizedBuffer {
+            buffer: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Test terrain"),
+                contents: bytemuck::cast_slice(&terrain_data),
+                usage: wgpu::BufferUsages::STORAGE,
+            }),
+            size: (terrain_data.len() * 4) as u64,
+        };
+        let terrain_tile = crate::level_manager::TerrainTile {
+            shape: crate::level_manager::Interval {
+                start: 0,
+                end: terrain_height as i32,
+            },
+            buffer: terrain_buffer,
+        };
+
+        let ship = crate::ship::ShipState {
+            position: [32.0, 32.0],
+            ..Default::default()
+        };
+
+        // Phase 1: dispatch (queues compute + copy).
+        let mut belt = wgpu::util::StagingBelt::new(device.clone(), 256);
+        let mut encoder =
+            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+        detector.dispatch(
+            &device,
+            &mut encoder,
+            &mut belt,
+            &ship,
+            &ship,
+            &terrain_tile,
+            terrain_width,
+        );
+
+        // Phase 2: submit GPU work.
+        belt.finish();
+        queue.submit(Some(encoder.finish()));
+        belt.recall();
+
+        // Phase 3: start_readback (initiates map_async with callback).
+        detector.start_readback();
+        assert!(detector.mapping_started);
+
+        // Phase 4: poll_result (waits for callback, reads data).
+        // This is the step that panicked on WASM before the fix.
+        detector.poll_result(&device);
+        assert!(
+            !detector.pending_readback,
+            "Readback should have completed"
+        );
+
+        // Ship in empty terrain → no collision.
+        assert!(!detector.result.hit, "No collision expected in empty terrain");
     }
 }

@@ -743,6 +743,11 @@ impl framework::Example for Spout {
         queue.submit(Some(encoder.finish()));
         self.staging_belt.recall();
 
+        // Initiate async readback of collision result now that GPU work is submitted.
+        // On native the callback fires during the next poll(); on WASM it fires
+        // asynchronously before the next frame.
+        self.collision_detector.start_readback();
+
         {
             // After rendering, do some "async" work:
             let deadline = self.iteration_start + LEVEL_BUDGET;
