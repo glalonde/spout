@@ -25,10 +25,22 @@ pub struct BackgroundRenderer {
 
 impl BackgroundRenderer {
     pub fn init(device: &wgpu::Device, queue: &wgpu::Queue) -> Self {
-        // Decode the tile image.
-        let img = image::load_from_memory(TILE_IMAGE)
+        // Decode the tile image and remap the red grid lines (238,67,49) to
+        // a blue matching the ship hull color.
+        let mut img = image::load_from_memory(TILE_IMAGE)
             .expect("failed to decode background tile")
             .to_rgba8();
+        for pixel in img.pixels_mut() {
+            let [r, g, b, _] = pixel.0;
+            // Detect the red grid color (238,67,49) with some tolerance.
+            if r > 200 && g < 100 && b < 80 {
+                // Remap to ship-hull blue, scaled by the red intensity.
+                let t = r as f32 / 238.0;
+                pixel.0[0] = (90.0 * t) as u8;
+                pixel.0[1] = (140.0 * t) as u8;
+                pixel.0[2] = (220.0 * t) as u8;
+            }
+        }
         let (tile_w, tile_h) = img.dimensions();
 
         let tile_texture = device.create_texture_with_data(

@@ -17,7 +17,7 @@ elasticity = 0.3
 
 [ship_params]
 acceleration = 100.0
-rotation_rate = 10.0
+rotation_rate = 7.5
 max_speed = 400.0
 
 [level_params]
