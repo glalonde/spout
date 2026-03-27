@@ -20,7 +20,7 @@ impl Default for ShipState {
         ShipState {
             position: [0.0, 0.0],
             velocity: [0.0, 0.0],
-            orientation: 0.0,
+            orientation: std::f32::consts::FRAC_PI_2, // facing up
             acceleration: 10.0,
             rotation_rate: 15.0,
             max_speed: 10000.0,
