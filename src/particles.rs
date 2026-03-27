@@ -103,6 +103,8 @@ pub struct EmitParams {
 
     pub motion: EmitterMotion,
     pub nozzle: NozzleParams,
+    pub num_particles: u32,
+    pub _pad: u32,
 }
 
 impl Default for EmitParams {
@@ -114,6 +116,8 @@ impl Default for EmitParams {
             dt: 0.0,
             motion: EmitterMotion::default(),
             nozzle: NozzleParams::default(),
+            num_particles: 0,
+            _pad: 0,
         }
     }
 }
@@ -270,6 +274,8 @@ impl Emitter {
                 dt,
                 motion: emitter_motion,
                 nozzle: self.params.nozzle,
+                num_particles: self.params.num_particles,
+                _pad: 0,
             });
 
             self.write_index = (self.write_index + num_emitted) % self.params.num_particles;
@@ -352,6 +358,8 @@ struct ParticleSystemUniforms {
     damage_rate: f32,
     gravity: f32,
     elasticity: f32,
+    max_particle_life: f32,
+    num_particles: u32,
 }
 impl Default for ParticleSystemUniforms {
     fn default() -> Self {
@@ -368,6 +376,8 @@ impl Default for ParticleSystemUniforms {
             damage_rate: 0.0,
             gravity: 0.0,
             elasticity: 0.0,
+            max_particle_life: 1.0,
+            num_particles: 0,
         }
     }
 }
@@ -602,6 +612,10 @@ impl ParticleSystem {
             damage_rate: game_params.particle_system_params.damage_rate,
             gravity: game_params.particle_system_params.gravity,
             elasticity: game_params.particle_system_params.elasticity,
+            max_particle_life: game_params.particle_system_params.max_particle_life,
+            num_particles: (game_params.particle_system_params.emission_rate
+                * game_params.particle_system_params.max_particle_life)
+                .ceil() as u32,
         };
         let uniform_buffer = crate::buffer_util::make_uniform_buffer::<ParticleSystemUniforms>(
             device,
@@ -722,6 +736,8 @@ impl ParticleSystem {
 struct ParticleRendererUniforms {
     pub width: u32,
     pub height: u32,
+    pub density_scale: f32,
+    pub density_exponent: f32,
 }
 
 struct ParticleRenderer {
@@ -751,6 +767,8 @@ impl ParticleRenderer {
         let fragment_uniforms = ParticleRendererUniforms {
             width: game_params.viewport_width,
             height: game_params.viewport_height,
+            density_scale: game_params.visual_params.density_scale,
+            density_exponent: game_params.visual_params.density_exponent,
         };
         let uniform_buffer = crate::buffer_util::make_uniform_buffer::<ParticleRendererUniforms>(
             device,

@@ -20,6 +20,8 @@ struct UniformData {
     damage_rate: f32,
     gravity: f32,
     elasticity: f32,
+    max_particle_life: f32,
+    num_particles: u32,
 };
 @group(0) @binding(0)
 var<uniform> uniforms: UniformData;
@@ -36,8 +38,11 @@ var<storage, read_write> terrain_buffer: array<atomic<i32>>;
 @group(0) @binding(3)
 var<storage, read_write> density_buffer: array<atomic<u32>>;
 
-// Takes cell in the global frame.
-fn increment_cell(global_cell: vec2<i32>) {
+// Takes cell in the global frame. heat is in [0, 1] where 1 = freshly emitted.
+// We scale by 256 so the u32 density buffer can accumulate fractional heat values.
+const DENSITY_HEAT_SCALE: u32 = 256u;
+
+fn increment_cell(global_cell: vec2<i32>, heat: f32) {
   var cell = global_cell;
   cell.y = cell.y - i32(uniforms.viewport_offset);
   if (cell.x < 0 || cell.x >= i32(uniforms.viewport_width) || cell.y < 0 || cell.y >= i32(uniforms.viewport_height)) {
@@ -45,9 +50,8 @@ fn increment_cell(global_cell: vec2<i32>) {
   }
   let index = cell.y * i32(uniforms.viewport_width) + cell.x;
 
-  // Unfortunately, can't currently use non atomic ops here... 
-  // https://github.com/gpuweb/gpuweb/issues/2377
-  atomicAdd(&density_buffer[index], 1u);
+  let contribution = max(u32(heat * f32(DENSITY_HEAT_SCALE)), 1u);
+  atomicAdd(&density_buffer[index], contribution);
 }
 
 fn global_to_terrain_buffer(cell: vec2<i32>) -> vec2<i32> {
@@ -93,8 +97,13 @@ const PI: f32 = 3.14159265358979323846;
 
 @compute @workgroup_size({{ particle_workgroup_size }})
 fn main(@builtin(global_invocation_id) global_id: vec3<u32>, @builtin(num_workgroups) num_workgroups: vec3<u32>) {
-  let total_particles = num_workgroups[0] * {{ particle_workgroup_size }}u;
   let gid = global_id[0];
+
+  // Guard against dispatch overshoot: workgroup count rounds up, so the last
+  // workgroup may have threads beyond the actual particle buffer.
+  if (gid >= uniforms.num_particles) {
+    return;
+  }
 
   let particle = &(particle_buffer[gid]);
   if ((*particle).ttl <= 0.0) {
@@ -179,6 +188,8 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>, @builtin(num_workgr
   (*particle).velocity = vel_out;
   (*particle).ttl = (*particle).ttl - dt;
 
-  // Draw particle to density buffer.
-  increment_cell(vec2<i32>(global_output_pos));
+  // Draw particle to density buffer. Heat = ttl/max_life: new particles are
+  // bright (hot), old particles are dim (cool).
+  let heat = clamp((*particle).ttl / uniforms.max_particle_life, 0.0, 1.0);
+  increment_cell(vec2<i32>(global_output_pos), heat);
 }

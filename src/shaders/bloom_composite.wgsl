@@ -54,7 +54,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let centre_off = buv - vec2<f32>(0.5);
     let ca_dist    = length(centre_off);
     let ca_dir     = select(vec2<f32>(1.0, 0.0), normalize(centre_off), ca_dist > 0.0001);
-    let ca         = ca_dir * ca_dist * crt_strength * 0.018;
+    let ca         = ca_dir * ca_dist * crt_strength * 0.008;
 
     // Sample R, G, B from slightly offset UVs; fold bloom into the same samples.
     // textureSampleLevel (explicit LOD=0) is used throughout because the bezel
