@@ -4,8 +4,19 @@
 # Optionally creates a .dmg disk image.
 #
 # Usage:
-#   ./scripts/package_macos.sh           # build + .app bundle
+#   ./scripts/package_macos.sh           # build + .app bundle (ad-hoc sign)
 #   ./scripts/package_macos.sh --dmg     # also create .dmg
+#
+# Code signing:
+#   The script looks for a "Developer ID Application" identity in the keychain.
+#   If found, it signs with that identity + hardened runtime (required for
+#   notarization). Otherwise it falls back to ad-hoc signing.
+#
+# Notarization (after signing with Developer ID):
+#   xcrun notarytool submit target/release/Spout.dmg \
+#       --apple-id YOUR_APPLE_ID --password APP_SPECIFIC_PASSWORD \
+#       --team-id HNRULUX5AH --wait
+#   xcrun stapler staple target/release/Spout.dmg
 #
 set -euo pipefail
 
@@ -34,9 +45,20 @@ if [ -f "$PROJECT_DIR/macos/AppIcon.icns" ]; then
     cp "$PROJECT_DIR/macos/AppIcon.icns" "$BUNDLE_DIR/Contents/Resources/AppIcon.icns"
 fi
 
-# Ad-hoc code sign (allows running without Gatekeeper issues locally)
-echo "==> Ad-hoc signing..."
-codesign --force --deep --sign - "$BUNDLE_DIR"
+# Code signing: use Developer ID if available, otherwise ad-hoc.
+SIGN_IDENTITY=""
+if security find-identity -v -p codesigning 2>/dev/null | grep -q "Developer ID Application"; then
+    SIGN_IDENTITY=$(security find-identity -v -p codesigning 2>/dev/null \
+        | grep "Developer ID Application" | head -1 | sed 's/.*"\(.*\)"/\1/')
+    echo "==> Signing with: $SIGN_IDENTITY"
+    codesign --force --deep --verify --verbose \
+        --sign "$SIGN_IDENTITY" \
+        --options runtime \
+        "$BUNDLE_DIR"
+else
+    echo "==> No Developer ID found — ad-hoc signing"
+    codesign --force --deep --sign - "$BUNDLE_DIR"
+fi
 
 echo "==> Bundle created at: $BUNDLE_DIR"
 
@@ -48,5 +70,11 @@ if [[ "${1:-}" == "--dmg" ]]; then
         -srcfolder "$BUNDLE_DIR" \
         -ov -format UDZO \
         "$DMG_PATH"
+
+    # Sign the DMG too if we have a Developer ID
+    if [ -n "$SIGN_IDENTITY" ]; then
+        codesign --force --sign "$SIGN_IDENTITY" "$DMG_PATH"
+    fi
+
     echo "==> DMG created at: $DMG_PATH"
 fi

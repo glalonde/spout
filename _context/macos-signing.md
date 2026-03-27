@@ -1,54 +1,66 @@
 # macOS Code Signing & Notarization
 
-Currently using ad-hoc signing (`codesign -s -`). This works for local use
-but unsigned apps trigger Gatekeeper warnings for other users.
+**Team ID:** HNRULUX5AH
 
-## When an Apple Developer account is available
+## Local signing
 
-### Repository secrets needed
+`scripts/package_macos.sh` auto-detects a "Developer ID Application" identity
+in your keychain. If found, it signs with hardened runtime (required for
+notarization). Otherwise it falls back to ad-hoc signing.
+
+### Setup (one-time)
+
+1. Open Xcode → Settings → Accounts → Manage Certificates
+2. Create a "Developer ID Application" certificate
+3. It will be installed in your login keychain automatically
+4. Run `security find-identity -v -p codesigning` to verify it shows up
+
+### Local notarization
+
+After building a signed DMG:
+```bash
+xcrun notarytool submit target/release/Spout.dmg \
+    --apple-id YOUR_APPLE_ID \
+    --password YOUR_APP_SPECIFIC_PASSWORD \
+    --team-id HNRULUX5AH \
+    --wait
+
+xcrun stapler staple target/release/Spout.dmg
+```
+
+Generate an app-specific password at https://appleid.apple.com/account/manage
+
+## CI signing (GitHub Actions)
+
+The release workflow (`.github/workflows/release-macos.yml`) supports signing
+and notarization when the following repository secrets are configured:
+
+### Required secrets
 
 | Secret | Description |
 |--------|-------------|
 | `APPLE_CERTIFICATE` | Base64-encoded `.p12` Developer ID Application certificate |
-| `APPLE_CERTIFICATE_PASSWORD` | Password for the `.p12` file |
-| `APPLE_TEAM_ID` | 10-character Apple Developer Team ID |
+| `APPLE_CERTIFICATE_PASSWORD` | Password used when exporting the `.p12` file |
 | `APPLE_ID` | Apple ID email for notarization |
-| `APPLE_ID_PASSWORD` | App-specific password (generate at appleid.apple.com) |
+| `APPLE_ID_PASSWORD` | App-specific password (not your Apple ID password) |
 
-### Signing steps (replace ad-hoc in `package_macos.sh`)
-
-```bash
-# Import certificate into a temporary keychain
-security create-keychain -p "" build.keychain
-security import "$CERTIFICATE_PATH" -k build.keychain -P "$PASSWORD" -T /usr/bin/codesign
-security set-key-partition-list -S apple-tool:,apple: -k "" build.keychain
-security list-keychains -d user -s build.keychain
-
-# Sign with Developer ID
-codesign --deep --force --verify --verbose \
-    --sign "Developer ID Application: Your Name ($TEAM_ID)" \
-    --options runtime \
-    "$BUNDLE_DIR"
-```
-
-### Notarization
+### Exporting the certificate
 
 ```bash
-# Submit for notarization
-xcrun notarytool submit "$DMG_PATH" \
-    --apple-id "$APPLE_ID" \
-    --password "$APPLE_ID_PASSWORD" \
-    --team-id "$TEAM_ID" \
-    --wait
+# Export from Keychain Access → My Certificates → Developer ID Application
+# Choose .p12 format, set a password
 
-# Staple the ticket
-xcrun stapler staple "$DMG_PATH"
+# Base64-encode for the GitHub secret:
+base64 -i DeveloperID.p12 | pbcopy
+# Paste into the APPLE_CERTIFICATE secret
 ```
 
-### CI workflow changes
+### How it works
 
-Update `.github/workflows/release-macos.yml` to:
-1. Decode and import the certificate from secrets
-2. Replace `codesign -s -` with the Developer ID signing command
-3. Add notarization step after DMG creation
-4. Clean up the temporary keychain
+1. CI imports the `.p12` into a temporary keychain
+2. `package_macos.sh` finds the Developer ID identity and signs with hardened runtime
+3. CI notarizes the DMG via `notarytool` and staples the ticket
+4. Temporary keychain is cleaned up
+
+Without secrets, the workflow still runs — it just produces an ad-hoc signed
+build (fine for testing, not distributable without Gatekeeper warnings).
