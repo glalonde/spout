@@ -578,8 +578,7 @@ impl framework::Example for Spout {
             let input = &self.state.input_state;
             let prev = &self.state.prev_input_state;
             let new_thrust = input.thrust > 0.0 && prev.thrust == 0.0;
-            let new_rotate =
-                input.rotate.abs() > 0.0 && prev.rotate.abs() == 0.0;
+            let new_rotate = input.rotate.abs() > 0.0 && prev.rotate.abs() == 0.0;
             if new_thrust || new_rotate {
                 self.start_game(device, queue);
             }
@@ -602,7 +601,7 @@ impl framework::Example for Spout {
                 &mut self.staging_belt,
                 ship.position,
                 ship.velocity,
-                50000,  // burst count
+                50000, // burst count
                 self.game_params.particle_system_params.emission_speed,
                 self.game_params.particle_system_params.max_particle_life,
             );
@@ -646,7 +645,8 @@ impl framework::Example for Spout {
             .render(&self.game_view_texture, &mut encoder);
 
         // Render ship — only during gameplay, and not when dead.
-        if self.state.mode == GameMode::Playing && self.game_params.render_ship && !self.state.dead {
+        if self.state.mode == GameMode::Playing && self.game_params.render_ship && !self.state.dead
+        {
             self.ship_renderer.render(
                 &self.state.ship_state,
                 &self.game_params,

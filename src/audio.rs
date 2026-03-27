@@ -467,7 +467,11 @@ mod wasm_audio {
                     log::info!("audio: WASM playback started (gen {})", gen);
                 } else {
                     // Stale generation — discard without playing.
-                    log::info!("audio: discarding stale source (gen {} != {})", gen, self.generation);
+                    log::info!(
+                        "audio: discarding stale source (gen {} != {})",
+                        gen,
+                        self.generation
+                    );
                 }
             }
 

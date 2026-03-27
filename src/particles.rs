@@ -486,8 +486,15 @@ impl ParticleSystem {
         speed: f32,
         ttl: f32,
     ) {
-        self.emitter
-            .emit_burst(encoder, belt, center, base_velocity, burst_count, speed, ttl);
+        self.emitter.emit_burst(
+            encoder,
+            belt,
+            center,
+            base_velocity,
+            burst_count,
+            speed,
+            ttl,
+        );
     }
 
     pub fn update_state(&mut self, dt: f32, viewport_offset: i32, motion: Option<EmitterMotion>) {

@@ -342,12 +342,12 @@ mod tests {
         // Phase 4: poll_result (waits for callback, reads data).
         // This is the step that panicked on WASM before the fix.
         detector.poll_result(&device);
-        assert!(
-            !detector.pending_readback,
-            "Readback should have completed"
-        );
+        assert!(!detector.pending_readback, "Readback should have completed");
 
         // Ship in empty terrain → no collision.
-        assert!(!detector.result.hit, "No collision expected in empty terrain");
+        assert!(
+            !detector.result.hit,
+            "No collision expected in empty terrain"
+        );
     }
 }

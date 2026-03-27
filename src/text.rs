@@ -469,9 +469,8 @@ pub fn rasterize_text_to_terrain(
     scale: f32,
     terrain_health: i32,
 ) -> (u32, u32, Vec<i32>) {
-    let font =
-        fontdue::Font::from_bytes(font_choice.data(), fontdue::FontSettings::default())
-            .expect("failed to parse font");
+    let font = fontdue::Font::from_bytes(font_choice.data(), fontdue::FontSettings::default())
+        .expect("failed to parse font");
     let font_size = font_choice.size();
 
     // Rasterize glyphs and compute layout.
@@ -519,7 +518,9 @@ pub fn rasterize_text_to_terrain(
                 // Scaled pixel position (Y-down).
                 for sy in 0..scale as u32 {
                     for sx in 0..scale as u32 {
-                        let px = (pen_x + metrics.xmin as f32 * scale + col as f32 * scale + sx as f32) as i32;
+                        let px =
+                            (pen_x + metrics.xmin as f32 * scale + col as f32 * scale + sx as f32)
+                                as i32;
                         let py_down = (glyph_top_ydown + row as f32 * scale + sy as f32) as i32;
                         // Flip to Y-up.
                         let py_up = grid_h as i32 - 1 - py_down;
