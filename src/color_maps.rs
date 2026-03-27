@@ -3,6 +3,17 @@
 
 use wgpu::util::DeviceExt;
 
+/// Named color map palettes. The discriminant matches the index into the
+/// internal palette array, so `ColorMap::Magma as usize` works as expected.
+#[repr(u8)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum ColorMap {
+    Viridis = 0,
+    Magma = 1,
+    Inferno = 2,
+    Plasma = 3,
+}
+
 use std::sync::OnceLock;
 
 static COLOR_MAPS: OnceLock<[scarlet::colormap::ListedColorMap; 4]> = OnceLock::new();
