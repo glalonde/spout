@@ -8,32 +8,37 @@ music_starts_on = false
 render_ship = true
 
 [particle_system_params]
-emission_rate = 1000000
-emission_speed = 1000.0
+emission_rate = 5000
+emission_speed = 200.0
 max_particle_life = 3.0
-damage_rate = 0.01
-gravity = -0.0
+damage_rate = 0.5
+gravity = -100.0
 elasticity = 0.5
 
 [ship_params]
 acceleration = 100.0
 rotation_rate = 10.0
-max_speed = 600.0
+max_speed = 400.0
 
 [level_params]
-starting_terrain_health = 10000
+starting_terrain_health = 100
 
 [visual_params]
 # Index into the particle color map palette (0–3).
 color_map = 1
 # Brightness cutoff for bloom extraction (0.0–1.0). Lower = more of the scene glows.
 # Set to 1.1 to effectively disable bloom.
-bloom_threshold = 0.6
+bloom_threshold = 0.4
 # Bloom intensity in the final composite. 0.0 = off, 1.0 = full, 2.0+ = oversaturated.
-bloom_strength = 1.25
+bloom_strength = 2.0
 # Number of separable H+V blur iterations. Each pass widens the halo by ~√2.
 # 1 = tight, 2 = moderate, 4 = wide.
-bloom_passes = 2
+bloom_passes = 16
 # CRT post-process: barrel distortion, chromatic aberration, phosphor mask,
 # scanlines, vignette. 0.0 = off, 1.0 = full.
-crt_strength = 0.5
+crt_strength = 0.3
+# Density-to-color mapping. density_scale = how many particles per cell for
+# ~half saturation. Lower = saturates faster. density_exponent controls the
+# sigmoid curve steepness: >1 = sharper transition, <1 = gentler.
+density_scale = 1.0
+density_exponent = 1.0

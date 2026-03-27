@@ -13,4 +13,5 @@ pub mod particles;
 pub mod render;
 pub mod shader_util;
 pub mod ship;
+pub mod text;
 pub mod textured_quad;

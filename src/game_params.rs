@@ -51,6 +51,27 @@ pub struct VisualParams {
     /// scanlines, and vignette.
     #[serde(default)]
     pub crt_strength: f32,
+
+    /// Density-to-color scaling. Controls how many particles per cell are needed
+    /// to reach full saturation. Lower = saturates faster, higher = needs more
+    /// particles. The raw count is multiplied by 1/density_scale before the
+    /// sigmoid. Default 100 means ~100 particles per cell ≈ half saturation.
+    #[serde(default = "default_density_scale")]
+    pub density_scale: f32,
+
+    /// Sigmoid exponent for density mapping. Values > 1 make the curve steeper
+    /// (sharper transition from dim to bright), values < 1 make it gentler.
+    /// Default 1.0 = standard sigmoid.
+    #[serde(default = "default_density_exponent")]
+    pub density_exponent: f32,
+}
+
+fn default_density_scale() -> f32 {
+    100.0
+}
+
+fn default_density_exponent() -> f32 {
+    1.0
 }
 
 impl Default for VisualParams {
@@ -61,6 +82,8 @@ impl Default for VisualParams {
             bloom_strength: 1.0,
             bloom_passes: 2,
             crt_strength: 0.0,
+            density_scale: default_density_scale(),
+            density_exponent: default_density_exponent(),
         }
     }
 }

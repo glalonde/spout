@@ -35,6 +35,7 @@ struct EmitData {
 
     motion: EmitterMotion,
     nozzle: NozzleParams,
+    num_particles: u32,
 };
 
 @group(0) @binding(0)
@@ -82,11 +83,16 @@ fn nozzle_shape(interp: f32) -> vec2<f32> {
 
 @compute @workgroup_size({{ particle_workgroup_size }})
 fn main(@builtin(global_invocation_id) global_id: vec3<u32>, @builtin(num_workgroups) num_workgroups: vec3<u32>) {
-    let total_particles = num_workgroups[0] * {{ particle_workgroup_size }}u;
     let gid = global_id[0];
+
+    // Guard against dispatch overshoot.
+    if (gid >= emit_data.num_particles) {
+        return;
+    }
+
     let particle = &(particle_buffer[gid]);
 
-    let emit_index = get_emit_index(gid, total_particles);
+    let emit_index = get_emit_index(gid, emit_data.num_particles);
     if (emit_index >= emit_data.num_emitted) {
         return;
     } 

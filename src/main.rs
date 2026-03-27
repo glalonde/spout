@@ -13,6 +13,7 @@ use spout::level_manager;
 use spout::particles;
 use spout::render;
 use spout::ship;
+use spout::text;
 
 /// Shortest signed angular distance from `current` to `target`, in [-π, π].
 fn angle_diff(target: f32, current: f32) -> f32 {
@@ -51,8 +52,15 @@ struct Spout {
     renderer: render::Render,
     particle_system: particles::ParticleSystem,
     ship_renderer: ship::ShipRenderer,
+    /// Renders into the game view (240x135) — pixel-perfect with terrain/particles.
+    game_text: text::TextRenderer,
+    /// Renders at display resolution on top of everything — for debug info.
+    overlay_text: text::TextRenderer,
     audio: audio::AudioPlayer,
     staging_belt: wgpu::util::StagingBelt,
+    show_debug_overlay: bool,
+    frame_times: Vec<f32>,
+    tick_wall_dt: f32,
 }
 
 impl Spout {
@@ -184,6 +192,7 @@ impl Spout {
             .work_until(Instant::now() + LEVEL_BUDGET);
 
         let (game_dt, wall_dt) = self.tick();
+        self.tick_wall_dt = wall_dt;
 
         // Process input state integrated over passage of time.
         let prev_ship = self.state.ship_state;
@@ -199,42 +208,6 @@ impl Spout {
             &self.state.input_state,
             &self.state.prev_input_state,
         );
-    }
-
-    fn select_fullscreen_video_mode(
-        window: &winit::window::Window,
-    ) -> Option<winit::monitor::VideoModeHandle> {
-        let mut video_mode: Option<winit::monitor::VideoModeHandle> = None;
-        match window.primary_monitor() {
-            Some(monitor) => {
-                for mode in monitor.video_modes() {
-                    if let Some(best_mode) = &video_mode {
-                        match mode
-                            .refresh_rate_millihertz()
-                            .cmp(&best_mode.refresh_rate_millihertz())
-                        {
-                            std::cmp::Ordering::Greater => {
-                                video_mode = Some(mode);
-                            }
-                            std::cmp::Ordering::Equal => {
-                                let best_area = best_mode.size().width * best_mode.size().height;
-                                let current_area = mode.size().width * mode.size().height;
-                                if best_area < current_area {
-                                    video_mode = Some(mode);
-                                }
-                            }
-                            std::cmp::Ordering::Less => {}
-                        }
-                    } else {
-                        video_mode = Some(mode);
-                    }
-                }
-            }
-            None => {
-                log::info!("No primary monitor detected.");
-            }
-        };
-        video_mode
     }
 }
 
@@ -319,6 +292,25 @@ impl framework::Example for Spout {
 
         let ship_renderer = ship::ShipRenderer::init(device);
 
+        let game_text = text::TextRenderer::init(
+            device,
+            queue,
+            bloom::GAME_VIEW_FORMAT,
+            game_params.viewport_width,
+            game_params.viewport_height,
+            text::YDirection::Up,
+            text::Font::O4b11,
+        );
+        let overlay_text = text::TextRenderer::init(
+            device,
+            queue,
+            config.format,
+            config.width,
+            config.height,
+            text::YDirection::Down,
+            text::Font::O4b11,
+        );
+
         staging_belt.finish();
         queue.submit(Some(init_encoder.finish()));
         staging_belt.recall();
@@ -355,8 +347,13 @@ impl framework::Example for Spout {
             renderer,
             particle_system,
             ship_renderer,
+            game_text,
+            overlay_text,
             audio,
             staging_belt,
+            show_debug_overlay: true,
+            frame_times: Vec::with_capacity(60),
+            tick_wall_dt: 0.0,
         }
     }
 
@@ -381,6 +378,7 @@ impl framework::Example for Spout {
                     KeyCode::KeyT => self.audio.next_track(),
                     KeyCode::KeyY => self.audio.toggle(),
                     KeyCode::KeyR => self.state.reset_requested = true,
+                    KeyCode::F3 => self.show_debug_overlay = !self.show_debug_overlay,
                     _ => {}
                 }
             }
@@ -391,7 +389,7 @@ impl framework::Example for Spout {
         &mut self,
         config: &wgpu::SurfaceConfiguration,
         device: &wgpu::Device,
-        _queue: &wgpu::Queue,
+        queue: &wgpu::Queue,
     ) {
         #[cfg(not(target_arch = "wasm32"))]
         self.collector.set_surface_width(config.width as f32);
@@ -407,6 +405,7 @@ impl framework::Example for Spout {
         self.renderer
             .resize(config, device, &new_upscaled, self.bloom.bloom_view());
         self.upscaled_view = new_upscaled;
+        self.overlay_text.resize(queue, config.width, config.height);
     }
 
     fn render(
@@ -424,13 +423,12 @@ impl framework::Example for Spout {
         {
             if !self.state.prev_input_state.fullscreen && self.state.input_state.fullscreen {
                 if window.fullscreen().is_some() {
-                    // Set unfullscreen.
                     log::info!("Setting windowed mode.");
                     window.set_fullscreen(None);
-                } else if let Some(best_mode) = Spout::select_fullscreen_video_mode(window) {
-                    log::info!("Setting exclusive fullscreen with mode: {}", best_mode);
-                    window.set_fullscreen(Some(winit::window::Fullscreen::Exclusive(best_mode)));
                 } else {
+                    // Borderless fullscreen — instant, no display mode switch or
+                    // macOS Space animation. Just covers the screen.
+                    log::info!("Setting borderless fullscreen.");
                     window.set_fullscreen(Some(winit::window::Fullscreen::Borderless(None)));
                 }
             }
@@ -475,6 +473,20 @@ impl framework::Example for Spout {
             );
         }
 
+        // In-game HUD — renders into game view at native pixel resolution.
+        // Goes through bloom + CRT with everything else.
+        {
+            let score_text = format!("{}", self.state.score);
+            let white = [1.0, 1.0, 1.0, 1.0];
+            let score_y = 2.0;
+            self.game_text.draw(
+                device,
+                &mut encoder,
+                &self.game_view_texture,
+                &[(&score_text, 2.0, score_y, 1.0, white)],
+            );
+        }
+
         // Blit game view (240×135) → upscaled HDR (surface resolution).
         self.renderer
             .blit(&self.upscaled_view, &mut encoder, &mut self.staging_belt);
@@ -485,6 +497,27 @@ impl framework::Example for Spout {
         // Composite upscaled HDR + bloom → surface (LDR).
         self.renderer.render(view, &mut encoder);
         self.level_manager.decompose_tiles(&mut encoder);
+
+        // Debug overlay (FPS) — renders at display resolution on top of everything.
+        if self.show_debug_overlay {
+            let dt = self.tick_wall_dt;
+            if self.frame_times.len() >= 60 {
+                self.frame_times.remove(0);
+            }
+            self.frame_times.push(dt);
+
+            let avg_dt: f32 = self.frame_times.iter().sum::<f32>() / self.frame_times.len() as f32;
+            let fps = if avg_dt > 0.0 { 1.0 / avg_dt } else { 0.0 };
+            let fps_text = format!("FPS: {:.0}", fps);
+
+            let white = [1.0, 1.0, 1.0, 1.0];
+            self.overlay_text.draw(
+                device,
+                &mut encoder,
+                view,
+                &[(fps_text.as_str(), 8.0, 8.0, 1.0, white)],
+            );
+        }
 
         self.staging_belt.finish();
         queue.submit(Some(encoder.finish()));

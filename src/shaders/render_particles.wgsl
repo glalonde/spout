@@ -32,6 +32,10 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32,) -> VertexOutput {
 struct ViewData {
     width: u32,
     height: u32,
+    // Density-to-color mapping: count is scaled by 1/density_scale before sigmoid.
+    density_scale: f32,
+    // Sigmoid exponent: >1 = steeper curve, <1 = gentler.
+    density_exponent: f32,
 };
 @group(0) @binding(0)
 var<uniform> view_data: ViewData;
@@ -45,28 +49,29 @@ var color_map: texture_2d<f32>;
 @group(0) @binding(3)
 var color_map_sampler: sampler;
 
-const MAX_DENSITY_VALUE: u32 = 100u;
-
 fn get_cell(tex_coord: vec2<f32>) -> u32 {
     let cell_f: vec2<f32> = tex_coord * vec2<f32>(f32(view_data.width), f32(view_data.height));
     return density_buffer[i32(cell_f.y) * i32(view_data.width) + i32(cell_f.x)];
 }
 
-// Returns the color map texture coordinate 
-fn read_unsigned(tex_coord: vec2<f32>) -> f32 {
-  let count = get_cell(tex_coord);
-  return f32(count);
+// Returns the effective density (heat-weighted particle count).
+// The compute shader writes heat * 256 per particle, so we divide back out.
+fn read_density(tex_coord: vec2<f32>) -> f32 {
+  let raw = get_cell(tex_coord);
+  return f32(raw) / 256.0;
 }
 
 // Sigmoid to give an asymptotic approach to the maximum color.
-fn sigmoid(x: f32) -> f32 {
-  return x / sqrt(1.0 + x * x);
+// exponent > 1 = steeper transition, < 1 = gentler.
+fn sigmoid(x: f32, exponent: f32) -> f32 {
+  let xe = pow(x, exponent);
+  return xe / sqrt(1.0 + xe * xe);
 }
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-  let count = read_unsigned(in.tex_coord);
-  let rescaled = sigmoid(1.0 / f32(MAX_DENSITY_VALUE) * count);
+  let count = read_density(in.tex_coord);
+  let rescaled = sigmoid(count / view_data.density_scale, view_data.density_exponent);
   let sample = textureSample(color_map, color_map_sampler, vec2<f32>(rescaled, 0.0));
   return vec4<f32>(sample.xyz, rescaled);
 }
