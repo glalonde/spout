@@ -4,8 +4,32 @@
 
 use wgpu::util::DeviceExt;
 
-/// Embedded Pixel Six font (8px bitmap font).
-const PIXEL_SIX_TTF: &[u8] = include_bytes!("../assets/fonts/pixelsix00.ttf");
+/// Available embedded bitmap fonts.
+pub enum Font {
+    /// 04b_30 — 17px tall, blocky uppercase style.
+    O4b30,
+    /// 04b_11 — 16px tall, narrower style.
+    O4b11,
+}
+
+const FONT_04B_30: &[u8] = include_bytes!("../assets/fonts/04b_30.ttf");
+const FONT_04B_11: &[u8] = include_bytes!("../assets/fonts/04b_11.ttf");
+
+impl Font {
+    fn data(&self) -> &'static [u8] {
+        match self {
+            Font::O4b30 => FONT_04B_30,
+            Font::O4b11 => FONT_04B_11,
+        }
+    }
+
+    fn size(&self) -> f32 {
+        match self {
+            Font::O4b30 => 17.0,
+            Font::O4b11 => 16.0,
+        }
+    }
+}
 
 /// Range of ASCII characters baked into the atlas.
 const FIRST_CHAR: u8 = 32; // space
@@ -44,14 +68,27 @@ struct GlyphInstance {
     color: [f32; 4],
 }
 
+/// Y-axis direction for the target coordinate system.
+#[derive(Debug, Clone, Copy)]
+pub enum YDirection {
+    /// Screen space: origin at top-left, Y increases downward.
+    Down,
+    /// Game view: origin at bottom-left, Y increases upward.
+    Up,
+}
+
 pub struct TextRenderer {
     glyphs: Vec<GlyphInfo>,
     atlas_bind_group: wgpu::BindGroup,
     pipeline: wgpu::RenderPipeline,
     screen_uniform_buf: wgpu::Buffer,
     screen_bind_group: wgpu::BindGroup,
-    surface_width: f32,
-    surface_height: f32,
+    pub surface_width: f32,
+    pub surface_height: f32,
+    y_dir: f32,
+    /// Maximum ascent across all glyphs (ymin + height), in native font pixels.
+    /// Used to position the baseline relative to the line top.
+    ascent: f32,
 }
 
 impl TextRenderer {
@@ -61,16 +98,25 @@ impl TextRenderer {
         surface_format: wgpu::TextureFormat,
         surface_width: u32,
         surface_height: u32,
+        y_direction: YDirection,
+        font_choice: Font,
     ) -> Self {
-        let font = fontdue::Font::from_bytes(PIXEL_SIX_TTF, fontdue::FontSettings::default())
-            .expect("failed to parse Pixel Six font");
+        let font = fontdue::Font::from_bytes(font_choice.data(), fontdue::FontSettings::default())
+            .expect("failed to parse font");
 
-        let font_size = 10.0; // px — Pixel Six looks best at small integer sizes
+        // Rasterize at the font's native size for crisp, pixel-perfect glyphs.
+        let font_size = font_choice.size();
 
         // Rasterize all glyphs and collect metrics.
         let mut rasterized: Vec<(fontdue::Metrics, Vec<u8>)> = Vec::with_capacity(GLYPH_COUNT);
         for c in FIRST_CHAR..=LAST_CHAR {
-            rasterized.push(font.rasterize(c as char, font_size));
+            let (metrics, mut bitmap) = font.rasterize(c as char, font_size);
+            // Threshold to 1-bit: anything above 50% → fully opaque.
+            // This eliminates anti-aliasing artifacts on a pixel font.
+            for px in bitmap.iter_mut() {
+                *px = if *px > 127 { 255 } else { 0 };
+            }
+            rasterized.push((metrics, bitmap));
         }
 
         // Pack glyphs into a texture atlas (single row for simplicity; fine for <100 glyphs).
@@ -125,6 +171,13 @@ impl TextRenderer {
             cursor_x += gw + padding;
         }
 
+        // Compute max ascent: the highest point any glyph reaches above the
+        // baseline. In fontdue, ascent = ymin + height for each glyph.
+        let ascent = rasterized
+            .iter()
+            .map(|(m, _)| m.ymin as f32 + m.height as f32)
+            .fold(0.0f32, f32::max);
+
         // Upload atlas to GPU.
         let atlas_texture = device.create_texture_with_data(
             queue,
@@ -138,7 +191,7 @@ impl TextRenderer {
                 mip_level_count: 1,
                 sample_count: 1,
                 dimension: wgpu::TextureDimension::D2,
-                format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                format: wgpu::TextureFormat::Rgba8Unorm,
                 usage: wgpu::TextureUsages::TEXTURE_BINDING,
                 view_formats: &[],
             },
@@ -190,7 +243,16 @@ impl TextRenderer {
         });
 
         // Screen-size uniform for pixel → NDC conversion.
-        let screen_data = [surface_width as f32, surface_height as f32];
+        let y_dir = match y_direction {
+            YDirection::Down => 1.0f32,
+            YDirection::Up => -1.0,
+        };
+        let screen_data = [
+            surface_width as f32,
+            surface_height as f32,
+            y_dir,
+            0.0, /* padding */
+        ];
         let screen_uniform_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Text Screen Uniform"),
             contents: bytemuck::cast_slice(&screen_data),
@@ -296,6 +358,8 @@ impl TextRenderer {
             screen_bind_group,
             surface_width: surface_width as f32,
             surface_height: surface_height as f32,
+            y_dir,
+            ascent,
         }
     }
 
@@ -303,7 +367,7 @@ impl TextRenderer {
     pub fn resize(&mut self, queue: &wgpu::Queue, width: u32, height: u32) {
         self.surface_width = width as f32;
         self.surface_height = height as f32;
-        let data = [self.surface_width, self.surface_height];
+        let data = [self.surface_width, self.surface_height, self.y_dir, 0.0];
         queue.write_buffer(&self.screen_uniform_buf, 0, bytemuck::cast_slice(&data));
     }
 
@@ -331,11 +395,13 @@ impl TextRenderer {
                 let g = &self.glyphs[idx];
 
                 if g.width > 0.0 && g.height > 0.0 {
+                    // In screen coords (y-down), baseline is at start_y + ascent.
+                    // Glyph top = baseline - (ymin + height), bottom = baseline - ymin.
+                    let baseline_y = start_y + self.ascent * scale;
+                    let glyph_top = baseline_y - (g.y_offset + g.height) * scale;
+
                     instances.push(GlyphInstance {
-                        pos: [
-                            pen_x + g.x_offset * scale,
-                            start_y - g.y_offset * scale - g.height * scale,
-                        ],
+                        pos: [pen_x + g.x_offset * scale, glyph_top],
                         size: [g.width * scale, g.height * scale],
                         uv: [g.uv_x, g.uv_y, g.uv_x + g.uv_w, g.uv_y + g.uv_h],
                         color,
@@ -376,5 +442,23 @@ impl TextRenderer {
         rpass.set_bind_group(1, &self.screen_bind_group, &[]);
         rpass.set_vertex_buffer(0, instance_buf.slice(..));
         rpass.draw(0..4, 0..instances.len() as u32); // 4 vertices per quad (triangle strip)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn glyph_metrics_sanity() {
+        let font = fontdue::Font::from_bytes(Font::O4b30.data(), fontdue::FontSettings::default())
+            .expect("font parse");
+        for ch in ['F', 'P', 'S', '0', ':', ' '] {
+            let (m, _) = font.rasterize(ch, 10.0);
+            println!(
+                "{:?}: w={} h={} xmin={} ymin={} advance={:.1}",
+                ch, m.width, m.height, m.xmin, m.ymin, m.advance_width
+            );
+        }
     }
 }
