@@ -216,34 +216,13 @@ impl Spout {
         self.update_ship(game_dt);
 
         // Poll GPU collision result from last frame (1-frame latency).
-        let collision = self.collision_detector.result;
-        if collision.hit {
-            // Bounce: reflect velocity along the contact normal with damping.
-            const BOUNCE_DAMPING: f32 = 0.5;
-            let nx = collision.normal[0];
-            let ny = collision.normal[1];
-            let vx = self.state.ship_state.velocity[0];
-            let vy = self.state.ship_state.velocity[1];
-            // v_reflected = v - 2*(v·n)*n, then damped.
-            let dot = vx * nx + vy * ny;
-            if dot < 0.0 {
-                // Only reflect if moving into the surface.
-                self.state.ship_state.velocity[0] = (vx - 2.0 * dot * nx) * BOUNCE_DAMPING;
-                self.state.ship_state.velocity[1] = (vy - 2.0 * dot * ny) * BOUNCE_DAMPING;
-            }
-            // Revert to previous position to push out of terrain.
-            self.state.ship_state.position = prev_ship.position;
-
-            if !self.state.dead {
-                self.state.dead = true;
-                log::info!(
-                    "Ship collided with terrain at ({:.0}, {:.0}), normal=({}, {})",
-                    self.state.ship_state.position[0],
-                    self.state.ship_state.position[1],
-                    nx,
-                    ny,
-                );
-            }
+        if !self.state.dead && self.collision_detector.result.hit {
+            self.state.dead = true;
+            log::info!(
+                "Ship collided with terrain at ({:.0}, {:.0})",
+                self.state.ship_state.position[0],
+                self.state.ship_state.position[1]
+            );
         }
 
         self.update_viewport_height();
