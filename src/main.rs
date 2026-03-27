@@ -518,14 +518,19 @@ impl framework::Example for Spout {
         // In-game HUD — renders into game view at native pixel resolution.
         // Goes through bloom + CRT with everything else.
         {
+            let current_level = self.state.score / self.game_params.level_height as i32 + 1;
             let score_text = format!("{}", self.state.score);
+            let level_text = format!("LV{}", current_level);
             let white = [1.0, 1.0, 1.0, 1.0];
-            let score_y = 2.0;
+            let level_x = self.game_text.surface_width - (level_text.len() as f32 * 10.0) - 2.0;
             self.game_text.draw(
                 device,
                 &mut encoder,
                 &self.game_view_texture,
-                &[(&score_text, 2.0, score_y, 1.0, white)],
+                &[
+                    (&score_text, 2.0, 2.0, 1.0, white),
+                    (&level_text, level_x, 2.0, 1.0, white),
+                ],
             );
         }
 

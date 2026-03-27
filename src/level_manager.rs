@@ -23,12 +23,18 @@ impl WIPRectangleLevel {
         level_height: u32,
         starting_terrain_health: i32,
     ) -> Self {
-        let level_num = level_index + 10;
-        let max_dimension = std::cmp::max((level_width / level_num) / 2, 1);
-        let num_vacancies = (level_height as f64 * (level_num as f64).sqrt()).ceil() as u32;
+        // Difficulty curve: early levels have large, numerous vacancies (sparse
+        // terrain). Later levels have smaller, fewer vacancies (dense terrain).
+        // level_num ramps from 1 upward.
+        let level_num = level_index + 1;
 
-        // Maximum dimension of any of the vacancies(should be a function of level_num).
+        // Vacancy size: starts large (half the level width), shrinks as levels increase.
+        let max_dimension = std::cmp::max(level_width / (level_num + 1) / 2, 2);
         let max_dimension = std::cmp::min(max_dimension, std::cmp::min(level_width, level_height));
+
+        // Number of vacancies: many at the start, fewer later.
+        let num_vacancies =
+            (level_height as f64 * (2.0 + 10.0 / (level_num as f64 + 1.0))).ceil() as u32;
 
         // Start with a solid buffer
         let data: Vec<i32> = vec![starting_terrain_health; (level_width * level_height) as usize];
