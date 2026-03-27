@@ -7,17 +7,15 @@ use wgpu::util::DeviceExt;
 
 use crate::buffer_util::SizedBuffer;
 
-const SHIP_COLLISION_RADIUS: f32 = 4.0;
-
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 struct CollisionUniforms {
     ship_x: f32,
     ship_y: f32,
+    ship_orientation: f32,
     terrain_buffer_offset: i32,
     terrain_width: u32,
     terrain_buffer_height: u32,
-    collision_radius: f32,
 }
 
 pub struct CollisionDetector {
@@ -98,10 +96,10 @@ impl CollisionDetector {
         let uniforms = CollisionUniforms {
             ship_x: 0.0,
             ship_y: 0.0,
+            ship_orientation: 0.0,
             terrain_buffer_offset: 0,
             terrain_width: 0,
             terrain_buffer_height: 0,
-            collision_radius: SHIP_COLLISION_RADIUS,
         };
         let uniform_buffer =
             crate::buffer_util::make_uniform_buffer(device, "Collision Uniform Buffer", &uniforms);
@@ -144,10 +142,10 @@ impl CollisionDetector {
         let uniforms = CollisionUniforms {
             ship_x: ship.position[0],
             ship_y: ship.position[1],
+            ship_orientation: ship.orientation,
             terrain_buffer_offset: terrain.shape.start,
             terrain_width,
             terrain_buffer_height: terrain.shape.size() as u32,
-            collision_radius: SHIP_COLLISION_RADIUS,
         };
 
         // safe: uniform_buffer.size is always > 0 (set at GPU buffer creation)
