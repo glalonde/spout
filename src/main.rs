@@ -7,6 +7,7 @@ mod framework;
 use web_time::Instant;
 
 use spout::bloom;
+use spout::collision;
 use spout::game_params;
 use spout::input::{InputCollector, InputState};
 use spout::level_manager;
@@ -53,6 +54,7 @@ struct Spout {
     renderer: render::Render,
     particle_system: particles::ParticleSystem,
     ship_renderer: ship::ShipRenderer,
+    collision_detector: collision::CollisionDetector,
     /// Renders into the game view (240x135) — pixel-perfect with terrain/particles.
     game_text: text::TextRenderer,
     /// Renders at display resolution on top of everything — for debug info.
@@ -201,12 +203,8 @@ impl Spout {
             self.update_ship(game_dt);
         }
 
-        // Check collision with terrain (CPU-side initial data).
-        if !self.state.dead
-            && self
-                .level_manager
-                .check_ship_collision(&self.state.ship_state)
-        {
+        // Poll GPU collision result from last frame (1-frame latency).
+        if !self.state.dead && self.collision_detector.colliding {
             self.state.dead = true;
             log::info!(
                 "Ship collided with terrain at ({:.0}, {:.0})",
@@ -308,6 +306,7 @@ impl framework::Example for Spout {
             particles::ParticleSystem::new(device, &game_params, &mut init_encoder, &level_manager);
 
         let ship_renderer = ship::ShipRenderer::init(device);
+        let collision_detector = collision::CollisionDetector::init(device);
 
         let game_text = text::TextRenderer::init(
             device,
@@ -364,6 +363,7 @@ impl framework::Example for Spout {
             renderer,
             particle_system,
             ship_renderer,
+            collision_detector,
             game_text,
             overlay_text,
             audio,
@@ -433,6 +433,9 @@ impl framework::Example for Spout {
         _spawner: &framework::Spawner,
         window: &winit::window::Window,
     ) {
+        // Read back GPU collision result from previous frame.
+        self.collision_detector.poll_result(device);
+
         if self.state.reset_requested {
             self.reset(device, queue);
         }
@@ -468,6 +471,18 @@ impl framework::Example for Spout {
         self.level_manager.compose_tiles(&mut encoder);
         self.particle_system
             .run_compute(&self.level_manager, &mut encoder, &mut self.staging_belt);
+
+        // Collision detection — runs after particles update the terrain buffer.
+        if !self.state.dead {
+            self.collision_detector.dispatch(
+                device,
+                &mut encoder,
+                &mut self.staging_belt,
+                &self.state.ship_state,
+                self.level_manager.terrain_buffer(),
+                self.game_params.level_width,
+            );
+        }
 
         // Render terrain.
         self.level_manager
