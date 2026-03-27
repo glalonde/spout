@@ -6,6 +6,7 @@ mod framework;
 
 use web_time::Instant;
 
+use spout::background;
 use spout::bloom;
 use spout::collision;
 use spout::game_params;
@@ -29,8 +30,18 @@ const LEVEL_BUDGET: std::time::Duration = std::time::Duration::from_nanos(3_333_
 /// don't cause the ship and particles to simulate a huge time jump.
 const MAX_FRAME_DT: std::time::Duration = std::time::Duration::from_millis(50);
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+enum GameMode {
+    /// Title screen: "SPOUT" rendered as terrain, eroded by a fixed emitter.
+    #[default]
+    Title,
+    /// Normal gameplay.
+    Playing,
+}
+
 #[derive(Debug, Default)]
 struct GameState {
+    mode: GameMode,
     input_state: InputState,
     prev_input_state: InputState,
     ship_state: ship::ShipState,
@@ -40,6 +51,7 @@ struct GameState {
     paused: bool,
     reset_requested: bool,
     dead: bool,
+    explosion_pending: bool,
 }
 
 struct Spout {
@@ -56,6 +68,7 @@ struct Spout {
     particle_system: particles::ParticleSystem,
     ship_renderer: ship::ShipRenderer,
     collision_detector: collision::CollisionDetector,
+    background: background::BackgroundRenderer,
     /// Renders into the game view (240x135) — pixel-perfect with terrain/particles.
     game_text: text::TextRenderer,
     /// Renders at display resolution on top of everything — for debug info.
@@ -68,8 +81,56 @@ struct Spout {
 }
 
 impl Spout {
-    fn reset(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
+    fn enter_title(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
+        // Preserve input state across transitions to avoid false edges
+        // (e.g. fullscreen toggle firing because prev_input was cleared).
+        let prev_input = self.state.prev_input_state;
+        let cur_input = self.state.input_state;
         self.state = GameState {
+            mode: GameMode::Title,
+            prev_input_state: prev_input,
+            input_state: cur_input,
+            ..Default::default()
+        };
+        self.game_time = std::time::Duration::default();
+        self.iteration_start = Instant::now();
+
+        let mut init_encoder =
+            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+
+        self.level_manager = level_manager::LevelManager::init_title(
+            device,
+            &self.game_params,
+            0,
+            &mut init_encoder,
+            &mut self.staging_belt,
+        );
+
+        self.particle_system = particles::ParticleSystem::new(
+            device,
+            &self.game_params,
+            &mut init_encoder,
+            &self.level_manager,
+        );
+
+        self.collision_detector.result = collision::CollisionResult::default();
+
+        self.particle_system.set_nozzle_speed(75.0, 75.0);
+
+        self.staging_belt.finish();
+        queue.submit(Some(init_encoder.finish()));
+        self.staging_belt.recall();
+
+        log::info!("Entered title screen");
+    }
+
+    fn start_game(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
+        let prev_input = self.state.prev_input_state;
+        let cur_input = self.state.input_state;
+        self.state = GameState {
+            mode: GameMode::Playing,
+            prev_input_state: prev_input,
+            input_state: cur_input,
             ship_state: ship::ShipState::init(
                 &self.game_params.ship_params,
                 [
@@ -102,11 +163,16 @@ impl Spout {
 
         self.collision_detector.result = collision::CollisionResult::default();
 
+        // Restore normal emission speed for gameplay.
+        let base_speed = self.game_params.particle_system_params.emission_speed;
+        self.particle_system
+            .set_nozzle_speed(base_speed, base_speed);
+
         self.staging_belt.finish();
         queue.submit(Some(init_encoder.finish()));
         self.staging_belt.recall();
 
-        log::info!("Game reset");
+        log::info!("Game started");
     }
 
     fn tick(&mut self) -> (f32, f32) {
@@ -163,22 +229,49 @@ impl Spout {
             .update(dt, input_state.thrust, rotate, gravity);
     }
 
+    fn title_emitter_motion(&self) -> particles::EmitterMotion {
+        // Emit from the right side above the title, angled slightly up-left.
+        let w = self.game_params.viewport_width as f32;
+        let h = self.game_params.viewport_height as f32;
+        let x = w - 10.0;
+        let y = h * 0.75;
+        // ~170° — mostly left with a slight upward angle.
+        let angle = std::f32::consts::PI - 0.2;
+        particles::EmitterMotion {
+            position_start: [x, y],
+            position_end: [x, y],
+            velocity_start: [0.0, 0.0],
+            velocity_end: [0.0, 0.0],
+            angle_start: angle,
+            angle_end: angle,
+            ..Default::default()
+        }
+    }
+
     fn update_particle_system(&mut self, dt: f32, prev_ship: &ship::ShipState) {
-        let current_ship = &self.state.ship_state;
-        let maybe_motion = if self.state.input_state.thrust > 0.0 && !self.state.dead {
-            let start_emitter = prev_ship.get_emitter_state();
-            let end_emitter = current_ship.get_emitter_state();
-            Some(particles::EmitterMotion {
-                position_start: start_emitter.0,
-                position_end: end_emitter.0,
-                velocity_start: prev_ship.velocity,
-                velocity_end: current_ship.velocity,
-                angle_start: start_emitter.1,
-                angle_end: end_emitter.1,
-                ..Default::default()
-            })
-        } else {
-            None
+        let maybe_motion = match self.state.mode {
+            GameMode::Title => {
+                // Always emit from the fixed title emitter.
+                Some(self.title_emitter_motion())
+            }
+            GameMode::Playing => {
+                let current_ship = &self.state.ship_state;
+                if self.state.input_state.thrust > 0.0 && !self.state.dead {
+                    let start_emitter = prev_ship.get_emitter_state();
+                    let end_emitter = current_ship.get_emitter_state();
+                    Some(particles::EmitterMotion {
+                        position_start: start_emitter.0,
+                        position_end: end_emitter.0,
+                        velocity_start: prev_ship.velocity,
+                        velocity_end: current_ship.velocity,
+                        angle_start: start_emitter.1,
+                        angle_end: end_emitter.1,
+                        ..Default::default()
+                    })
+                } else {
+                    None
+                }
+            }
         };
 
         // Updates state, but doesn't run GPU just yet.
@@ -210,24 +303,35 @@ impl Spout {
         let (game_dt, wall_dt) = self.tick();
         self.tick_wall_dt = wall_dt;
 
-        // Process input state integrated over passage of time.
-        self.state.prev_ship_state = self.state.ship_state;
-        let prev_ship = self.state.ship_state;
-        self.update_ship(game_dt);
+        match self.state.mode {
+            GameMode::Title => {
+                // No ship physics or collision in title mode.
+                // Just run particles to erode the title text.
+                let prev_ship = self.state.ship_state;
+                self.update_particle_system(game_dt, &prev_ship);
+            }
+            GameMode::Playing => {
+                // Process input state integrated over passage of time.
+                self.state.prev_ship_state = self.state.ship_state;
+                let prev_ship = self.state.ship_state;
+                self.update_ship(game_dt);
 
-        // Poll GPU collision result from last frame (1-frame latency).
-        if !self.state.dead && self.collision_detector.result.hit {
-            self.state.dead = true;
-            log::info!(
-                "Ship collided with terrain at ({:.0}, {:.0})",
-                self.state.ship_state.position[0],
-                self.state.ship_state.position[1]
-            );
+                // Poll GPU collision result from last frame (1-frame latency).
+                if !self.state.dead && self.collision_detector.result.hit {
+                    self.state.dead = true;
+                    self.state.explosion_pending = true;
+                    log::info!(
+                        "Ship collided with terrain at ({:.0}, {:.0})",
+                        self.state.ship_state.position[0],
+                        self.state.ship_state.position[1]
+                    );
+                }
+
+                self.update_viewport_height();
+
+                self.update_particle_system(game_dt, &prev_ship);
+            }
         }
-
-        self.update_viewport_height();
-
-        self.update_particle_system(game_dt, &prev_ship);
 
         // Update camera state.
         self.renderer.update_state(
@@ -259,16 +363,8 @@ impl framework::Example for Spout {
     ) -> Self {
         window.set_cursor_visible(false);
         let game_params = game_params::get_game_config_from_default_file();
-        let game_state = GameState {
-            ship_state: ship::ShipState::init(
-                &game_params.ship_params,
-                [
-                    (game_params.viewport_width / 2) as f32 + 0.5,
-                    (game_params.viewport_height / 2) as f32 + 0.5,
-                ],
-            ),
-            ..Default::default()
-        };
+        // Start in title mode — no ship needed yet.
+        let game_state = GameState::default();
 
         let game_view_texture = make_texture(
             device,
@@ -295,6 +391,8 @@ impl framework::Example for Spout {
             (game_params.level_width * game_params.level_height * 4) as u64,
         );
 
+        // Use a placeholder level manager for construction; enter_title() will
+        // replace it immediately after.
         let level_manager = level_manager::LevelManager::init(
             device,
             &game_params,
@@ -319,6 +417,7 @@ impl framework::Example for Spout {
 
         let ship_renderer = ship::ShipRenderer::init(device);
         let collision_detector = collision::CollisionDetector::init(device);
+        let background = background::BackgroundRenderer::init(device, queue);
 
         let game_text = text::TextRenderer::init(
             device,
@@ -362,7 +461,7 @@ impl framework::Example for Spout {
             }
         }
 
-        Spout {
+        let mut spout = Spout {
             game_params,
             state: game_state,
             collector,
@@ -376,6 +475,7 @@ impl framework::Example for Spout {
             particle_system,
             ship_renderer,
             collision_detector,
+            background,
             game_text,
             overlay_text,
             audio,
@@ -383,7 +483,9 @@ impl framework::Example for Spout {
             show_debug_overlay: true,
             frame_times: Vec::with_capacity(60),
             tick_wall_dt: 0.0,
-        }
+        };
+        spout.enter_title(device, queue);
+        spout
     }
 
     fn update(&mut self, event: winit::event::WindowEvent) {
@@ -446,30 +548,42 @@ impl framework::Example for Spout {
         window: &winit::window::Window,
     ) {
         // Read back GPU collision result from previous frame.
-        self.collision_detector.poll_result(device);
-
-        if self.state.reset_requested {
-            self.reset(device, queue);
-        }
-
-        {
-            if !self.state.prev_input_state.fullscreen && self.state.input_state.fullscreen {
-                if window.fullscreen().is_some() {
-                    log::info!("Setting windowed mode.");
-                    window.set_fullscreen(None);
-                } else {
-                    // Borderless fullscreen — instant, no display mode switch or
-                    // macOS Space animation. Just covers the screen.
-                    log::info!("Setting borderless fullscreen.");
-                    window.set_fullscreen(Some(winit::window::Fullscreen::Borderless(None)));
-                }
-            }
+        if self.state.mode == GameMode::Playing {
+            self.collision_detector.poll_result(device);
         }
 
         let mut encoder =
             device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
 
+        // Update input and game state first, so transitions see correct prev/current.
         self.update_state();
+
+        // Fullscreen toggle (edge-triggered, independent of game state).
+        if !self.state.prev_input_state.fullscreen && self.state.input_state.fullscreen {
+            if window.fullscreen().is_some() {
+                log::info!("Setting windowed mode.");
+                window.set_fullscreen(None);
+            } else {
+                log::info!("Setting borderless fullscreen.");
+                window.set_fullscreen(Some(winit::window::Fullscreen::Borderless(None)));
+            }
+        }
+
+        // Handle mode transitions after input is updated.
+        if self.state.reset_requested {
+            self.state.reset_requested = false;
+            self.enter_title(device, queue);
+        } else if self.state.mode == GameMode::Title {
+            // Start game on a NEW press of thrust or rotate (edge, not held).
+            let input = &self.state.input_state;
+            let prev = &self.state.prev_input_state;
+            let new_thrust = input.thrust > 0.0 && prev.thrust == 0.0;
+            let new_rotate =
+                input.rotate.abs() > 0.0 && prev.rotate.abs() == 0.0;
+            if new_thrust || new_rotate {
+                self.start_game(device, queue);
+            }
+        }
 
         self.level_manager.sync_height(
             device,
@@ -479,23 +593,50 @@ impl framework::Example for Spout {
             &mut self.staging_belt,
         );
 
+        // Ship explosion burst — write particles before compute runs.
+        if self.state.explosion_pending {
+            self.state.explosion_pending = false;
+            let ship = &self.state.ship_state;
+            self.particle_system.emit_burst(
+                &mut encoder,
+                &mut self.staging_belt,
+                ship.position,
+                ship.velocity,
+                50000,  // burst count
+                self.game_params.particle_system_params.emission_speed,
+                self.game_params.particle_system_params.max_particle_life,
+            );
+        }
+
         // Run compute pipeline(s).
         self.level_manager.compose_tiles(&mut encoder);
         self.particle_system
             .run_compute(&self.level_manager, &mut encoder, &mut self.staging_belt);
 
-        // Collision detection — runs after particles update the terrain buffer.
-        self.collision_detector.dispatch(
-            device,
+        // Collision detection — only during gameplay.
+        if self.state.mode == GameMode::Playing {
+            self.collision_detector.dispatch(
+                device,
+                &mut encoder,
+                &mut self.staging_belt,
+                &self.state.ship_state,
+                &self.state.prev_ship_state,
+                self.level_manager.terrain_buffer(),
+                self.game_params.level_width,
+            );
+        }
+
+        // Render background (clears and draws tiled background).
+        self.background.update_state(
+            &self.game_params,
+            self.state.viewport_offset,
             &mut encoder,
             &mut self.staging_belt,
-            &self.state.ship_state,
-            &self.state.prev_ship_state,
-            self.level_manager.terrain_buffer(),
-            self.game_params.level_width,
         );
+        self.background
+            .render(&self.game_view_texture, &mut encoder);
 
-        // Render terrain.
+        // Render terrain (on top of background).
         self.level_manager
             .terrain_renderer
             .render(&self.game_view_texture, &mut encoder);
@@ -504,8 +645,8 @@ impl framework::Example for Spout {
         self.particle_system
             .render(&self.game_view_texture, &mut encoder);
 
-        // Render ship
-        if self.game_params.render_ship {
+        // Render ship — only during gameplay, and not when dead.
+        if self.state.mode == GameMode::Playing && self.game_params.render_ship && !self.state.dead {
             self.ship_renderer.render(
                 &self.state.ship_state,
                 &self.game_params,
@@ -516,14 +657,14 @@ impl framework::Example for Spout {
             );
         }
 
-        // In-game HUD — renders into game view at native pixel resolution.
-        // Goes through bloom + CRT with everything else.
-        {
+        // In-game HUD — only during gameplay.
+        if self.state.mode == GameMode::Playing {
             let current_level = self.state.score / self.game_params.level_height as i32 + 1;
             let score_text = format!("{}", self.state.score);
             let level_text = format!("LV{}", current_level);
             let white = [1.0, 1.0, 1.0, 1.0];
-            let level_x = self.game_text.surface_width - (level_text.len() as f32 * 10.0) - 2.0;
+            let level_x =
+                self.game_text.surface_width - self.game_text.text_width(&level_text, 1.0) - 2.0;
             self.game_text.draw(
                 device,
                 &mut encoder,
@@ -533,6 +674,37 @@ impl framework::Example for Spout {
                     (&level_text, level_x, 2.0, 1.0, white),
                 ],
             );
+
+            // Game over overlay.
+            if self.state.dead {
+                let w = self.game_text.surface_width;
+                let h = self.game_text.surface_height;
+                let white = [1.0, 1.0, 1.0, 1.0];
+                let dim = [0.6, 0.6, 0.6, 1.0];
+
+                let go = "GAME OVER";
+                let go_x = (w - self.game_text.text_width(go, 1.0)) / 2.0;
+                let go_y = h / 2.0 - 10.0;
+
+                let sc = format!("SCORE {}", self.state.score);
+                let sc_x = (w - self.game_text.text_width(&sc, 1.0)) / 2.0;
+                let sc_y = go_y - 18.0;
+
+                let restart = "R TO RESTART";
+                let r_x = (w - self.game_text.text_width(restart, 1.0)) / 2.0;
+                let r_y = sc_y - 18.0;
+
+                self.game_text.draw(
+                    device,
+                    &mut encoder,
+                    &self.game_view_texture,
+                    &[
+                        (go, go_x, go_y, 1.0, white),
+                        (&sc, sc_x, sc_y, 1.0, white),
+                        (restart, r_x, r_y, 1.0, dim),
+                    ],
+                );
+            }
         }
 
         // Blit game view (240×135) → upscaled HDR (surface resolution).

@@ -133,7 +133,9 @@ impl Emitter {
         SizedBuffer {
             buffer: device.create_buffer(&wgpu::BufferDescriptor {
                 size: buf_size,
-                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+                usage: wgpu::BufferUsages::STORAGE
+                    | wgpu::BufferUsages::COPY_SRC
+                    | wgpu::BufferUsages::COPY_DST,
                 label: Some("Particle storage"),
                 mapped_at_creation: false,
             }),
@@ -257,6 +259,11 @@ impl Emitter {
         }
     }
 
+    pub fn set_nozzle_speed(&mut self, speed_min: f32, speed_max: f32) {
+        self.params.nozzle.speed_min = speed_min;
+        self.params.nozzle.speed_max = speed_max;
+    }
+
     pub fn emit_for_period(&mut self, dt: f32, emitter_motion: EmitterMotion) {
         // Update the emitter state and prepare all the necessary inputs to run compute, but don't actually run the compute yet.
         let start_time = self.time;
@@ -323,6 +330,86 @@ impl Emitter {
             self.emit_params = None;
         }
     }
+
+    /// Write a radial burst of particles directly into the particle buffer.
+    /// Particles radiate outward from `center` with random speed variation.
+    #[allow(clippy::too_many_arguments)]
+    pub fn emit_burst(
+        &mut self,
+        encoder: &mut wgpu::CommandEncoder,
+        belt: &mut wgpu::util::StagingBelt,
+        center: [f32; 2],
+        base_velocity: [f32; 2],
+        burst_count: u32,
+        speed: f32,
+        ttl: f32,
+    ) {
+        let count = burst_count.min(self.params.num_particles);
+        let particle_size = std::mem::size_of::<Particle>() as u64;
+        let mut particles = Vec::with_capacity(count as usize);
+
+        let mut rng = fastrand::Rng::with_seed(
+            (center[0].to_bits() as u64).wrapping_mul(center[1].to_bits() as u64 | 1),
+        );
+
+        for i in 0..count {
+            let angle = 2.0 * std::f32::consts::PI * (i as f32) / (count as f32);
+            // Random speed variation: 50%–150% of base speed.
+            let speed_vary = speed * (0.5 + rng.f32());
+            particles.push(Particle {
+                position: center,
+                velocity: [
+                    base_velocity[0] + speed_vary * angle.cos(),
+                    base_velocity[1] + speed_vary * angle.sin(),
+                ],
+                ttl,
+                _padding: 0,
+            });
+        }
+
+        // Write particles into the circular buffer at write_index.
+        let buf_len = self.params.num_particles;
+        let start = self.write_index;
+        let data = bytemuck::cast_slice::<Particle, u8>(&particles);
+
+        // Handle wrap-around: may need two copies.
+        let end = start + count;
+        if end <= buf_len {
+            // Single contiguous write.
+            belt.write_buffer(
+                encoder,
+                &self.particle_buffer.buffer,
+                start as u64 * particle_size,
+                // safe: count > 0
+                wgpu::BufferSize::new(count as u64 * particle_size).unwrap(),
+            )
+            .copy_from_slice(data);
+        } else {
+            // Wraps around the circular buffer.
+            let first_chunk = (buf_len - start) as usize;
+            let first_bytes = first_chunk * std::mem::size_of::<Particle>();
+            belt.write_buffer(
+                encoder,
+                &self.particle_buffer.buffer,
+                start as u64 * particle_size,
+                // safe: first_chunk > 0 (start < buf_len)
+                wgpu::BufferSize::new(first_bytes as u64).unwrap(),
+            )
+            .copy_from_slice(&data[..first_bytes]);
+
+            let second_bytes = data.len() - first_bytes;
+            belt.write_buffer(
+                encoder,
+                &self.particle_buffer.buffer,
+                0,
+                // safe: second_bytes > 0 (end > buf_len)
+                wgpu::BufferSize::new(second_bytes as u64).unwrap(),
+            )
+            .copy_from_slice(&data[first_bytes..]);
+        }
+
+        self.write_index = end % buf_len;
+    }
 }
 
 pub struct ParticleSystem {
@@ -383,6 +470,26 @@ impl Default for ParticleSystemUniforms {
 }
 
 impl ParticleSystem {
+    pub fn set_nozzle_speed(&mut self, speed_min: f32, speed_max: f32) {
+        self.emitter.set_nozzle_speed(speed_min, speed_max);
+    }
+
+    /// Emit a radial burst of particles (e.g. ship explosion).
+    #[allow(clippy::too_many_arguments)]
+    pub fn emit_burst(
+        &mut self,
+        encoder: &mut wgpu::CommandEncoder,
+        belt: &mut wgpu::util::StagingBelt,
+        center: [f32; 2],
+        base_velocity: [f32; 2],
+        burst_count: u32,
+        speed: f32,
+        ttl: f32,
+    ) {
+        self.emitter
+            .emit_burst(encoder, belt, center, base_velocity, burst_count, speed, ttl);
+    }
+
     pub fn update_state(&mut self, dt: f32, viewport_offset: i32, motion: Option<EmitterMotion>) {
         if let Some(motion) = motion {
             self.emitter.emit_for_period(dt, motion);
@@ -1123,5 +1230,101 @@ mod tests {
         let raw = gpu::readback_pixels(&device, &staging_buffer);
         let rgba = gpu::rgba16f_to_rgba8(&raw, TEST_W, TEST_H);
         gpu::compare_or_generate_golden("particle_render", &rgba, TEST_W, TEST_H);
+    }
+
+    /// Emit a radial burst via `emit_burst` and read the particle buffer back,
+    /// verifying that particles were written at the expected positions with
+    /// radial velocities.
+    #[test]
+    fn test_emit_burst_headless() {
+        let Some((device, queue)) = gpu::try_create_headless_device() else {
+            eprintln!("No GPU adapter available — skipping test_emit_burst_headless");
+            return;
+        };
+
+        let mut game_params = crate::game_params::GameParams::default();
+        game_params.particle_system_params.emission_rate = 100.0;
+        game_params.particle_system_params.max_particle_life = 1.0;
+
+        let mut emitter = Emitter::new(&device, &game_params);
+
+        let center = [120.0f32, 67.0];
+        let base_vel = [5.0f32, -3.0];
+        let burst_count = 32u32;
+        let speed = 100.0f32;
+        let ttl = 1.5f32;
+
+        let staging_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Burst readback staging"),
+            size: emitter.particle_buffer.size,
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let mut belt = wgpu::util::StagingBelt::new(device.clone(), 4096);
+        let mut encoder =
+            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+
+        emitter.emit_burst(
+            &mut encoder,
+            &mut belt,
+            center,
+            base_vel,
+            burst_count,
+            speed,
+            ttl,
+        );
+
+        encoder.copy_buffer_to_buffer(
+            &emitter.particle_buffer.buffer,
+            0,
+            &staging_buffer,
+            0,
+            emitter.particle_buffer.size,
+        );
+        belt.finish();
+        queue.submit(Some(encoder.finish()));
+        belt.recall();
+
+        let buffer_slice = staging_buffer.slice(..);
+        buffer_slice.map_async(wgpu::MapMode::Read, |_| {});
+        device.poll(wgpu::PollType::wait_indefinitely()).unwrap();
+
+        let data = buffer_slice.get_mapped_range();
+        let particles: Vec<Particle> = bytemuck::cast_slice(&data).to_vec();
+        drop(data);
+        staging_buffer.unmap();
+
+        // All burst particles should be at the center position with ttl set.
+        let live: Vec<_> = particles.iter().filter(|p| p.ttl > 0.0).collect();
+        assert_eq!(
+            live.len(),
+            burst_count as usize,
+            "Expected {} burst particles, got {}",
+            burst_count,
+            live.len()
+        );
+
+        for p in &live {
+            assert_eq!(p.position, center, "Burst particle should be at center");
+            assert!(
+                (p.ttl - ttl).abs() < 1e-5,
+                "Burst particle ttl={} expected {}",
+                p.ttl,
+                ttl
+            );
+            // Velocity should include base_vel + radial component.
+            let radial_vx = p.velocity[0] - base_vel[0];
+            let radial_vy = p.velocity[1] - base_vel[1];
+            let radial_speed = (radial_vx * radial_vx + radial_vy * radial_vy).sqrt();
+            // Speed varies 50%–150% of base, so radial_speed in [50, 150].
+            assert!(
+                radial_speed >= speed * 0.4 && radial_speed <= speed * 1.6,
+                "Radial speed {} outside expected range [{}, {}]",
+                radial_speed,
+                speed * 0.5,
+                speed * 1.5
+            );
+        }
     }
 }

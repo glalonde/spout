@@ -124,6 +124,58 @@ impl LevelMaker {
         maker
     }
 
+    /// Create a title-screen level: empty terrain with text blitted as solid
+    /// cells centered in the viewport.
+    fn init_title(
+        level_width: u32,
+        level_height: u32,
+        starting_terrain_health: i32,
+        viewport_height: u32,
+    ) -> Self {
+        let mut maker = LevelMaker {
+            level_width,
+            level_height,
+            starting_terrain_health,
+            levels: vec![],
+            wip_levels: std::collections::BTreeMap::new(),
+        };
+
+        // Create an empty level.
+        let level_data = vec![0i32; (level_width * level_height) as usize];
+        maker.levels.push(level_data);
+
+        // Rasterize "SPOUT" at 3x scale into terrain cells.
+        // Title text gets 20x normal health so it erodes visibly but not too fast.
+        let title_health = starting_terrain_health * 20;
+        let (tw, th, text_grid) = crate::text::rasterize_text_to_terrain(
+            "SPOUT",
+            &crate::text::Font::O4b30,
+            3.0,
+            title_health,
+        );
+
+        // Center the text in the viewport area.
+        let level = maker.levels.first_mut().expect("level 0 exists");
+        let offset_x = (level_width.saturating_sub(tw)) / 2;
+        let offset_y = (viewport_height.saturating_sub(th)) / 2;
+
+        for row in 0..th {
+            for col in 0..tw {
+                let src = text_grid[(row * tw + col) as usize];
+                if src == 0 {
+                    continue;
+                }
+                let dst_x = offset_x + col;
+                let dst_y = offset_y + row;
+                if dst_x < level_width && dst_y < level_height {
+                    level[(dst_y * level_width + dst_x) as usize] = src;
+                }
+            }
+        }
+
+        maker
+    }
+
     pub fn prefetch_up_to_level(&mut self, i: i32) {
         for level_index in self.levels.len() as u32..(i + 1) as u32 {
             self.wip_levels.entry(level_index).or_insert_with(|| {
@@ -460,6 +512,69 @@ impl LevelManager {
         lm
     }
 
+    /// Initialize for the title screen: empty terrain with "SPOUT" text blitted
+    /// as destructible terrain centered in the viewport.
+    pub fn init_title(
+        device: &wgpu::Device,
+        game_params: &super::game_params::GameParams,
+        viewport_offset: i32,
+        init_encoder: &mut wgpu::CommandEncoder,
+        belt: &mut wgpu::util::StagingBelt,
+    ) -> Self {
+        let level_width = game_params.level_width;
+        let level_height = game_params.level_height;
+
+        let active_interval_height = std::cmp::max(
+            level_height,
+            (game_params.viewport_height as f32 * 1.5) as u32,
+        );
+        let active_extent_below_viewport = game_params.viewport_height / 4;
+        let active_interval = LevelManager::get_active_interval(
+            0,
+            active_interval_height as i32,
+            active_extent_below_viewport as i32,
+        );
+
+        let unused_buffers = vec![buffer_util::make_buffer(
+            device,
+            level_width as usize,
+            level_height as usize,
+            "Terrain",
+        )];
+        let composite_tile_buffer = buffer_util::make_buffer(
+            device,
+            level_width as usize,
+            active_interval_height as usize,
+            "CompositeTerrainBuffer",
+        );
+        let renderer = TerrainRenderer::init(device, game_params, &composite_tile_buffer);
+
+        let mut lm = LevelManager {
+            level_width: game_params.level_width,
+            level_height: game_params.level_height,
+            active_interval_height,
+            active_extent_below_viewport,
+
+            loaded_tiles: std::collections::BTreeMap::new(),
+            composite_tile: TerrainTile {
+                shape: active_interval,
+                buffer: composite_tile_buffer,
+            },
+
+            unused_buffers,
+            level_maker: LevelMaker::init_title(
+                level_width,
+                level_height,
+                game_params.level_params.starting_terrain_health,
+                game_params.viewport_height,
+            ),
+            terrain_renderer: renderer,
+        };
+
+        lm.sync_height(device, viewport_offset, init_encoder, game_params, belt);
+        lm
+    }
+
     pub fn block_on_levels(&mut self, active_levels: Interval) {
         for check_level_index in active_levels.start..active_levels.end {
             if check_level_index >= self.level_maker.levels.len() as i32 {
@@ -781,7 +896,7 @@ impl TerrainRenderer {
                 resolve_target: None,
                 depth_slice: None,
                 ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                    load: wgpu::LoadOp::Load,
                     store: wgpu::StoreOp::Store,
                 },
             })],
