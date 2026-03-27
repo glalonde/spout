@@ -34,6 +34,7 @@ struct GameState {
     input_state: InputState,
     prev_input_state: InputState,
     ship_state: ship::ShipState,
+    prev_ship_state: ship::ShipState,
     viewport_offset: i32,
     score: i32,
     paused: bool,
@@ -99,7 +100,7 @@ impl Spout {
             &self.level_manager,
         );
 
-        self.collision_detector.colliding = false;
+        self.collision_detector.result = collision::CollisionResult::default();
 
         self.staging_belt.finish();
         queue.submit(Some(init_encoder.finish()));
@@ -210,17 +211,39 @@ impl Spout {
         self.tick_wall_dt = wall_dt;
 
         // Process input state integrated over passage of time.
+        self.state.prev_ship_state = self.state.ship_state;
         let prev_ship = self.state.ship_state;
         self.update_ship(game_dt);
 
         // Poll GPU collision result from last frame (1-frame latency).
-        if !self.state.dead && self.collision_detector.colliding {
-            self.state.dead = true;
-            log::info!(
-                "Ship collided with terrain at ({:.0}, {:.0})",
-                self.state.ship_state.position[0],
-                self.state.ship_state.position[1]
-            );
+        let collision = self.collision_detector.result;
+        if collision.hit {
+            // Bounce: reflect velocity along the contact normal with damping.
+            const BOUNCE_DAMPING: f32 = 0.5;
+            let nx = collision.normal[0];
+            let ny = collision.normal[1];
+            let vx = self.state.ship_state.velocity[0];
+            let vy = self.state.ship_state.velocity[1];
+            // v_reflected = v - 2*(v·n)*n, then damped.
+            let dot = vx * nx + vy * ny;
+            if dot < 0.0 {
+                // Only reflect if moving into the surface.
+                self.state.ship_state.velocity[0] = (vx - 2.0 * dot * nx) * BOUNCE_DAMPING;
+                self.state.ship_state.velocity[1] = (vy - 2.0 * dot * ny) * BOUNCE_DAMPING;
+            }
+            // Revert to previous position to push out of terrain.
+            self.state.ship_state.position = prev_ship.position;
+
+            if !self.state.dead {
+                self.state.dead = true;
+                log::info!(
+                    "Ship collided with terrain at ({:.0}, {:.0}), normal=({}, {})",
+                    self.state.ship_state.position[0],
+                    self.state.ship_state.position[1],
+                    nx,
+                    ny,
+                );
+            }
         }
 
         self.update_viewport_height();
@@ -483,16 +506,15 @@ impl framework::Example for Spout {
             .run_compute(&self.level_manager, &mut encoder, &mut self.staging_belt);
 
         // Collision detection — runs after particles update the terrain buffer.
-        if !self.state.dead {
-            self.collision_detector.dispatch(
-                device,
-                &mut encoder,
-                &mut self.staging_belt,
-                &self.state.ship_state,
-                self.level_manager.terrain_buffer(),
-                self.game_params.level_width,
-            );
-        }
+        self.collision_detector.dispatch(
+            device,
+            &mut encoder,
+            &mut self.staging_belt,
+            &self.state.ship_state,
+            &self.state.prev_ship_state,
+            self.level_manager.terrain_buffer(),
+            self.game_params.level_width,
+        );
 
         // Render terrain.
         self.level_manager

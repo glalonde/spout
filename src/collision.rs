@@ -1,7 +1,8 @@
-//! GPU-based ship-terrain collision detection. Runs a compute shader that
-//! checks terrain health at the ship position against the GPU terrain buffer
-//! (which reflects particle erosion). The result is read back asynchronously
-//! with one frame of latency.
+//! GPU-based ship-terrain collision detection with contact normal.
+//!
+//! Runs a compute shader that Bresenham-walks each hull vertex from its
+//! previous to current position, checking the GPU terrain buffer. Returns
+//! a hit flag and the axis-aligned contact normal for bouncing.
 
 use wgpu::util::DeviceExt;
 
@@ -12,24 +13,37 @@ use crate::buffer_util::SizedBuffer;
 struct CollisionUniforms {
     ship_x: f32,
     ship_y: f32,
+    prev_ship_x: f32,
+    prev_ship_y: f32,
     ship_orientation: f32,
+    prev_ship_orientation: f32,
     terrain_buffer_offset: i32,
     terrain_width: u32,
     terrain_buffer_height: u32,
+    _pad: u32,
+}
+
+/// Collision result read back from the GPU.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct CollisionResult {
+    pub hit: bool,
+    /// Axis-aligned contact normal: e.g. (1,0) = hit from the left,
+    /// (0,-1) = hit from above.
+    pub normal: [f32; 2],
 }
 
 pub struct CollisionDetector {
     pipeline: wgpu::ComputePipeline,
     bind_group_layout: wgpu::BindGroupLayout,
     uniform_buffer: SizedBuffer,
-    /// GPU-side result buffer (1 x u32). Written by the compute shader.
+    /// GPU-side result buffer (3 x u32). Written by the compute shader.
     result_buffer: wgpu::Buffer,
     /// CPU-readable staging buffer for async readback.
     staging_buffer: wgpu::Buffer,
-    /// Whether a readback is in flight (waiting for map_async).
+    /// Whether a readback is in flight.
     pending_readback: bool,
     /// Last collision result read from the GPU.
-    pub colliding: bool,
+    pub result: CollisionResult,
 }
 
 impl CollisionDetector {
@@ -42,7 +56,6 @@ impl CollisionDetector {
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("Collision BGL"),
             entries: &[
-                // Uniforms
                 wgpu::BindGroupLayoutEntry {
                     binding: 0,
                     visibility: wgpu::ShaderStages::COMPUTE,
@@ -53,7 +66,6 @@ impl CollisionDetector {
                     },
                     count: None,
                 },
-                // Terrain buffer (read-only)
                 wgpu::BindGroupLayoutEntry {
                     binding: 1,
                     visibility: wgpu::ShaderStages::COMPUTE,
@@ -64,7 +76,6 @@ impl CollisionDetector {
                     },
                     count: None,
                 },
-                // Result buffer (read-write)
                 wgpu::BindGroupLayoutEntry {
                     binding: 2,
                     visibility: wgpu::ShaderStages::COMPUTE,
@@ -96,23 +107,28 @@ impl CollisionDetector {
         let uniforms = CollisionUniforms {
             ship_x: 0.0,
             ship_y: 0.0,
+            prev_ship_x: 0.0,
+            prev_ship_y: 0.0,
             ship_orientation: 0.0,
+            prev_ship_orientation: 0.0,
             terrain_buffer_offset: 0,
             terrain_width: 0,
             terrain_buffer_height: 0,
+            _pad: 0,
         };
         let uniform_buffer =
             crate::buffer_util::make_uniform_buffer(device, "Collision Uniform Buffer", &uniforms);
 
+        // 3 x u32: [hit, normal_x_bits, normal_y_bits]
         let result_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Collision Result"),
-            contents: bytemuck::cast_slice(&[0u32]),
+            contents: bytemuck::cast_slice(&[0u32; 3]),
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
         });
 
         let staging_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Collision Staging"),
-            size: 4,
+            size: 12, // 3 x u32
             usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -124,28 +140,33 @@ impl CollisionDetector {
             result_buffer,
             staging_buffer,
             pending_readback: false,
-            colliding: false,
+            result: CollisionResult::default(),
         }
     }
 
-    /// Dispatch the collision compute shader and copy the result to the staging
-    /// buffer. Call `poll_result` next frame to read it back.
+    /// Dispatch the collision compute shader.
+    #[allow(clippy::too_many_arguments)]
     pub fn dispatch(
         &mut self,
         device: &wgpu::Device,
         encoder: &mut wgpu::CommandEncoder,
         belt: &mut wgpu::util::StagingBelt,
         ship: &crate::ship::ShipState,
+        prev_ship: &crate::ship::ShipState,
         terrain: &crate::level_manager::TerrainTile,
         terrain_width: u32,
     ) {
         let uniforms = CollisionUniforms {
             ship_x: ship.position[0],
             ship_y: ship.position[1],
+            prev_ship_x: prev_ship.position[0],
+            prev_ship_y: prev_ship.position[1],
             ship_orientation: ship.orientation,
+            prev_ship_orientation: prev_ship.orientation,
             terrain_buffer_offset: terrain.shape.start,
             terrain_width,
             terrain_buffer_height: terrain.shape.size() as u32,
+            _pad: 0,
         };
 
         // safe: uniform_buffer.size is always > 0 (set at GPU buffer creation)
@@ -186,13 +207,11 @@ impl CollisionDetector {
             cpass.dispatch_workgroups(1, 1, 1);
         }
 
-        // Copy result to staging buffer for CPU readback.
-        encoder.copy_buffer_to_buffer(&self.result_buffer, 0, &self.staging_buffer, 0, 4);
+        encoder.copy_buffer_to_buffer(&self.result_buffer, 0, &self.staging_buffer, 0, 12);
         self.pending_readback = true;
     }
 
-    /// Poll for the async readback result. Call once per frame after
-    /// `queue.submit`. Updates `self.colliding`.
+    /// Poll for the async readback result. Updates `self.result`.
     pub fn poll_result(&mut self, device: &wgpu::Device) {
         if !self.pending_readback {
             return;
@@ -200,18 +219,18 @@ impl CollisionDetector {
 
         let slice = self.staging_buffer.slice(..);
         slice.map_async(wgpu::MapMode::Read, |_| {});
-        // Poll the device to drive the map operation. This is non-blocking
-        // if the GPU has already finished the copy (which it has, since we
-        // submitted last frame).
         // safe: wait_indefinitely always resolves after GPU work completes
         device.poll(wgpu::PollType::wait_indefinitely()).unwrap();
 
         let data = slice.get_mapped_range();
-        let value: u32 = *bytemuck::from_bytes(&data[..4]);
+        let values: &[u32] = bytemuck::cast_slice(&data[..12]);
+        self.result = CollisionResult {
+            hit: values[0] != 0,
+            normal: [f32::from_bits(values[1]), f32::from_bits(values[2])],
+        };
         drop(data);
         self.staging_buffer.unmap();
 
-        self.colliding = value != 0;
         self.pending_readback = false;
     }
 }

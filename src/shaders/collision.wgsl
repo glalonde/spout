@@ -1,18 +1,29 @@
-// Pixel-perfect ship-terrain collision detection.
-// Rasterizes the ship's triangle hull, tests every covered cell against
-// the GPU terrain buffer.
+// Ship-terrain collision detection with contact normal.
+//
+// For each hull vertex, Bresenham-walks from the previous position to the
+// current position. If a solid cell is hit, records whether the step was
+// horizontal or vertical to produce a bounce normal.
+//
+// Result buffer layout:
+//   [0] = hit (0 or 1)
+//   [1] = normal_x (as u32 bits of f32)
+//   [2] = normal_y (as u32 bits of f32)
 
 struct CollisionUniforms {
-    // Ship position in world coordinates.
+    // Current ship position.
     ship_x: f32,
     ship_y: f32,
-    // Ship orientation in radians.
+    // Previous ship position.
+    prev_ship_x: f32,
+    prev_ship_y: f32,
+    // Ship orientation (current and previous).
     ship_orientation: f32,
-    // Terrain buffer coordinate offset (world Y of buffer row 0).
+    prev_ship_orientation: f32,
+    // Terrain buffer.
     terrain_buffer_offset: i32,
-    // Terrain dimensions.
     terrain_width: u32,
     terrain_buffer_height: u32,
+    _pad: u32,
 };
 
 @group(0) @binding(0)
@@ -25,31 +36,16 @@ var<storage, read> terrain_buffer: array<i32>;
 var<storage, read_write> result: array<u32>;
 
 // Ship hull vertices in local space (matches ship.wgsl).
-// Outer triangle: nose, left wing, right wing.
-const NOSE: vec2<f32> = vec2<f32>(12.0, 0.0);
-const LEFT_WING: vec2<f32> = vec2<f32>(-8.0, 9.0);
-const RIGHT_WING: vec2<f32> = vec2<f32>(-8.0, -9.0);
+const HULL_VERTS: array<vec2<f32>, 3> = array<vec2<f32>, 3>(
+    vec2<f32>(12.0, 0.0),   // nose
+    vec2<f32>(-8.0, 9.0),   // left wing
+    vec2<f32>(-8.0, -9.0),  // right wing
+);
 
 fn rotate(v: vec2<f32>, angle: f32) -> vec2<f32> {
     let c = cos(angle);
     let s = sin(angle);
     return vec2<f32>(c * v.x - s * v.y, s * v.x + c * v.y);
-}
-
-// Sign of the cross product (p2-p1) × (p-p1). Positive if p is to the left
-// of the edge p1→p2.
-fn edge_sign(p: vec2<f32>, p1: vec2<f32>, p2: vec2<f32>) -> f32 {
-    return (p2.x - p1.x) * (p.y - p1.y) - (p2.y - p1.y) * (p.x - p1.x);
-}
-
-// Point-in-triangle test using barycentric signs.
-fn in_triangle(p: vec2<f32>, a: vec2<f32>, b: vec2<f32>, c: vec2<f32>) -> bool {
-    let d1 = edge_sign(p, a, b);
-    let d2 = edge_sign(p, b, c);
-    let d3 = edge_sign(p, c, a);
-    let has_neg = (d1 < 0.0) || (d2 < 0.0) || (d3 < 0.0);
-    let has_pos = (d1 > 0.0) || (d2 > 0.0) || (d3 > 0.0);
-    return !(has_neg && has_pos);
 }
 
 fn is_solid(wx: i32, wy: i32) -> bool {
@@ -60,34 +56,95 @@ fn is_solid(wx: i32, wy: i32) -> bool {
     if (row < 0 || row >= i32(uniforms.terrain_buffer_height)) {
         return false;
     }
-    let index = row * i32(uniforms.terrain_width) + wx;
-    return terrain_buffer[index] > 0;
+    return terrain_buffer[row * i32(uniforms.terrain_width) + wx] > 0;
 }
 
-@compute @workgroup_size(1)
-fn main() {
-    // Transform hull vertices to world space.
-    let a = rotate(NOSE, uniforms.ship_orientation) + vec2<f32>(uniforms.ship_x, uniforms.ship_y);
-    let b = rotate(LEFT_WING, uniforms.ship_orientation) + vec2<f32>(uniforms.ship_x, uniforms.ship_y);
-    let c = rotate(RIGHT_WING, uniforms.ship_orientation) + vec2<f32>(uniforms.ship_x, uniforms.ship_y);
+fn sign_i(v: f32) -> i32 {
+    if (v >= 0.0) { return 1; } else { return -1; }
+}
 
-    // Compute integer bounding box of the triangle.
-    let min_x = i32(floor(min(min(a.x, b.x), c.x)));
-    let max_x = i32(ceil(max(max(a.x, b.x), c.x)));
-    let min_y = i32(floor(min(min(a.y, b.y), c.y)));
-    let max_y = i32(ceil(max(max(a.y, b.y), c.y)));
+// Bresenham walk from `start` to `end`. Returns the normal of the first
+// solid cell hit, or (0,0) if no collision.
+fn bresenham_check(start: vec2<f32>, end: vec2<f32>) -> vec2<f32> {
+    let from_cell = vec2<i32>(floor(start));
+    let to_cell = vec2<i32>(floor(end));
+    let delta_i = to_cell - from_cell;
+    let num_steps = abs(delta_i.x) + abs(delta_i.y);
 
-    var hit = false;
+    if (num_steps == 0) {
+        // Didn't move cells — just check current cell.
+        if (is_solid(to_cell.x, to_cell.y)) {
+            return normalize(start - end);
+        }
+        return vec2<f32>(0.0, 0.0);
+    }
 
-    for (var y = min_y; y <= max_y; y = y + 1) {
-        for (var x = min_x; x <= max_x; x = x + 1) {
-            // Test cell center against the triangle.
-            let p = vec2<f32>(f32(x) + 0.5, f32(y) + 0.5);
-            if (in_triangle(p, a, b, c) && is_solid(x, y)) {
-                hit = true;
+    let signed_delta = end - start;
+    let delta = abs(signed_delta);
+    let step = vec2<i32>(sign_i(signed_delta.x), sign_i(signed_delta.y));
+
+    let start_remainder = (vec2<f32>(0.5) - (start - vec2<f32>(from_cell))) * vec2<f32>(step);
+    var error = delta.x * start_remainder.y - delta.y * start_remainder.x;
+    var cell = from_cell;
+
+    for (var i = 0; i < num_steps; i = i + 1) {
+        let err_h = error - delta.y;
+        let err_v = error + delta.x;
+
+        if (err_v > -err_h) {
+            // Horizontal step.
+            error = err_h;
+            cell.x = cell.x + step.x;
+            if (is_solid(cell.x, cell.y)) {
+                return vec2<f32>(f32(-step.x), 0.0);
+            }
+        } else {
+            // Vertical step.
+            error = err_v;
+            cell.y = cell.y + step.y;
+            if (is_solid(cell.x, cell.y)) {
+                return vec2<f32>(0.0, f32(-step.y));
             }
         }
     }
 
+    return vec2<f32>(0.0, 0.0);
+}
+
+@compute @workgroup_size(1)
+fn main() {
+    var best_normal = vec2<f32>(0.0, 0.0);
+
+    // Check each hull vertex's motion from previous to current frame.
+    for (var i = 0u; i < 3u; i = i + 1u) {
+        let prev_world = rotate(HULL_VERTS[i], uniforms.prev_ship_orientation)
+            + vec2<f32>(uniforms.prev_ship_x, uniforms.prev_ship_y);
+        let curr_world = rotate(HULL_VERTS[i], uniforms.ship_orientation)
+            + vec2<f32>(uniforms.ship_x, uniforms.ship_y);
+
+        let n = bresenham_check(prev_world, curr_world);
+        if (n.x != 0.0 || n.y != 0.0) {
+            best_normal = n;
+        }
+    }
+
+    // Also check a few points along the edges for coverage.
+    for (var i = 0u; i < 3u; i = i + 1u) {
+        let j = (i + 1u) % 3u;
+        let mid_local = (HULL_VERTS[i] + HULL_VERTS[j]) * 0.5;
+        let prev_world = rotate(mid_local, uniforms.prev_ship_orientation)
+            + vec2<f32>(uniforms.prev_ship_x, uniforms.prev_ship_y);
+        let curr_world = rotate(mid_local, uniforms.ship_orientation)
+            + vec2<f32>(uniforms.ship_x, uniforms.ship_y);
+
+        let n = bresenham_check(prev_world, curr_world);
+        if (n.x != 0.0 || n.y != 0.0) {
+            best_normal = n;
+        }
+    }
+
+    let hit = best_normal.x != 0.0 || best_normal.y != 0.0;
     result[0] = select(0u, 1u, hit);
+    result[1] = bitcast<u32>(best_normal.x);
+    result[2] = bitcast<u32>(best_normal.y);
 }
