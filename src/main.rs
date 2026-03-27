@@ -99,6 +99,8 @@ impl Spout {
             &self.level_manager,
         );
 
+        self.collision_detector.colliding = false;
+
         self.staging_belt.finish();
         queue.submit(Some(init_encoder.finish()));
         self.staging_belt.recall();
