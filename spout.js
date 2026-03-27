@@ -1607,12 +1607,12 @@ function __wbg_get_imports() {
             return ret;
         },
         __wbindgen_cast_0000000000000001: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { dtor_idx: 447, function: Function { arguments: [NamedExternref("DeviceOrientationEvent")], shim_idx: 448, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { dtor_idx: 462, function: Function { arguments: [NamedExternref("DeviceOrientationEvent")], shim_idx: 463, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm.wasm_bindgen__closure__destroy__h0ebe684e9dc7a3dc, wasm_bindgen__convert__closures_____invoke__h4a680d4adfe13d74);
             return ret;
         },
         __wbindgen_cast_0000000000000002: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { dtor_idx: 447, function: Function { arguments: [NamedExternref("TouchEvent")], shim_idx: 448, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { dtor_idx: 462, function: Function { arguments: [NamedExternref("TouchEvent")], shim_idx: 463, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm.wasm_bindgen__closure__destroy__h0ebe684e9dc7a3dc, wasm_bindgen__convert__closures_____invoke__h4a680d4adfe13d74_1);
             return ret;
         },
