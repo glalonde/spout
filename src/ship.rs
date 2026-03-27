@@ -40,7 +40,8 @@ impl ShipState {
     }
 
     /// `thrust` in [0.0, 1.0]; `rotate` in [-1.0, 1.0] (positive = CCW/left, negative = CW/right).
-    pub fn update(&mut self, dt: f32, thrust: f32, rotate: f32) {
+    /// `gravity` is acceleration in world Y (negative = downward).
+    pub fn update(&mut self, dt: f32, thrust: f32, rotate: f32, gravity: f32) {
         self.position[0] += dt * self.velocity[0];
         self.position[1] += dt * self.velocity[1];
 
@@ -48,6 +49,9 @@ impl ShipState {
             self.velocity[0] += dt * self.acceleration * thrust * self.orientation.cos();
             self.velocity[1] += dt * self.acceleration * thrust * self.orientation.sin();
         }
+
+        self.velocity[1] += dt * gravity;
+
         {
             let speed =
                 (self.velocity[0] * self.velocity[0] + self.velocity[1] * self.velocity[1]).sqrt();
@@ -268,7 +272,7 @@ mod unit_tests {
     fn stationary_ship_stays_put() {
         let mut s = ShipState::default();
         let pos = s.position;
-        s.update(1.0 / 60.0, 0.0, 0.0);
+        s.update(1.0 / 60.0, 0.0, 0.0, 0.0);
         assert_eq!(s.position, pos);
         assert_eq!(s.velocity, [0.0, 0.0]);
     }
@@ -279,7 +283,7 @@ mod unit_tests {
             orientation: 0.0, // pointing right (+x)
             ..Default::default()
         };
-        s.update(1.0, 1.0, 0.0);
+        s.update(1.0, 1.0, 0.0, 0.0);
         assert!(s.velocity[0] > 0.0, "should accelerate in +x");
         assert!(
             s.velocity[1].abs() < 1e-6,
@@ -293,7 +297,7 @@ mod unit_tests {
             orientation: std::f32::consts::FRAC_PI_2, // pointing up (+y)
             ..Default::default()
         };
-        s.update(1.0, 1.0, 0.0);
+        s.update(1.0, 1.0, 0.0, 0.0);
         assert!(s.velocity[0].abs() < 1e-5, "negligible x component");
         assert!(s.velocity[1] > 0.0, "should accelerate in +y");
     }
@@ -302,7 +306,7 @@ mod unit_tests {
     fn rotation_changes_orientation() {
         let mut s = ShipState::default();
         let initial = s.orientation;
-        s.update(1.0, 0.0, 1.0);
+        s.update(1.0, 0.0, 1.0, 0.0);
         assert!(
             (s.orientation - initial).abs() > 0.0,
             "orientation should change"
@@ -316,7 +320,7 @@ mod unit_tests {
     #[test]
     fn negative_rotation_goes_clockwise() {
         let mut s = ShipState::default();
-        s.update(1.0, 0.0, -1.0);
+        s.update(1.0, 0.0, -1.0, 0.0);
         assert!(s.orientation < 0.0, "negative rotate should decrease angle");
     }
 
@@ -327,7 +331,7 @@ mod unit_tests {
             acceleration: 1000.0,
             ..Default::default()
         };
-        s.update(1.0, 1.0, 0.0);
+        s.update(1.0, 1.0, 0.0, 0.0);
         let speed = (s.velocity[0] * s.velocity[0] + s.velocity[1] * s.velocity[1]).sqrt();
         assert!(
             (speed - 5.0).abs() < 1e-4,
@@ -342,7 +346,7 @@ mod unit_tests {
         s.velocity = [10.0, 5.0];
         let pos = s.position;
         let vel = s.velocity;
-        s.update(0.0, 1.0, 1.0);
+        s.update(0.0, 1.0, 1.0, 0.0);
         assert_eq!(s.position, pos);
         assert_eq!(s.velocity, vel);
     }
@@ -371,7 +375,7 @@ mod unit_tests {
         };
         let p0 = s.position;
         let dt = 0.5;
-        s.update(dt, 0.0, 0.0);
+        s.update(dt, 0.0, 0.0, 0.0);
         assert!((s.position[0] - (p0[0] + 10.0 * dt)).abs() < 1e-6);
         assert!((s.position[1] - (p0[1] - 5.0 * dt)).abs() < 1e-6);
     }

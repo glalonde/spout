@@ -132,6 +132,14 @@ impl Spout {
     }
 
     fn update_ship(&mut self, dt: f32) {
+        let gravity = self.game_params.particle_system_params.gravity;
+
+        if self.state.dead {
+            // Dead: no thrust or rotation, just gravity pulls it down.
+            self.state.ship_state.update(dt, 0.0, 0.0, gravity);
+            return;
+        }
+
         let input_state = self.state.input_state;
         let rotate = if let Some(target) = input_state.target_heading {
             // Bang-bang controller: rotate at full speed toward target heading,
@@ -147,7 +155,9 @@ impl Spout {
         } else {
             input_state.rotate
         };
-        self.state.ship_state.update(dt, input_state.thrust, rotate);
+        self.state
+            .ship_state
+            .update(dt, input_state.thrust, rotate, gravity);
     }
 
     fn update_particle_system(&mut self, dt: f32, prev_ship: &ship::ShipState) {
@@ -199,9 +209,7 @@ impl Spout {
 
         // Process input state integrated over passage of time.
         let prev_ship = self.state.ship_state;
-        if !self.state.dead {
-            self.update_ship(game_dt);
-        }
+        self.update_ship(game_dt);
 
         // Poll GPU collision result from last frame (1-frame latency).
         if !self.state.dead && self.collision_detector.colliding {
