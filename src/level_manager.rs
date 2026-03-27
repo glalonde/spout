@@ -23,12 +23,18 @@ impl WIPRectangleLevel {
         level_height: u32,
         starting_terrain_health: i32,
     ) -> Self {
-        let level_num = level_index + 10;
-        let max_dimension = std::cmp::max((level_width / level_num) / 2, 1);
-        let num_vacancies = (level_height as f64 * (level_num as f64).sqrt()).ceil() as u32;
+        // Difficulty curve: early levels have large, numerous vacancies (sparse
+        // terrain). Later levels have smaller, fewer vacancies (dense terrain).
+        // level_num ramps from 1 upward.
+        let level_num = level_index + 1;
 
-        // Maximum dimension of any of the vacancies(should be a function of level_num).
+        // Vacancy size: starts large (half the level width), shrinks as levels increase.
+        let max_dimension = std::cmp::max(level_width / (level_num + 1) / 2, 2);
         let max_dimension = std::cmp::min(max_dimension, std::cmp::min(level_width, level_height));
+
+        // Number of vacancies: many at the start, fewer later.
+        let num_vacancies =
+            (level_height as f64 * (2.0 + 10.0 / (level_num as f64 + 1.0))).ceil() as u32;
 
         // Start with a solid buffer
         let data: Vec<i32> = vec![starting_terrain_health; (level_width * level_height) as usize];
@@ -101,13 +107,73 @@ pub struct LevelMaker {
 
 impl LevelMaker {
     fn init(level_width: u32, level_height: u32, starting_terrain_health: i32) -> Self {
-        LevelMaker {
+        let mut maker = LevelMaker {
             level_width,
             level_height,
             starting_terrain_health,
             levels: vec![],
             wip_levels: std::collections::BTreeMap::new(),
+        };
+        // Pre-generate level 0 and clear the bottom half so the ship has room.
+        maker.prefetch_up_to_level(0);
+        maker.finish_through_level(0);
+        if let Some(level) = maker.levels.first_mut() {
+            let clear_rows = level_height / 2;
+            level[..(clear_rows * level_width) as usize].fill(0);
         }
+        maker
+    }
+
+    /// Create a title-screen level: empty terrain with text blitted as solid
+    /// cells centered in the viewport.
+    fn init_title(
+        level_width: u32,
+        level_height: u32,
+        starting_terrain_health: i32,
+        viewport_height: u32,
+    ) -> Self {
+        let mut maker = LevelMaker {
+            level_width,
+            level_height,
+            starting_terrain_health,
+            levels: vec![],
+            wip_levels: std::collections::BTreeMap::new(),
+        };
+
+        // Create an empty level.
+        let level_data = vec![0i32; (level_width * level_height) as usize];
+        maker.levels.push(level_data);
+
+        // Rasterize "SPOUT" at 3x scale into terrain cells.
+        // Title text gets 20x normal health so it erodes visibly but not too fast.
+        let title_health = starting_terrain_health * 20;
+        let (tw, th, text_grid) = crate::text::rasterize_text_to_terrain(
+            "SPOUT",
+            &crate::text::Font::O4b30,
+            3.0,
+            title_health,
+        );
+
+        // Center the text in the viewport area.
+        let level = maker.levels.first_mut().expect("level 0 exists");
+        let offset_x = (level_width.saturating_sub(tw)) / 2;
+        let offset_y = (viewport_height.saturating_sub(th)) / 2;
+
+        for row in 0..th {
+            for col in 0..tw {
+                let src = text_grid[(row * tw + col) as usize];
+                if src == 0 {
+                    continue;
+                }
+                let dst_x = offset_x + col;
+                let dst_y = offset_y + row;
+                if dst_x < level_width && dst_y < level_height {
+                    level[(dst_y * level_width + dst_x) as usize] = src;
+                }
+            }
+        }
+
+        maker
     }
 
     pub fn prefetch_up_to_level(&mut self, i: i32) {
@@ -246,7 +312,93 @@ pub struct LevelManager {
     pub terrain_renderer: TerrainRenderer,
 }
 
+/// Query terrain health at a world position from CPU-side level data.
+///
+/// Returns the terrain health value (> 0 means solid terrain) or 0 if the
+/// position is out of bounds or the level hasn't been generated yet.
+///
+/// **Note:** This reads the initial (pre-erosion) terrain data. Terrain
+/// destroyed by particles on the GPU is not reflected here. For upward-
+/// scrolling gameplay this is accurate for terrain ahead of the player.
+fn terrain_health_at(
+    levels: &[Vec<i32>],
+    level_width: u32,
+    level_height: u32,
+    x: f32,
+    y: f32,
+) -> i32 {
+    let xi = x as i32;
+    let yi = y as i32;
+
+    if xi < 0 || xi >= level_width as i32 || yi < 0 {
+        return 0;
+    }
+
+    let level_index = yi as u32 / level_height;
+    let y_in_level = yi as u32 % level_height;
+
+    if level_index as usize >= levels.len() {
+        return 0;
+    }
+
+    let index = (y_in_level * level_width + xi as u32) as usize;
+    let level_data = &levels[level_index as usize];
+    if index >= level_data.len() {
+        return 0;
+    }
+
+    level_data[index]
+}
+
+/// Ship collision radius — approximate the triangular hull with a small circle.
+const SHIP_COLLISION_RADIUS: f32 = 4.0;
+
+/// Check if a ship position collides with terrain.
+fn check_collision(
+    levels: &[Vec<i32>],
+    level_width: u32,
+    level_height: u32,
+    ship: &crate::ship::ShipState,
+) -> bool {
+    let cx = ship.position[0];
+    let cy = ship.position[1];
+
+    // Test center + 4 cardinal points around the hull.
+    let test_points = [
+        (cx, cy),
+        (cx + SHIP_COLLISION_RADIUS, cy),
+        (cx - SHIP_COLLISION_RADIUS, cy),
+        (cx, cy + SHIP_COLLISION_RADIUS),
+        (cx, cy - SHIP_COLLISION_RADIUS),
+    ];
+
+    test_points
+        .iter()
+        .any(|&(x, y)| terrain_health_at(levels, level_width, level_height, x, y) > 0)
+}
+
 impl LevelManager {
+    /// Query terrain health at a world position.
+    pub fn terrain_health_at(&self, x: f32, y: f32) -> i32 {
+        terrain_health_at(
+            &self.level_maker.levels,
+            self.level_width,
+            self.level_height,
+            x,
+            y,
+        )
+    }
+
+    /// Check if the ship collides with terrain.
+    pub fn check_ship_collision(&self, ship: &crate::ship::ShipState) -> bool {
+        check_collision(
+            &self.level_maker.levels,
+            self.level_width,
+            self.level_height,
+            ship,
+        )
+    }
+
     fn active_tiles(&self) -> impl Iterator<Item = &TerrainTile> {
         self.loaded_tiles
             .iter()
@@ -352,6 +504,69 @@ impl LevelManager {
                 level_width,
                 level_height,
                 game_params.level_params.starting_terrain_health,
+            ),
+            terrain_renderer: renderer,
+        };
+
+        lm.sync_height(device, viewport_offset, init_encoder, game_params, belt);
+        lm
+    }
+
+    /// Initialize for the title screen: empty terrain with "SPOUT" text blitted
+    /// as destructible terrain centered in the viewport.
+    pub fn init_title(
+        device: &wgpu::Device,
+        game_params: &super::game_params::GameParams,
+        viewport_offset: i32,
+        init_encoder: &mut wgpu::CommandEncoder,
+        belt: &mut wgpu::util::StagingBelt,
+    ) -> Self {
+        let level_width = game_params.level_width;
+        let level_height = game_params.level_height;
+
+        let active_interval_height = std::cmp::max(
+            level_height,
+            (game_params.viewport_height as f32 * 1.5) as u32,
+        );
+        let active_extent_below_viewport = game_params.viewport_height / 4;
+        let active_interval = LevelManager::get_active_interval(
+            0,
+            active_interval_height as i32,
+            active_extent_below_viewport as i32,
+        );
+
+        let unused_buffers = vec![buffer_util::make_buffer(
+            device,
+            level_width as usize,
+            level_height as usize,
+            "Terrain",
+        )];
+        let composite_tile_buffer = buffer_util::make_buffer(
+            device,
+            level_width as usize,
+            active_interval_height as usize,
+            "CompositeTerrainBuffer",
+        );
+        let renderer = TerrainRenderer::init(device, game_params, &composite_tile_buffer);
+
+        let mut lm = LevelManager {
+            level_width: game_params.level_width,
+            level_height: game_params.level_height,
+            active_interval_height,
+            active_extent_below_viewport,
+
+            loaded_tiles: std::collections::BTreeMap::new(),
+            composite_tile: TerrainTile {
+                shape: active_interval,
+                buffer: composite_tile_buffer,
+            },
+
+            unused_buffers,
+            level_maker: LevelMaker::init_title(
+                level_width,
+                level_height,
+                game_params.level_params.starting_terrain_health,
+                game_params.viewport_height,
             ),
             terrain_renderer: renderer,
         };
@@ -681,7 +896,7 @@ impl TerrainRenderer {
                 resolve_target: None,
                 depth_slice: None,
                 ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                    load: wgpu::LoadOp::Load,
                     store: wgpu::StoreOp::Store,
                 },
             })],
@@ -693,6 +908,83 @@ impl TerrainRenderer {
         rpass.set_pipeline(&self.render_pipeline);
         rpass.set_bind_group(0, &self.render_bind_group, &[]);
         rpass.draw(0..4_u32, 0..1);
+    }
+}
+
+#[cfg(test)]
+mod collision_tests {
+    use super::*;
+
+    const W: u32 = 10;
+    const H: u32 = 10;
+
+    fn solid_level() -> Vec<Vec<i32>> {
+        vec![vec![1000i32; (W * H) as usize]]
+    }
+
+    fn empty_level() -> Vec<Vec<i32>> {
+        vec![vec![0i32; (W * H) as usize]]
+    }
+
+    #[test]
+    fn health_in_solid_terrain() {
+        assert_eq!(terrain_health_at(&solid_level(), W, H, 5.0, 5.0), 1000);
+    }
+
+    #[test]
+    fn health_in_empty_terrain() {
+        assert_eq!(terrain_health_at(&empty_level(), W, H, 5.0, 5.0), 0);
+    }
+
+    #[test]
+    fn health_out_of_bounds_returns_zero() {
+        let levels = solid_level();
+        assert_eq!(terrain_health_at(&levels, W, H, -1.0, 5.0), 0);
+        assert_eq!(terrain_health_at(&levels, W, H, 5.0, -1.0), 0);
+        assert_eq!(terrain_health_at(&levels, W, H, 100.0, 5.0), 0);
+        // Beyond generated levels.
+        assert_eq!(terrain_health_at(&levels, W, H, 5.0, 100.0), 0);
+    }
+
+    #[test]
+    fn health_at_level_boundary() {
+        // Two levels stacked vertically.
+        let levels = vec![
+            vec![1000i32; (W * H) as usize], // level 0: y=[0, 10)
+            vec![500i32; (W * H) as usize],  // level 1: y=[10, 20)
+        ];
+        assert_eq!(terrain_health_at(&levels, W, H, 5.0, 0.0), 1000);
+        assert_eq!(terrain_health_at(&levels, W, H, 5.0, 9.0), 1000);
+        assert_eq!(terrain_health_at(&levels, W, H, 5.0, 10.0), 500);
+        assert_eq!(terrain_health_at(&levels, W, H, 5.0, 19.0), 500);
+        assert_eq!(terrain_health_at(&levels, W, H, 5.0, 20.0), 0); // no level 2
+    }
+
+    #[test]
+    fn collision_in_solid_terrain() {
+        let ship = crate::ship::ShipState {
+            position: [5.0, 5.0],
+            ..Default::default()
+        };
+        assert!(check_collision(&solid_level(), W, H, &ship));
+    }
+
+    #[test]
+    fn no_collision_in_empty_terrain() {
+        let ship = crate::ship::ShipState {
+            position: [5.0, 5.0],
+            ..Default::default()
+        };
+        assert!(!check_collision(&empty_level(), W, H, &ship));
+    }
+
+    #[test]
+    fn no_collision_beyond_generated_levels() {
+        let ship = crate::ship::ShipState {
+            position: [5.0, 500.0], // way beyond the single 10-high level
+            ..Default::default()
+        };
+        assert!(!check_collision(&solid_level(), W, H, &ship));
     }
 }
 

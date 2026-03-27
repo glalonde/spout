@@ -1,31 +1,31 @@
 # Viewport size is the shape of the view into the game world in game units (not necessarily the size of the window/canvas)
-viewport_width = 240
-viewport_height = 135
-level_width = 240
+viewport_width = 261
+viewport_height = 160
+level_width = 261
 level_height = 480
 fps = 60.0
 music_starts_on = false
 render_ship = true
 
 [particle_system_params]
-emission_rate = 5000
-emission_speed = 200.0
-max_particle_life = 3.0
+emission_rate = 2500
+emission_speed = 150.0
+max_particle_life = 5.0
 damage_rate = 0.5
-gravity = -100.0
-elasticity = 0.5
+gravity = -25.0
+elasticity = 0.3
 
 [ship_params]
 acceleration = 100.0
-rotation_rate = 10.0
+rotation_rate = 7.5
 max_speed = 400.0
 
 [level_params]
-starting_terrain_health = 100
+starting_terrain_health = 500
 
 [visual_params]
 # Index into the particle color map palette (0–3).
-color_map = 1
+color_map = 4
 # Brightness cutoff for bloom extraction (0.0–1.0). Lower = more of the scene glows.
 # Set to 1.1 to effectively disable bloom.
 bloom_threshold = 0.4

@@ -77,8 +77,8 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let w = get_cell_xy(cell.x - 1, cell.y);
 
     if n <= 0 || s <= 0 || e <= 0 || w <= 0 {
-        // HDR amber glow — values > 1.0 drive the bloom pass.
-        return vec4<f32>(0.9, 0.25, 0.02, 1.0);
+        // HDR red glow — values > 1.0 drive the bloom pass.
+        return vec4<f32>(1.2, 0.15, 0.08, 1.0);
     }
 
     let p = f32(val) / f32(max_val);

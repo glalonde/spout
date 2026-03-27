@@ -363,6 +363,19 @@ impl TextRenderer {
         }
     }
 
+    /// Measure the width of a text string in pixels at the given scale.
+    pub fn text_width(&self, text: &str, scale: f32) -> f32 {
+        let mut w = 0.0;
+        for ch in text.bytes() {
+            if !(FIRST_CHAR..=LAST_CHAR).contains(&ch) {
+                continue;
+            }
+            let idx = (ch - FIRST_CHAR) as usize;
+            w += self.glyphs[idx].advance * scale;
+        }
+        w
+    }
+
     /// Call when the surface is resized.
     pub fn resize(&mut self, queue: &wgpu::Queue, width: u32, height: u32) {
         self.surface_width = width as f32;
@@ -443,6 +456,85 @@ impl TextRenderer {
         rpass.set_vertex_buffer(0, instance_buf.slice(..));
         rpass.draw(0..4, 0..instances.len() as u32); // 4 vertices per quad (triangle strip)
     }
+}
+
+/// Rasterize a text string into a 2D terrain grid.
+///
+/// Returns a `(width, height, Vec<i32>)` where each cell is either
+/// `terrain_health` (solid glyph pixel) or `0` (empty). The grid is
+/// Y-up: row 0 is the bottom.
+pub fn rasterize_text_to_terrain(
+    text: &str,
+    font_choice: &Font,
+    scale: f32,
+    terrain_health: i32,
+) -> (u32, u32, Vec<i32>) {
+    let font = fontdue::Font::from_bytes(font_choice.data(), fontdue::FontSettings::default())
+        .expect("failed to parse font");
+    let font_size = font_choice.size();
+
+    // Rasterize glyphs and compute layout.
+    let mut glyphs: Vec<(fontdue::Metrics, Vec<u8>)> = Vec::new();
+    for ch in text.bytes() {
+        let (metrics, mut bitmap) = font.rasterize(ch as char, font_size);
+        for px in bitmap.iter_mut() {
+            *px = if *px > 127 { 255 } else { 0 };
+        }
+        glyphs.push((metrics, bitmap));
+    }
+
+    // Compute ascent (max ymin + height across all glyphs).
+    let ascent = glyphs
+        .iter()
+        .map(|(m, _)| m.ymin as f32 + m.height as f32)
+        .fold(0.0f32, f32::max);
+
+    // Total width in native pixels, then scale.
+    let native_width: f32 = glyphs.iter().map(|(m, _)| m.advance_width).sum();
+    let grid_w = (native_width * scale).ceil() as u32;
+    let grid_h = (ascent * scale).ceil() as u32 + 2; // small padding
+
+    let mut grid = vec![0i32; (grid_w * grid_h) as usize];
+
+    let mut pen_x: f32 = 0.0;
+    for (metrics, bitmap) in &glyphs {
+        let gw = metrics.width;
+        let gh = metrics.height;
+        if gw == 0 || gh == 0 {
+            pen_x += metrics.advance_width * scale;
+            continue;
+        }
+
+        // Glyph top in Y-down font space: baseline - (ymin + height).
+        // Convert to Y-up grid space.
+        let baseline_y = ascent * scale;
+        let glyph_top_ydown = baseline_y - (metrics.ymin as f32 + gh as f32) * scale;
+
+        for row in 0..gh {
+            for col in 0..gw {
+                if bitmap[row * gw + col] == 0 {
+                    continue;
+                }
+                // Scaled pixel position (Y-down).
+                for sy in 0..scale as u32 {
+                    for sx in 0..scale as u32 {
+                        let px =
+                            (pen_x + metrics.xmin as f32 * scale + col as f32 * scale + sx as f32)
+                                as i32;
+                        let py_down = (glyph_top_ydown + row as f32 * scale + sy as f32) as i32;
+                        // Flip to Y-up.
+                        let py_up = grid_h as i32 - 1 - py_down;
+                        if px >= 0 && px < grid_w as i32 && py_up >= 0 && py_up < grid_h as i32 {
+                            grid[(py_up as u32 * grid_w + px as u32) as usize] = terrain_health;
+                        }
+                    }
+                }
+            }
+        }
+        pen_x += metrics.advance_width * scale;
+    }
+
+    (grid_w, grid_h, grid)
 }
 
 #[cfg(test)]

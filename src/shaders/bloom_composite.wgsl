@@ -33,6 +33,9 @@ fn vs_main(@builtin(vertex_index) i: u32) -> VertexOutput {
 override bloom_strength: f32 = 1.0;
 // CRT post-process intensity. 0.0 = bypass, 1.0 = full effect.
 override crt_strength: f32 = 0.0;
+// Manual sRGB gamma. 1.0 = apply linear→sRGB in shader (non-sRGB surface),
+// 0.0 = surface handles it (sRGB surface format).
+override apply_srgb: f32 = 0.0;
 
 // Barrel distortion: k > 0 bows the image outward (CRT-style).
 fn barrel(uv: vec2<f32>, k: f32) -> vec2<f32> {
@@ -85,6 +88,12 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     // ── Vignette (darken corners) ──────────────────────────────────────────
     let vig = buv * (1.0 - buv.yx);
     color  *= pow(clamp(vig.x * vig.y * 16.0, 0.0, 1.0), crt_strength * 0.4);
+
+    // When the surface format is non-sRGB (e.g. WASM WebGPU), apply the
+    // linear→sRGB transfer function so colors match native output.
+    if apply_srgb > 0.5 {
+        color = pow(color, vec3<f32>(1.0 / 2.2));
+    }
 
     return vec4<f32>(color, 1.0);
 }
