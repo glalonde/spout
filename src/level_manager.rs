@@ -100,12 +100,7 @@ pub struct LevelMaker {
 }
 
 impl LevelMaker {
-    fn init(
-        level_width: u32,
-        level_height: u32,
-        starting_terrain_health: i32,
-        spawn_pos: [f32; 2],
-    ) -> Self {
+    fn init(level_width: u32, level_height: u32, starting_terrain_health: i32) -> Self {
         let mut maker = LevelMaker {
             level_width,
             level_height,
@@ -113,27 +108,12 @@ impl LevelMaker {
             levels: vec![],
             wip_levels: std::collections::BTreeMap::new(),
         };
-        // Pre-generate level 0 and clear a spawn area around the ship start.
+        // Pre-generate level 0 and clear the bottom half so the ship has room.
         maker.prefetch_up_to_level(0);
         maker.finish_through_level(0);
-        let spawn_radius = 20.0f32;
         if let Some(level) = maker.levels.first_mut() {
-            let cx = spawn_pos[0];
-            let cy = spawn_pos[1];
-            let r2 = spawn_radius * spawn_radius;
-            let min_x = ((cx - spawn_radius).max(0.0)) as u32;
-            let max_x = ((cx + spawn_radius).min(level_width as f32 - 1.0)) as u32;
-            let min_y = ((cy - spawn_radius).max(0.0)) as u32;
-            let max_y = ((cy + spawn_radius).min(level_height as f32 - 1.0)) as u32;
-            for y in min_y..=max_y {
-                for x in min_x..=max_x {
-                    let dx = x as f32 - cx;
-                    let dy = y as f32 - cy;
-                    if dx * dx + dy * dy <= r2 {
-                        level[(y * level_width + x) as usize] = 0;
-                    }
-                }
-            }
+            let clear_rows = level_height / 2;
+            level[..(clear_rows * level_width) as usize].fill(0);
         }
         maker
     }
@@ -466,10 +446,6 @@ impl LevelManager {
                 level_width,
                 level_height,
                 game_params.level_params.starting_terrain_health,
-                [
-                    game_params.viewport_width as f32 / 2.0,
-                    game_params.viewport_height as f32 / 2.0,
-                ],
             ),
             terrain_renderer: renderer,
         };
