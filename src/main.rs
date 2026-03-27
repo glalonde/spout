@@ -1,3 +1,5 @@
+//! Spout entry point: game loop, state machine, and winit event handling.
+
 mod audio;
 #[path = "../examples/framework.rs"]
 mod framework;
@@ -517,4 +519,70 @@ fn make_texture(device: &wgpu::Device, width: u32, height: u32) -> wgpu::Texture
 
 fn main() {
     framework::run::<Spout>("Spout");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::angle_diff;
+    use std::f32::consts::PI;
+
+    fn approx(a: f32, b: f32) -> bool {
+        (a - b).abs() < 1e-5
+    }
+
+    #[test]
+    fn same_angle_is_zero() {
+        assert!(approx(angle_diff(1.0, 1.0), 0.0));
+    }
+
+    #[test]
+    fn small_positive_difference() {
+        assert!(approx(angle_diff(1.0, 0.5), 0.5));
+    }
+
+    #[test]
+    fn small_negative_difference() {
+        assert!(approx(angle_diff(0.5, 1.0), -0.5));
+    }
+
+    #[test]
+    fn wraps_across_pi_boundary() {
+        // From just below π to just above π should be a small positive step,
+        // not a large negative one.
+        let diff = angle_diff(PI - 0.1, -(PI - 0.1));
+        assert!(diff.abs() < 0.3, "should wrap short way, got {}", diff);
+    }
+
+    #[test]
+    fn wraps_negative_direction() {
+        // From just above -π to just below -π.
+        let diff = angle_diff(-(PI - 0.1), PI - 0.1);
+        assert!(diff.abs() < 0.3, "should wrap short way, got {}", diff);
+    }
+
+    #[test]
+    fn opposite_directions_magnitude_is_pi() {
+        let diff = angle_diff(0.0, PI);
+        assert!(
+            approx(diff.abs(), PI),
+            "opposite angles should differ by π, got {}",
+            diff
+        );
+    }
+
+    #[test]
+    fn result_always_in_minus_pi_to_pi() {
+        for i in 0..100 {
+            let target = (i as f32) * 0.13 - 3.0;
+            let current = (i as f32) * 0.07 - 5.0;
+            let diff = angle_diff(target, current);
+            assert!(
+                diff >= -PI - 1e-5 && diff <= PI + 1e-5,
+                "angle_diff({}, {}) = {} out of range",
+                target,
+                current,
+                diff
+            );
+        }
+    }
 }

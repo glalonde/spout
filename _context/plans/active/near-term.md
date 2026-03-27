@@ -5,16 +5,17 @@ Items are ordered roughly by dependency (text rendering unlocks most of the rest
 
 ---
 
-## 1. Text Rendering (prerequisite for HUD/UI)
+## 1. Text Rendering (prerequisite for HUD/UI) — IN PROGRESS (PR #55)
 
 **Blocker for:** score display, game over screen, debug overlay, any menus.
 
-Add [`glyphon`](https://github.com/grovesNL/glyphon) as a dependency — designed for wgpu and compatible with wgpu 29. The legacy branch had a full system using `wgpu_glyph` (incompatible with current API); see `_context/plans/active/legacy-port-inventory.md` for details.
+Used `fontdue` (pure Rust font rasterizer) instead of `glyphon` — glyphon doesn't support wgpu 29 yet. Hand-rolled bitmap atlas approach is a better fit for Pixel Six anyway.
 
 Tasks:
-- [ ] Add `glyphon` dep, embed at least one font via `include_bytes!` (Inconsolata or Pixel Six from legacy)
-- [ ] Implement a minimal `TextRenderer` struct (atlas + renderer, screen-space text)
-- [ ] Add `DebugOverlay` struct: renders FPS counter in-game
+- [x] Embed Pixel Six font via `include_bytes!` (already in repo from legacy)
+- [x] Implement `TextRenderer` struct (fontdue atlas + instanced glyph quads, WGSL shader)
+- [x] FPS counter + score debug overlay (toggle with F3)
+- [ ] In-game settings UI (see `autonomous-improvement.md` for design)
 
 ---
 

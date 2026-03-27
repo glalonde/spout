@@ -1,3 +1,7 @@
+//! Terrain level generation, progressive tile loading, and GPU composition.
+//! Manages a scrolling window of terrain tiles that are generated on a background
+//! budget and uploaded to the GPU as the viewport advances.
+
 use crate::buffer_util::{self, SizedBuffer};
 use web_time::Instant;
 
@@ -69,7 +73,8 @@ impl WIPRectangleLevel {
     }
 }
 
-pub fn make_stripe_level(width: u32, height: u32) -> Vec<i32> {
+#[cfg(test)]
+fn make_stripe_level(width: u32, height: u32) -> Vec<i32> {
     let mut data: Vec<i32> = vec![0; (width * height) as usize];
     let mut i = 0;
     for _ in 0..height {
@@ -120,20 +125,22 @@ impl LevelMaker {
 
     pub fn work_until(&mut self, deadline: Instant) {
         while !self.wip_levels.is_empty() && Instant::now() < deadline {
-            let mut to_remove = Vec::new();
-            // Generate levels in order of level index.
+            // Generate levels in order of level index. The break below means
+            // at most one level completes per iteration, so we track a single
+            // key to remove instead of allocating a Vec.
+            let mut finished_key = None;
             for (key, value) in &mut self.wip_levels {
                 if value.done() {
                     log::info!("Finished generating level: {}", key);
-                    to_remove.push(*key);
+                    finished_key = Some(*key);
                     self.levels.push(std::mem::take(&mut value.data));
                 } else {
                     value.work_until(deadline);
                     break;
                 }
             }
-            for key in to_remove.iter() {
-                self.wip_levels.remove(key);
+            if let Some(key) = finished_key {
+                self.wip_levels.remove(&key);
             }
         }
     }
@@ -223,8 +230,6 @@ pub struct LevelManager {
     // Static params
     pub level_width: u32,
     pub level_height: u32,
-    #[allow(dead_code)]
-    stripe_level: Vec<i32>,
     pub active_interval_height: u32,
     pub active_extent_below_viewport: u32,
 
@@ -333,7 +338,6 @@ impl LevelManager {
         let mut lm = LevelManager {
             level_width: game_params.level_width,
             level_height: game_params.level_height,
-            stripe_level: make_stripe_level(game_params.level_width, game_params.level_height),
             active_interval_height,
             active_extent_below_viewport,
 
@@ -396,13 +400,13 @@ impl LevelManager {
                 log::info!("Loading level {} to gpu", level_index);
                 let buffer = self.get_unused_tile_buffer(device);
                 let level_data = &self.level_maker.levels[level_index as usize];
-                // let level_data = &self.stripe_level;
 
                 // Request data copy.
                 belt.write_buffer(
                     encoder,
                     &buffer.buffer,
                     0,
+                    // safe: buffer.size is always > 0 (set at GPU buffer creation)
                     wgpu::BufferSize::new(buffer.size as _).unwrap(),
                 )
                 .copy_from_slice(bytemuck::cast_slice(level_data));
@@ -545,6 +549,7 @@ impl TerrainRenderer {
             encoder,
             &self.uniform_buf.buffer,
             0,
+            // safe: uniform_buf.size is always > 0 (set at GPU buffer creation)
             wgpu::BufferSize::new(self.uniform_buf.size as _).unwrap(),
         )
         .copy_from_slice(bytemuck::bytes_of(&uniforms));

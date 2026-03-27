@@ -1,3 +1,5 @@
+//! Full-screen textured quad primitive used by the blit and composite passes.
+
 use bytemuck::{Pod, Zeroable};
 use wgpu::util::DeviceExt;
 

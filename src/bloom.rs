@@ -1,3 +1,6 @@
+//! HDR bloom post-processing pipeline: threshold extraction, separable
+//! Gaussian blur (configurable passes), and additive composite.
+
 use wgpu::util::DeviceExt;
 
 /// Intermediate texture format used for bloom ping-pong buffers.

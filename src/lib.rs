@@ -1,3 +1,5 @@
+//! Spout game library — GPU-accelerated particle terrain destruction game.
+
 pub mod bloom;
 pub mod buffer_util;
 pub mod camera;
@@ -7,7 +9,6 @@ pub mod game_params;
 pub(crate) mod gpu_test_utils;
 pub mod input;
 pub mod level_manager;
-pub mod load_image;
 pub mod particles;
 pub mod render;
 pub mod shader_util;

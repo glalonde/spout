@@ -15,6 +15,7 @@ fn generate_shaders() -> std::result::Result<(), Box<dyn Error>> {
     fs::create_dir_all(format!("{}/shaders/", output_path))?;
     for file in fs::read_dir("src/shaders")? {
         let file = file?;
+        // safe: all files in src/shaders/ have extensions; paths are valid UTF-8
         if file.path().extension().unwrap().to_str().unwrap() == "wgsl" {
             let file = file.file_name();
             let file_name = file.to_str().unwrap();
