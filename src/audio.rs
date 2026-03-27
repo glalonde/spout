@@ -39,13 +39,15 @@ fn shuffled_playlist() -> Vec<usize> {
     indices
 }
 
+/// Synchronous render for native (background thread).
+#[cfg(not(target_arch = "wasm32"))]
 fn render_track(bytes: &[u8]) -> Option<Vec<f32>> {
     let mut player = oxdz::Oxdz::new(bytes, 44100, "")
         .map_err(|e| log::error!("audio: failed to load track: {e}"))
         .ok()?;
 
     let mut fi = oxdz::FrameInfo::new();
-    let max_time_ms = 300_000.0f32; // 5-minute cap
+    let max_time_ms = 300_000.0f32;
     let mut out = Vec::new();
 
     loop {
@@ -65,6 +67,58 @@ fn render_track(bytes: &[u8]) -> Option<Vec<f32>> {
         out.len()
     );
     Some(out)
+}
+
+/// Async render for WASM — yields to the browser event loop every ~200 tracker
+/// frames so the game keeps running while the track renders in the background.
+#[cfg(target_arch = "wasm32")]
+async fn render_track_async(bytes: &[u8]) -> Option<Vec<f32>> {
+    let mut player = oxdz::Oxdz::new(bytes, 44100, "")
+        .map_err(|e| log::error!("audio: failed to load track: {e}"))
+        .ok()?;
+
+    let mut fi = oxdz::FrameInfo::new();
+    let max_time_ms = 300_000.0f32;
+    let mut out = Vec::new();
+    let mut frame_count = 0u32;
+
+    loop {
+        player.frame_info(&mut fi);
+        if fi.loop_count > 0 || fi.time > max_time_ms {
+            break;
+        }
+        player.play_frame();
+        for &s in player.buffer() {
+            out.push(s as f32 / 32768.0);
+        }
+        frame_count += 1;
+
+        // Yield every ~20 tracker frames to keep the game responsive.
+        // Each tracker frame produces ~882 samples at 44100 Hz / 50 Hz tick
+        // rate, so 20 frames ≈ 17,640 samples ≈ a few ms of CPU work.
+        if frame_count % 20 == 0 {
+            yield_to_browser().await;
+        }
+    }
+
+    log::info!(
+        "audio: rendered {:.1}s ({} samples)",
+        fi.time / 1000.0,
+        out.len()
+    );
+    Some(out)
+}
+
+/// Yield to the browser event loop via setTimeout(0).
+#[cfg(target_arch = "wasm32")]
+async fn yield_to_browser() {
+    let promise = js_sys::Promise::new(&mut |resolve, _| {
+        // safe: window always exists in a browser context
+        let _ = web_sys::window()
+            .expect("no window")
+            .set_timeout_with_callback_and_timeout_and_arguments_0(&resolve, 0);
+    });
+    let _ = wasm_bindgen_futures::JsFuture::from(promise).await;
 }
 
 // ── Platform backend trait ───────────────────────────────────────────────────
@@ -304,22 +358,26 @@ type PlatformBackend = wasm_audio::WasmBackend;
 
 #[cfg(target_arch = "wasm32")]
 mod wasm_audio {
-    use super::{render_track, Backend, TRACKS};
+    use super::{render_track_async, Backend, TRACKS};
     use std::cell::{Cell, RefCell};
     use std::rc::Rc;
     use wasm_bindgen::JsCast;
 
-    // Pending render result, tagged with a generation counter so that a stale
+    // Pending source node, tagged with a generation counter so that a stale
     // render (from a skipped track) is silently discarded.
-    type Pending = Rc<RefCell<Option<(usize, Vec<f32>)>>>;
+    type PendingSource = Rc<RefCell<Option<(usize, web_sys::AudioBufferSourceNode)>>>;
 
     pub struct WasmBackend {
-        pending: Pending,
+        pending: PendingSource,
         generation: usize,
-        context: Option<web_sys::AudioContext>,
+        /// Generation counter for the `finished` flag so stale `onended`
+        /// callbacks (from stopped sources) don't trigger auto-advance.
+        finished_gen: Rc<Cell<usize>>,
+        context: Rc<RefCell<Option<web_sys::AudioContext>>>,
         source: Option<web_sys::AudioBufferSourceNode>,
         /// Set by the `onended` callback when the current track finishes.
-        finished: Rc<Cell<bool>>,
+        /// Stores the generation it was set for, or 0 if not finished.
+        finished: Rc<Cell<usize>>,
     }
 
     impl Backend for WasmBackend {
@@ -327,68 +385,95 @@ mod wasm_audio {
             WasmBackend {
                 pending: Rc::new(RefCell::new(None)),
                 generation: 0,
-                context: None,
+                finished_gen: Rc::new(Cell::new(0)),
+                context: Rc::new(RefCell::new(None)),
                 source: None,
-                finished: Rc::new(Cell::new(false)),
+                finished: Rc::new(Cell::new(0)),
             }
         }
 
         fn start_track(&mut self, index: usize) {
             self.generation += 1;
-            self.finished.set(false);
+            self.finished_gen.set(self.generation);
+            self.finished.set(0);
             let gen = self.generation;
             let pending = Rc::clone(&self.pending);
+            let finished = Rc::clone(&self.finished);
+            let finished_gen = Rc::clone(&self.finished_gen);
+            let context = Rc::clone(&self.context);
             let track_bytes: &'static [u8] = TRACKS[index];
+
+            // Render + build AudioBuffer + create source all happen async,
+            // yielding to the browser event loop periodically so the game
+            // doesn't freeze.
             wasm_bindgen_futures::spawn_local(async move {
-                if let Some(samples) = render_track(track_bytes) {
-                    *pending.borrow_mut() = Some((gen, samples));
+                let Some(samples) = render_track_async(track_bytes).await else {
+                    return;
+                };
+
+                // Bail if a newer track was requested while we were rendering.
+                if finished_gen.get() != gen {
+                    return;
+                }
+
+                // Ensure we have an AudioContext.
+                {
+                    let mut ctx_ref = context.borrow_mut();
+                    if ctx_ref.is_none() {
+                        match web_sys::AudioContext::new() {
+                            Ok(ctx) => *ctx_ref = Some(ctx),
+                            Err(e) => {
+                                log::error!("audio: AudioContext::new failed: {:?}", e);
+                                return;
+                            }
+                        }
+                    }
+                }
+
+                let ctx_borrow = context.borrow();
+                let ctx = ctx_borrow.as_ref().expect("context just created");
+
+                if let Some(src) = make_source_async(ctx, &samples, gen, finished).await {
+                    *pending.borrow_mut() = Some((gen, src));
                 }
             });
         }
 
         fn stop_current(&mut self) {
             if let Some(src) = self.source.take() {
+                // Clear onended before stopping so the callback doesn't fire.
+                std::ops::Deref::deref(&src).set_onended(None);
                 let _ = std::ops::Deref::deref(&src).stop_with_when(0.0);
             }
-            self.finished.set(false);
+            self.finished.set(0);
         }
 
         fn poll(&mut self, playing: bool) {
-            // Consume pending samples only if they belong to the current generation.
-            let samples = {
+            // Pick up a ready source node if it belongs to the current generation.
+            let pending_entry = {
                 let mut p = self.pending.borrow_mut();
-                match p.as_ref() {
-                    Some((gen, _)) if *gen == self.generation => p.take().map(|(_, s)| s),
-                    _ => None,
-                }
+                p.take()
             };
 
-            if let Some(samples) = samples {
-                match &self.context {
-                    Some(ctx) => {
-                        if let Some(src) = make_source(ctx, &samples, Rc::clone(&self.finished)) {
-                            if let Some(old) = self.source.replace(src) {
-                                let _ = std::ops::Deref::deref(&old).stop_with_when(0.0);
-                            }
-                        }
+            if let Some((gen, src)) = pending_entry {
+                if gen == self.generation {
+                    // Current generation — start playing.
+                    if let Some(old) = self.source.replace(src) {
+                        std::ops::Deref::deref(&old).set_onended(None);
+                        let _ = std::ops::Deref::deref(&old).stop_with_when(0.0);
                     }
-                    None => match web_sys::AudioContext::new() {
-                        Ok(ctx) => {
-                            if let Some(src) =
-                                make_source(&ctx, &samples, Rc::clone(&self.finished))
-                            {
-                                self.source = Some(src);
-                            }
-                            self.context = Some(ctx);
-                        }
-                        Err(e) => log::error!("audio: AudioContext::new failed: {:?}", e),
-                    },
+                    // Start playback now that we've adopted the source.
+                    let _ = self.source.as_ref().expect("just set").start();
+                    log::info!("audio: WASM playback started (gen {})", gen);
+                } else {
+                    // Stale generation — discard without playing.
+                    log::info!("audio: discarding stale source (gen {} != {})", gen, self.generation);
                 }
             }
 
             // Browsers suspend AudioContext until the first user gesture.
             if playing {
-                if let Some(ctx) = &self.context {
+                if let Some(ctx) = self.context.borrow().as_ref() {
                     if ctx.state() != web_sys::AudioContextState::Running {
                         let _ = ctx.resume();
                     }
@@ -397,7 +482,7 @@ mod wasm_audio {
         }
 
         fn set_playing(&mut self, playing: bool) {
-            if let Some(ctx) = &self.context {
+            if let Some(ctx) = self.context.borrow().as_ref() {
                 if playing {
                     let _ = ctx.resume();
                 } else {
@@ -407,18 +492,21 @@ mod wasm_audio {
         }
 
         fn is_finished(&self) -> bool {
-            self.source.is_some() && self.finished.get() && self.pending.borrow().is_none()
+            // Only consider finished if the flag was set by the current generation's
+            // onended callback (not a stale one from a stopped source).
+            self.source.is_some()
+                && self.finished.get() == self.finished_gen.get()
+                && self.pending.borrow().is_none()
         }
     }
 
-    /// Fill an AudioBuffer with interleaved-stereo `samples` and start playing it.
-    ///
-    /// `samples` is `[L0, R0, L1, R1, ...]` at 44 100 Hz, as produced by
-    /// `render_track`. Sets `finished` to `true` when playback ends.
-    fn make_source(
+    /// Build an AudioBuffer from interleaved stereo samples. Does NOT start
+    /// playback — that's deferred to `poll()` so orphaned sources can't play.
+    async fn make_source_async(
         ctx: &web_sys::AudioContext,
         samples: &[f32],
-        finished: Rc<Cell<bool>>,
+        gen: usize,
+        finished: Rc<Cell<usize>>,
     ) -> Option<web_sys::AudioBufferSourceNode> {
         let num_frames = (samples.len() / 2) as u32;
 
@@ -435,10 +523,16 @@ mod wasm_audio {
             right.push(frame.get(1).copied().unwrap_or(0.0));
         }
 
+        // Yield before the expensive copy_to_channel calls.
+        super::yield_to_browser().await;
+
         buffer
             .copy_to_channel(&left, 0)
             .map_err(|e| log::error!("audio: copy_to_channel(L) failed: {:?}", e))
             .ok()?;
+
+        super::yield_to_browser().await;
+
         buffer
             .copy_to_channel(&right, 1)
             .map_err(|e| log::error!("audio: copy_to_channel(R) failed: {:?}", e))
@@ -453,8 +547,10 @@ mod wasm_audio {
         source.set_loop(false);
 
         // Signal when playback ends so poll() can auto-advance.
+        // Uses the generation counter to distinguish "ended naturally" from
+        // "was stopped by stop_current()".
         let onended = wasm_bindgen::closure::Closure::wrap(Box::new(move || {
-            finished.set(true);
+            finished.set(gen);
         }) as Box<dyn FnMut()>);
         std::ops::Deref::deref(&source).set_onended(Some(onended.as_ref().unchecked_ref()));
         onended.forget();
@@ -465,12 +561,8 @@ mod wasm_audio {
             .map_err(|e| log::error!("audio: connect failed: {:?}", e))
             .ok()?;
 
-        source
-            .start()
-            .map_err(|e| log::error!("audio: source.start() failed: {:?}", e))
-            .ok()?;
-
-        log::info!("audio: WASM playback started ({} frames)", num_frames);
+        // Note: source.start() is NOT called here. poll() starts it when
+        // it picks up the source, preventing orphaned playback.
         Some(source)
     }
 }

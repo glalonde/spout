@@ -154,6 +154,8 @@ impl CollisionDetector {
     }
 
     /// Dispatch the collision compute shader.
+    /// Skips if a previous readback is still in flight (the staging buffer
+    /// can't be used as a copy destination while a map is pending).
     #[allow(clippy::too_many_arguments)]
     pub fn dispatch(
         &mut self,
@@ -165,6 +167,9 @@ impl CollisionDetector {
         terrain: &crate::level_manager::TerrainTile,
         terrain_width: u32,
     ) {
+        if self.pending_readback {
+            return;
+        }
         let uniforms = CollisionUniforms {
             ship_x: ship.position[0],
             ship_y: ship.position[1],
@@ -243,9 +248,13 @@ impl CollisionDetector {
             return;
         }
 
-        // Drive the GPU to process pending callbacks.
-        // safe: poll always returns on both native and WASM
+        // On native, drive the GPU to process pending map callbacks.
+        // On WASM, the browser event loop handles callbacks automatically;
+        // calling poll(wait_indefinitely) would spin-wait and stall the frame.
+        #[cfg(not(target_arch = "wasm32"))]
         device.poll(wgpu::PollType::wait_indefinitely()).ok();
+        #[cfg(target_arch = "wasm32")]
+        let _ = device;
 
         if !self.map_ready.load(Ordering::Acquire) {
             return; // Not ready yet — will check again next frame.
