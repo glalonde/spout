@@ -1,0 +1,94 @@
+name: Release macOS
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        run: rustup show
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target/
+          key: ${{ runner.os }}-release-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-release-
+
+      # Import Developer ID certificate if secrets are configured.
+      - name: Import signing certificate
+        if: env.APPLE_CERTIFICATE != ''
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          CERT_PATH=$RUNNER_TEMP/certificate.p12
+          KEYCHAIN_PATH=$RUNNER_TEMP/build.keychain-db
+          echo -n "$APPLE_CERTIFICATE" | base64 --decode -o "$CERT_PATH"
+          security create-keychain -p "" "$KEYCHAIN_PATH"
+          security set-keychain-settings "$KEYCHAIN_PATH"
+          security unlock-keychain -p "" "$KEYCHAIN_PATH"
+          security import "$CERT_PATH" -k "$KEYCHAIN_PATH" -P "$APPLE_CERTIFICATE_PASSWORD" \
+              -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -k "" "$KEYCHAIN_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH" login.keychain-db
+
+      - name: Build and package
+        run: ./scripts/package_macos.sh --dmg
+
+      - name: Verify .app exists
+        run: test -d target/release/Spout.app
+
+      # Notarize if signing secrets are available.
+      - name: Notarize DMG
+        if: env.APPLE_ID != ''
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+          APPLE_TEAM_ID: HNRULUX5AH
+        run: |
+          xcrun notarytool submit target/release/Spout.dmg \
+              --apple-id "$APPLE_ID" \
+              --password "$APPLE_ID_PASSWORD" \
+              --team-id "$APPLE_TEAM_ID" \
+              --wait
+          xcrun stapler staple target/release/Spout.dmg
+
+      - name: Upload .app bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: Spout-macOS
+          path: target/release/Spout.app
+
+      - name: Upload .dmg
+        uses: actions/upload-artifact@v4
+        with:
+          name: Spout-macOS-dmg
+          path: target/release/Spout.dmg
+
+      # Attach artifacts to GitHub Release when triggered by a version tag.
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: target/release/Spout.dmg
+          generate_release_notes: true
+
+      # Clean up keychain.
+      - name: Clean up keychain
+        if: always()
+        run: |
+          if [ -f "$RUNNER_TEMP/build.keychain-db" ]; then
+            security delete-keychain "$RUNNER_TEMP/build.keychain-db" || true
+          fi
