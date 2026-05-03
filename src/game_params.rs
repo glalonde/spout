@@ -174,6 +174,17 @@ const EMBEDDED_CONFIG: &str = include_str!("../game_config.toml");
 /// (for development / user overrides), then falls back to the embedded default.
 /// This way packaged .app bundles work without an external config file.
 pub fn get_game_config_from_default_file() -> GameParams {
+    let params = load_params_from_file();
+    // iOS has no keyboard, so music must default to on (no M-key to toggle).
+    #[cfg(target_os = "ios")]
+    let params = GameParams {
+        music_starts_on: true,
+        ..params
+    };
+    params
+}
+
+fn load_params_from_file() -> GameParams {
     #[cfg(not(target_arch = "wasm32"))]
     if let Ok(disk_config) = std::fs::read_to_string("game_config.toml") {
         match disk_config.parse() {

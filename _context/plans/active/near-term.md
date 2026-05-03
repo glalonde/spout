@@ -19,51 +19,54 @@ Tasks:
 
 ---
 
-## 2. Ship Collision Detection
+## 2. Ship Collision Detection — needs improvement
 
-**Blocker for:** lives, death events, game over screen.
-
-Legacy branch had a GPU readback approach (`cpu_collision_detector.rs`). Better approach: test ship position against the CPU-side level grid already maintained in `level_manager.rs` — no GPU readback needed.
+Bresenham triangle rasterization against CPU-side terrain grid shipped in PR #56,
+but collision is not pixel-perfect enough in practice — the ship can visually
+overlap terrain without dying, or die when it looks like it shouldn't.
 
 Tasks:
-- [ ] Define collision shape for ship (point or simple radius)
-- [ ] Query `LevelManager` terrain grid at ship position each frame
-- [ ] Trigger a death/damage event on collision
-- [ ] Decide on response: instant death, shield HP, or bounce
+- [ ] Audit the collision shape: verify the triangle vertices used match the
+  rendered ship geometry exactly (check `ship.rs` fill vertices vs collision
+  vertices in `collision.rs`)
+- [ ] Consider testing every pixel of the ship outline rather than just triangle
+  edges — rasterize the filled triangle and test all interior + border cells
+- [ ] Test at different speeds: fast-moving ships may tunnel through 1-cell walls
+  between frames; if so, sweep the ship path between frames
 
 ---
 
 ## 3. Score Display / HUD
 
-**Depends on:** text rendering (#1), collision detection (#2 for lives).
+**Depends on:** text rendering (#1).
 
 Tasks:
 - [ ] Score counter incremented by terrain destruction (particles hitting terrain)
+- [ ] **Fix: stop score incrementing once ship explodes** — currently score keeps
+  climbing during the dead/explosion state. Gate score updates on
+  `GameMode::Playing` (or check `!state.dead`) in the score update logic in
+  `main.rs`.
 - [ ] Render score + lives in a HUD using `TextRenderer`
 - [ ] Fuel/energy gauge (visual bar or numeric)
 
 ---
 
-## 4. Game Over Screen
+## 4. Game Over Screen ✅
 
-**Depends on:** text rendering (#1), collision detection (#2).
-
-Tasks:
-- [ ] Game state machine: Playing → Dead → GameOver → Playing
-- [ ] Render "GAME OVER" + final score text
-- [ ] Input to restart
+Done: title screen → playing → dead → game over → title flow implemented. "GAME OVER" text rendered, 'R' restarts. See PR #56.
 
 ---
 
 ## 5. Resolution / Aspect Ratio
 
-Independent — no blockers.
+Independent — no blockers. More urgent now that iOS is running on device.
 
-Currently the game renders at a fixed internal resolution with no control over aspect ratio or window size handling.
+Currently the game renders at a fixed internal resolution (240×135) upscaled to fill the window. On iPhone 15 Pro (2556×1179, ~19.5:9) the game viewport doesn't fill the screen correctly — letterboxed or wrong aspect.
 
 Tasks:
-- [ ] Decide internal render resolution strategy (fixed game viewport with letterboxing vs. stretch)
+- [ ] Decide internal render resolution strategy (fixed game viewport with letterboxing vs. stretch vs. dynamic)
 - [ ] Handle window resize gracefully (resize swapchain, update camera projection)
+- [ ] On iOS: match viewport to device screen aspect ratio (iPhone 15 Pro is ~19.5:9, game is currently 16:9 ish)
 - [ ] Optional: expose resolution config in `game_config.toml`
 
 ---
@@ -83,6 +86,101 @@ Native is already correct (background thread via `std::thread::spawn`).
 Tasks:
 - [ ] Move `render_track` to a Web Worker on WASM (see `music.md` Phase 3 for options)
 - [ ] Verify no main-thread freeze when starting / cycling tracks in the browser
+
+---
+
+## 8. iOS Platform Fixes
+
+Observed on first run on iPhone 15 Pro (2026-05-02). The game launches and renders
+but needs these fixes before it's properly playable on device.
+
+### 8a. Horizontal boundary death (also affects desktop)
+The ship can fly off the left/right edges of the level and disappear. Need
+unbreakable solid walls at x=0 and x=level_width. Options:
+- Add wall cells to the terrain grid that have max health and never erode
+- Clamp ship x-position and treat the boundary as a kill zone
+- Easiest: in `level_manager.rs`, set the leftmost and rightmost column of each
+  level chunk to max terrain health on init. Ship collision already handles this.
+
+### 8b. Touch-to-restart (no keyboard on iOS)
+Game over screen says "press R to restart" but iOS has no keyboard. Need a
+touch input path:
+- A tap anywhere on game-over screen should restart (same as 'R')
+- In `main.rs`, check `GameMode::GameOver` + `WindowEvent::Touch` with
+  `phase == TouchPhase::Started` → set `reset_requested = true`
+
+### 8c. Music on by default on iOS
+`game_config.toml` has `music_starts_on = false`. On iOS there's no easy way
+to toggle music without a keyboard (M key). For now, default to on when
+`cfg(target_os = "ios")`. Add `#[cfg(target_os = "ios")] { params.music_starts_on = true; }`
+in `game_params::get_game_config_from_default_file()` after loading, or use a
+separate embedded config for iOS.
+
+### 8d. FPS overlay drawn outside the game viewport
+The `overlay_text` renderer (display-resolution text) appears above the game
+area rather than overlaid on it. On iOS the safe area insets may be pushing
+the viewport down. The overlay text position needs to be relative to the actual
+rendered game region, or the viewport/surface setup needs fixing for iOS safe
+areas. Related to #5 (aspect ratio). Investigate `framework.rs` surface setup.
+
+### 8e. In-game settings overlay (longer term)
+See `autonomous-improvement.md` for full design. Needed so players can adjust
+params without editing `game_config.toml`. Lower priority than 8a–8d.
+
+---
+
+## 9. macOS App Packaging — needs rebase + merge
+
+Work is complete on the `macos-packaging` branch (diverged from master at
+`a9fa746`, ~23 commits behind). Needs rebase onto master and a PR.
+
+What's on that branch:
+- `macos/Info.plist` — bundle metadata (com.glalonde.spout, Metal, macOS 13+)
+- `scripts/package_macos.sh` — builds release binary, assembles .app, ad-hoc
+  or Developer ID signs, optional --dmg flag
+- `.github/workflows/release-macos.yml` — triggered on `v*` tags or manual
+  dispatch; uploads .app + .dmg as release artifacts
+- `_context/macos-signing.md` — signing/notarization docs (team HNRULUX5AH)
+
+Steps:
+- [ ] `git checkout macos-packaging && git rebase master`
+- [ ] Resolve any conflicts (likely none — touches different files)
+- [ ] Open PR and merge
+
+---
+
+## 10. App Icon
+
+All three platforms need a proper icon. Currently only `assets/spout_preview.png`
+exists (a gameplay screenshot, not a real icon).
+
+Design brief: the icon should evoke the game — a ship firing particles into
+terrain. Simple, bold, readable at small sizes. The particle glow/bloom
+aesthetic should translate to the icon.
+
+### macOS (.icns)
+- Source: 1024×1024 PNG → `iconutil` generates the `.icns`
+- Goes in `macos/` directory, referenced from `macos/Info.plist`
+- `scripts/package_macos.sh` copies it into the `.app` bundle
+- Sizes needed in the `.iconset`: 16, 32, 128, 256, 512 px (+ @2x variants)
+
+### iOS (asset catalog or individual PNGs)
+- Required sizes for iOS app icon: 60×60, 120×120, 180×180 px (iPhone)
+  and 76×76, 152×152, 167×167 px (iPad)
+- Plus 1024×1024 for App Store
+- Goes in `ios/` as an `AppIcon.appiconset` (Xcode asset catalog) or listed
+  in `Info.plist` under `CFBundleIcons`
+- Add `ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon` to Xcode build settings
+
+### Favicon (web / WASM)
+- 32×32 and 180×180 PNG (for apple-touch-icon) + `favicon.ico`
+- Goes in `web/` or wherever the gh-pages build drops static files
+
+### Suggested workflow
+1. Create master 1024×1024 artwork (Figma, Pixelmator, or procgen from game)
+2. Export PNGs → `scripts/generate_icons.sh` automates resizing with `sips`
+3. `iconutil --convert icns` for macOS
+4. Drop icon PNGs into iOS asset catalog
 
 ---
 
