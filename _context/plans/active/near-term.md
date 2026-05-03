@@ -129,6 +129,61 @@ params without editing `game_config.toml`. Lower priority than 8a–8d.
 
 ---
 
+## 9. macOS App Packaging — needs rebase + merge
+
+Work is complete on the `macos-packaging` branch (diverged from master at
+`a9fa746`, ~23 commits behind). Needs rebase onto master and a PR.
+
+What's on that branch:
+- `macos/Info.plist` — bundle metadata (com.glalonde.spout, Metal, macOS 13+)
+- `scripts/package_macos.sh` — builds release binary, assembles .app, ad-hoc
+  or Developer ID signs, optional --dmg flag
+- `.github/workflows/release-macos.yml` — triggered on `v*` tags or manual
+  dispatch; uploads .app + .dmg as release artifacts
+- `_context/macos-signing.md` — signing/notarization docs (team HNRULUX5AH)
+
+Steps:
+- [ ] `git checkout macos-packaging && git rebase master`
+- [ ] Resolve any conflicts (likely none — touches different files)
+- [ ] Open PR and merge
+
+---
+
+## 10. App Icon
+
+All three platforms need a proper icon. Currently only `assets/spout_preview.png`
+exists (a gameplay screenshot, not a real icon).
+
+Design brief: the icon should evoke the game — a ship firing particles into
+terrain. Simple, bold, readable at small sizes. The particle glow/bloom
+aesthetic should translate to the icon.
+
+### macOS (.icns)
+- Source: 1024×1024 PNG → `iconutil` generates the `.icns`
+- Goes in `macos/` directory, referenced from `macos/Info.plist`
+- `scripts/package_macos.sh` copies it into the `.app` bundle
+- Sizes needed in the `.iconset`: 16, 32, 128, 256, 512 px (+ @2x variants)
+
+### iOS (asset catalog or individual PNGs)
+- Required sizes for iOS app icon: 60×60, 120×120, 180×180 px (iPhone)
+  and 76×76, 152×152, 167×167 px (iPad)
+- Plus 1024×1024 for App Store
+- Goes in `ios/` as an `AppIcon.appiconset` (Xcode asset catalog) or listed
+  in `Info.plist` under `CFBundleIcons`
+- Add `ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon` to Xcode build settings
+
+### Favicon (web / WASM)
+- 32×32 and 180×180 PNG (for apple-touch-icon) + `favicon.ico`
+- Goes in `web/` or wherever the gh-pages build drops static files
+
+### Suggested workflow
+1. Create master 1024×1024 artwork (Figma, Pixelmator, or procgen from game)
+2. Export PNGs → `scripts/generate_icons.sh` automates resizing with `sips`
+3. `iconutil --convert icns` for macOS
+4. Drop icon PNGs into iOS asset catalog
+
+---
+
 ## Branch Audit Remainder
 
 The `legacy_wgpu` branch has been audited (see `legacy-port-inventory.md`). These branches have not yet been reviewed:
