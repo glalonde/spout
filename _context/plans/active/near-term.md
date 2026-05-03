@@ -19,9 +19,20 @@ Tasks:
 
 ---
 
-## 2. Ship Collision Detection ✅
+## 2. Ship Collision Detection — needs improvement
 
-Done: Bresenham triangle rasterization against CPU-side terrain grid. Ship dies on contact, explosion particle burst, dead-state physics. See PR #56.
+Bresenham triangle rasterization against CPU-side terrain grid shipped in PR #56,
+but collision is not pixel-perfect enough in practice — the ship can visually
+overlap terrain without dying, or die when it looks like it shouldn't.
+
+Tasks:
+- [ ] Audit the collision shape: verify the triangle vertices used match the
+  rendered ship geometry exactly (check `ship.rs` fill vertices vs collision
+  vertices in `collision.rs`)
+- [ ] Consider testing every pixel of the ship outline rather than just triangle
+  edges — rasterize the filled triangle and test all interior + border cells
+- [ ] Test at different speeds: fast-moving ships may tunnel through 1-cell walls
+  between frames; if so, sweep the ship path between frames
 
 ---
 
@@ -31,6 +42,10 @@ Done: Bresenham triangle rasterization against CPU-side terrain grid. Ship dies 
 
 Tasks:
 - [ ] Score counter incremented by terrain destruction (particles hitting terrain)
+- [ ] **Fix: stop score incrementing once ship explodes** — currently score keeps
+  climbing during the dead/explosion state. Gate score updates on
+  `GameMode::Playing` (or check `!state.dead`) in the score update logic in
+  `main.rs`.
 - [ ] Render score + lives in a HUD using `TextRenderer`
 - [ ] Fuel/energy gauge (visual bar or numeric)
 
