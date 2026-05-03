@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 60;
+	objectVersion = 56;
 	objects = {
 
 /* Begin PBXBuildFile section */
@@ -47,21 +47,21 @@
 			name = Products;
 			sourceTree = "<group>";
 		};
-		AA0000000000000000000022 /* Frameworks */ = {
-			isa = PBXGroup;
-			children = (
-				AA0000000000000000000021 /* UIKit.framework */,
-			);
-			name = Frameworks;
-			sourceTree = "<group>";
-		};
-		AA0000000000000000000008 /* root */ = {
+		AA0000000000000000000008 = {
 			isa = PBXGroup;
 			children = (
 				AA0000000000000000000006 /* Sources */,
 				AA0000000000000000000022 /* Frameworks */,
 				AA0000000000000000000007 /* Products */,
 			);
+			sourceTree = "<group>";
+		};
+		AA0000000000000000000022 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				AA0000000000000000000021 /* UIKit.framework */,
+			);
+			name = Frameworks;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -154,8 +154,10 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGNING_REQUIRED = NO;
-				CODE_SIGN_IDENTITY = "";
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = HNRULUX5AH;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				INFOPLIST_FILE = Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
@@ -163,9 +165,10 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = "0.1.0";
-				PRODUCT_BUNDLE_IDENTIFIER = "com.glalonde.spout";
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.glalonde.spout;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
 				SDKROOT = iphoneos;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
@@ -178,7 +181,7 @@
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = HNRULUX5AH;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				INFOPLIST_FILE = Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
@@ -186,8 +189,8 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = "0.1.0";
-				PRODUCT_BUNDLE_IDENTIFIER = "com.glalonde.spout";
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.glalonde.spout;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
