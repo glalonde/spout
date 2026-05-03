@@ -334,7 +334,9 @@ impl Spout {
                     );
                 }
 
-                self.update_viewport_height();
+                if !self.state.dead {
+                    self.update_viewport_height();
+                }
 
                 self.update_particle_system(game_dt, &prev_ship);
             }
