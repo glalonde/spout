@@ -8,11 +8,11 @@ music_starts_on = false
 render_ship = true
 
 [particle_system_params]
-emission_rate = 2500
-emission_speed = 150.0
+emission_rate = 10000
+emission_speed = 250.0
 max_particle_life = 5.0
-damage_rate = 0.5
-gravity = -25.0
+damage_rate = 0.1
+gravity = -40.0
 elasticity = 0.3
 
 [ship_params]
@@ -25,7 +25,7 @@ starting_terrain_health = 500
 
 [visual_params]
 # Index into the particle color map palette (0–3).
-color_map = 4
+color_map = 1
 # Brightness cutoff for bloom extraction (0.0–1.0). Lower = more of the scene glows.
 # Set to 1.1 to effectively disable bloom.
 bloom_threshold = 0.4
@@ -40,5 +40,5 @@ crt_strength = 0.3
 # Density-to-color mapping. density_scale = how many particles per cell for
 # ~half saturation. Lower = saturates faster. density_exponent controls the
 # sigmoid curve steepness: >1 = sharper transition, <1 = gentler.
-density_scale = 1.0
+density_scale = 2.0
 density_exponent = 1.0
