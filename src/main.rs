@@ -567,7 +567,7 @@ impl framework::Example for Spout {
     ) {
         // Read back GPU collision result from previous frame.
         if self.state.mode == GameMode::Playing {
-            self.collision_detector.poll_result(device);
+            self.collision_detector.poll_result();
         }
 
         let mut encoder =
@@ -762,6 +762,11 @@ impl framework::Example for Spout {
 
         self.staging_belt.finish();
         queue.submit(Some(encoder.finish()));
+        // Drain wgpu callbacks from the previous frame's completed GPU work (non-blocking).
+        // This fires the map_async callback set by start_readback() last frame, so that
+        // poll_result() at the top of the next frame sees map_ready == true without stalling.
+        #[cfg(not(target_arch = "wasm32"))]
+        device.poll(wgpu::PollType::Poll).ok();
         self.staging_belt.recall();
 
         // Initiate async readback of collision result now that GPU work is submitted.

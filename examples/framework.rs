@@ -164,7 +164,7 @@ async fn init_gpu<E: Example>(
             label: None,
             required_features: (optional_features & adapter_features) | required_features,
             required_limits: needed_limits,
-            memory_hints: wgpu::MemoryHints::MemoryUsage,
+            memory_hints: wgpu::MemoryHints::Performance,
             experimental_features: wgpu::ExperimentalFeatures::disabled(),
             trace: wgpu::Trace::Off,
         })
@@ -290,6 +290,11 @@ impl<E: Example> ApplicationHandler for FrameworkApp<E> {
                     wgpu::CurrentSurfaceTexture::Success(frame) => frame,
                     wgpu::CurrentSurfaceTexture::Suboptimal(frame) => frame,
                     wgpu::CurrentSurfaceTexture::Outdated => {
+                        log::warn!(
+                            "Surface outdated — reconfiguring {}x{}",
+                            gpu.config.width,
+                            gpu.config.height
+                        );
                         gpu.surface.configure(&gpu.device, &gpu.config);
                         match gpu.surface.get_current_texture() {
                             wgpu::CurrentSurfaceTexture::Success(f)

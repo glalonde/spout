@@ -243,18 +243,12 @@ impl CollisionDetector {
 
     /// Poll for the async readback result. Updates `self.result`.
     /// Returns immediately if the mapping hasn't completed yet (WASM-safe).
-    pub fn poll_result(&mut self, device: &wgpu::Device) {
+    /// Caller is responsible for driving wgpu callbacks (device.poll) before
+    /// calling this — see render() in main.rs.
+    pub fn poll_result(&mut self) {
         if !self.pending_readback || !self.mapping_started {
             return;
         }
-
-        // On native, drive the GPU to process pending map callbacks.
-        // On WASM, the browser event loop handles callbacks automatically;
-        // calling poll(wait_indefinitely) would spin-wait and stall the frame.
-        #[cfg(not(target_arch = "wasm32"))]
-        device.poll(wgpu::PollType::wait_indefinitely()).ok();
-        #[cfg(target_arch = "wasm32")]
-        let _ = device;
 
         if !self.map_ready.load(Ordering::Acquire) {
             return; // Not ready yet — will check again next frame.
@@ -341,7 +335,10 @@ mod tests {
 
         // Phase 4: poll_result (waits for callback, reads data).
         // This is the step that panicked on WASM before the fix.
-        detector.poll_result(&device);
+        // Drive callbacks before polling — in production this happens via the
+        // device.poll(Poll) call in the render loop after queue.submit().
+        device.poll(wgpu::PollType::wait_indefinitely()).ok();
+        detector.poll_result();
         assert!(!detector.pending_readback, "Readback should have completed");
 
         // Ship in empty terrain → no collision.

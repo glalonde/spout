@@ -272,7 +272,7 @@ impl Emitter {
         self.emit_progress += dt;
         if self.emit_progress > self.params.emit_period {
             let num_emitted: u32 = (self.emit_progress / self.params.emit_period) as u32;
-            log::info!("Emitting {} particles", num_emitted);
+            log::debug!("Emitting {} particles", num_emitted);
             self.emit_progress -= (num_emitted as f32) * self.params.emit_period;
             self.emit_params = Some(EmitParams {
                 start_index: self.write_index,
@@ -315,7 +315,7 @@ impl Emitter {
                 });
                 cpass.set_pipeline(&self.compute_pipeline);
                 cpass.set_bind_group(0, &self.compute_bind_group, &[]);
-                log::info!(
+                log::debug!(
                     "TIME {}, DT: {}, Emitter dispatching {} work groups, emit angle: {}, {}",
                     emit_params.time,
                     emit_params.dt,

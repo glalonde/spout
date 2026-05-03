@@ -13,6 +13,7 @@
 # Usage:
 #   ./scripts/run_ios.sh              # build Debug, auto-detect device
 #   ./scripts/run_ios.sh --release    # Release build
+#   ./scripts/run_ios.sh --clean      # clean before building (Debug + Release)
 #   ./scripts/run_ios.sh --device <id> # use specific device UDID
 #
 set -euo pipefail
@@ -25,10 +26,12 @@ SCHEME="Spout"
 
 CONFIGURATION="Debug"
 DEVICE_ID=""
+CLEAN=0
 
 for arg in "$@"; do
     case "$arg" in
         --release)       CONFIGURATION="Release" ;;
+        --clean)         CLEAN=1 ;;
         --device)        shift; DEVICE_ID="$1" ;;
         --device=*)      DEVICE_ID="${arg#--device=}" ;;
     esac
@@ -50,6 +53,20 @@ if [ -z "$DEVICE_ID" ]; then
 fi
 
 BUILD_DIR="$PROJECT_DIR/ios/build"
+
+if [ "$CLEAN" -eq 1 ]; then
+    for cfg in Debug Release; do
+        echo "==> Cleaning $SCHEME ($cfg)..."
+        NSUnbufferedIO=YES xcodebuild \
+            -project "$XCODEPROJ" \
+            -scheme "$SCHEME" \
+            -configuration "$cfg" \
+            -derivedDataPath "$BUILD_DIR" \
+            clean 2>&1 \
+            | grep --line-buffered -E "error:|warning:|==>|Clean|note:" \
+            || true
+    done
+fi
 
 echo "==> Building $SCHEME ($CONFIGURATION) for device $DEVICE_ID..."
 # NSUnbufferedIO forces xcodebuild to flush immediately.
