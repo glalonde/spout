@@ -57,6 +57,12 @@ Visuals are considered high-priority — the game lives or dies on how stimulati
 - ✦ **Multiple particle types** — smoke, sparks, debris with distinct visual profiles
 - **Lighting** — particles as dynamic light sources illuminating nearby terrain
 - **High-DPI / resolution scaling** — proper handling of device pixel ratio
+- ✦ **Offscreen ship indicator** — when the ship has scrolled below the visible
+  viewport, show a small horizontal marker at the bottom edge of the screen
+  indicating the ship's x-position (like a radar blip or arrow). Helps the
+  player reorient after losing sight of the ship. Simple to implement: if
+  `ship_state.pos.y < viewport_offset`, draw a triangle/arrow at
+  `(ship_state.pos.x, viewport_bottom)` in the overlay pass.
 
 ## Audio
 
