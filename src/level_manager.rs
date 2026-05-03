@@ -5,7 +5,6 @@
 use crate::buffer_util::{self, SizedBuffer};
 use web_time::Instant;
 
-
 pub struct WIPRectangleLevel {
     width: u32,
     height: u32,
