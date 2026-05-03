@@ -65,13 +65,15 @@ echo "==> Bundle created at: $BUNDLE_DIR"
 # Optionally create a .dmg
 if [[ "${1:-}" == "--dmg" ]]; then
     echo "==> Creating DMG..."
-    # Detach any existing mount with this volume name before creating.
-    hdiutil detach "/Volumes/$APP_NAME" -force 2>/dev/null || true
-    rm -f "$DMG_PATH"
+    # Build to a temp path then rename to avoid "Resource busy" if the
+    # target DMG exists and is cached/locked from a prior run.
+    TMP_DMG="${DMG_PATH%.dmg}-tmp.dmg"
+    rm -f "$TMP_DMG" "$DMG_PATH"
     hdiutil create -volname "$APP_NAME" \
         -srcfolder "$BUNDLE_DIR" \
-        -ov -format UDZO \
-        "$DMG_PATH"
+        -format UDZO \
+        "$TMP_DMG"
+    mv "$TMP_DMG" "$DMG_PATH"
 
     # Sign the DMG too if we have a Developer ID
     if [ -n "$SIGN_IDENTITY" ]; then
