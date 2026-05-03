@@ -5,6 +5,10 @@
 use crate::buffer_util::{self, SizedBuffer};
 use web_time::Instant;
 
+/// Health assigned to the leftmost and rightmost terrain columns.
+/// High enough to be practically indestructible during a game session.
+const WALL_HEALTH: i32 = 500_000_000;
+
 pub struct WIPRectangleLevel {
     width: u32,
     height: u32,
@@ -65,15 +69,29 @@ impl WIPRectangleLevel {
         self.completed_vacancies += 1;
     }
 
+    /// Set leftmost and rightmost columns to WALL_HEALTH so the ship can't
+    /// fly off the horizontal edges. Called once after all vacancies are carved.
+    fn seal_walls(&mut self) {
+        let w = self.width as usize;
+        for row in 0..self.height as usize {
+            self.data[row * w] = WALL_HEALTH;
+            self.data[row * w + w - 1] = WALL_HEALTH;
+        }
+    }
+
     fn finish(&mut self) {
         while !self.done() {
             self.step();
         }
+        self.seal_walls();
     }
 
     fn work_until(&mut self, deadline: Instant) -> bool {
         while !self.done() && Instant::now() < deadline {
             self.step();
+        }
+        if self.done() {
+            self.seal_walls();
         }
         self.done()
     }
@@ -120,6 +138,12 @@ impl LevelMaker {
         if let Some(level) = maker.levels.first_mut() {
             let clear_rows = level_height / 2;
             level[..(clear_rows * level_width) as usize].fill(0);
+            // Restore walls on the cleared rows — fill(0) would have zeroed them.
+            let w = level_width as usize;
+            for row in 0..clear_rows as usize {
+                level[row * w] = WALL_HEALTH;
+                level[row * w + w - 1] = WALL_HEALTH;
+            }
         }
         maker
     }
