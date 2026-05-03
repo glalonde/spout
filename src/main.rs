@@ -491,6 +491,15 @@ impl framework::Example for Spout {
     fn update(&mut self, event: winit::event::WindowEvent) {
         self.collector.handle_winit_event(&event);
 
+        // Touch-to-restart: any tap while the ship is dead restarts the game.
+        #[cfg(not(target_arch = "wasm32"))]
+        if let winit::event::WindowEvent::Touch(touch) = &event {
+            use winit::event::TouchPhase;
+            if touch.phase == TouchPhase::Started && self.state.dead {
+                self.state.reset_requested = true;
+            }
+        }
+
         // One-shot audio actions are handled here directly since they are
         // immediate commands, not held state.
         use winit::keyboard::{KeyCode, PhysicalKey};
@@ -690,6 +699,9 @@ impl framework::Example for Spout {
                 let sc_x = (w - self.game_text.text_width(&sc, 1.0)) / 2.0;
                 let sc_y = go_y - 18.0;
 
+                #[cfg(target_os = "ios")]
+                let restart = "TAP TO RESTART";
+                #[cfg(not(target_os = "ios"))]
                 let restart = "R TO RESTART";
                 let r_x = (w - self.game_text.text_width(restart, 1.0)) / 2.0;
                 let r_y = sc_y - 18.0;
