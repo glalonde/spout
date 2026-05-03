@@ -65,6 +65,8 @@ echo "==> Bundle created at: $BUNDLE_DIR"
 # Optionally create a .dmg
 if [[ "${1:-}" == "--dmg" ]]; then
     echo "==> Creating DMG..."
+    # Detach any existing mount with this volume name before creating.
+    hdiutil detach "/Volumes/$APP_NAME" -force 2>/dev/null || true
     rm -f "$DMG_PATH"
     hdiutil create -volname "$APP_NAME" \
         -srcfolder "$BUNDLE_DIR" \
