@@ -227,6 +227,13 @@ impl Spout {
         self.state
             .ship_state
             .update(dt, input_state.thrust, rotate, gravity);
+
+        // Kill the ship if it flies off the horizontal edges.
+        let x = self.state.ship_state.position[0];
+        if x < 0.0 || x >= self.game_params.level_width as f32 {
+            self.state.dead = true;
+            self.state.explosion_pending = true;
+        }
     }
 
     fn title_emitter_motion(&self) -> particles::EmitterMotion {
