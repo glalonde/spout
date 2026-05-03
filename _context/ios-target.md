@@ -54,13 +54,13 @@ Full script embedded in `ios/Spout.xcodeproj/project.pbxproj`.
 
 See `plans/active/near-term.md` §8 for full details. Summary:
 
-| # | Issue | Where to fix |
-|---|-------|-------------|
-| 8a | Ship escapes left/right edges — no boundary walls | `level_manager.rs` init: set edge columns to max health |
-| 8b | Game over shows "press R" — no keyboard on iOS | `main.rs`: tap anywhere on game-over → restart |
-| 8c | Music off by default — no M key to toggle on iOS | `game_params.rs`: force `music_starts_on = true` on `cfg(target_os = "ios")` |
-| 8d | FPS overlay draws outside game area (safe area / viewport issue) | `framework.rs` / `render.rs`: fix viewport origin on iOS |
-| 8e | No in-game settings UI (long term) | See `autonomous-improvement.md` |
+| # | Issue | Status |
+|---|-------|--------|
+| 8a | Ship escapes left/right edges — no boundary walls | ✅ Fixed in 4cc9000 |
+| 8b | Game over shows "press R" — no keyboard on iOS | ✅ Fixed in 4cc9000 |
+| 8c | Music off by default — no M key to toggle on iOS | ✅ Fixed in 4cc9000 |
+| 8d | FPS overlay draws outside game area (safe area / viewport issue) | Open — `framework.rs` / `render.rs` |
+| 8e | No in-game settings UI (long term) | Backlog |
 
 ## Simulator
 

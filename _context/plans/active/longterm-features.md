@@ -9,7 +9,7 @@ Items marked ✦ are considered likely workable and valuable.
 
 ## Gameplay
 
-- ✦ **Ship collision detection** — particles currently phase through terrain; ship does not collide with it
+- ~~**Ship collision detection**~~ ✅ Done — CPU-side Bresenham hull check; see PR #56. Quality improvements still possible (see near-term.md §2)
 - ✦ **Enemies / AI** — hostile ships, turrets, patrol patterns
 - **Multiple ships / co-op** — local multiplayer or networked
 - **Destructible ship parts** — wings, thrusters as separate physics objects
