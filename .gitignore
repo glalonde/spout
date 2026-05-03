@@ -4,3 +4,7 @@
 /tests/output/*.png
 node_modules/
 .claude/worktrees/
+# Xcode build output
+ios/build/
+ios/**/*.xcuserstate
+ios/**/xcuserdata/
