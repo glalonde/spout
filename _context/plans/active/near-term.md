@@ -42,10 +42,7 @@ Tasks:
 
 Tasks:
 - [ ] Score counter incremented by terrain destruction (particles hitting terrain)
-- [ ] **Fix: stop score incrementing once ship explodes** — currently score keeps
-  climbing during the dead/explosion state. Gate score updates on
-  `GameMode::Playing` (or check `!state.dead`) in the score update logic in
-  `main.rs`.
+- [x] **Fix: stop score incrementing once ship explodes** — gated on `!state.dead` in `main.rs` (PR #59 / 4cc9000)
 - [ ] Render score + lives in a HUD using `TextRenderer`
 - [ ] Fuel/energy gauge (visual bar or numeric)
 
@@ -94,38 +91,24 @@ Tasks:
 Observed on first run on iPhone 15 Pro (2026-05-02). The game launches and renders
 but needs these fixes before it's properly playable on device.
 
-### 8a. Horizontal boundary death (also affects desktop)
-The ship can fly off the left/right edges of the level and disappear. Need
-unbreakable solid walls at x=0 and x=level_width. Options:
-- Add wall cells to the terrain grid that have max health and never erode
-- Clamp ship x-position and treat the boundary as a kill zone
-- Easiest: in `level_manager.rs`, set the leftmost and rightmost column of each
-  level chunk to max terrain health on init. Ship collision already handles this.
+### 8a. Horizontal boundary death ✅
+Fixed in 4cc9000: max-health cells set in leftmost/rightmost terrain columns.
+Secondary guard also kills ship on boundary exit (`c372de8`).
 
-### 8b. Touch-to-restart (no keyboard on iOS)
-Game over screen says "press R to restart" but iOS has no keyboard. Need a
-touch input path:
-- A tap anywhere on game-over screen should restart (same as 'R')
-- In `main.rs`, check `GameMode::GameOver` + `WindowEvent::Touch` with
-  `phase == TouchPhase::Started` → set `reset_requested = true`
+### 8b. Touch-to-restart ✅
+Fixed in 4cc9000: tap anywhere on game over screen restarts; game over text
+says "TAP TO RESTART" on iOS (cfg-gated).
 
-### 8c. Music on by default on iOS
-`game_config.toml` has `music_starts_on = false`. On iOS there's no easy way
-to toggle music without a keyboard (M key). For now, default to on when
-`cfg(target_os = "ios")`. Add `#[cfg(target_os = "ios")] { params.music_starts_on = true; }`
-in `game_params::get_game_config_from_default_file()` after loading, or use a
-separate embedded config for iOS.
+### 8c. Music on by default on iOS ✅
+Fixed in 4cc9000: `cfg(target_os = "ios")` override forces `music_starts_on = true`.
 
 ### 8d. FPS overlay drawn outside the game viewport
-The `overlay_text` renderer (display-resolution text) appears above the game
-area rather than overlaid on it. On iOS the safe area insets may be pushing
-the viewport down. The overlay text position needs to be relative to the actual
-rendered game region, or the viewport/surface setup needs fixing for iOS safe
-areas. Related to #5 (aspect ratio). Investigate `framework.rs` surface setup.
+The `overlay_text` renderer appears above the game area on iOS. Safe area
+insets may be pushing the viewport down. Needs investigation in `framework.rs`.
+Related to #5 (aspect ratio).
 
 ### 8e. In-game settings overlay (longer term)
-See `autonomous-improvement.md` for full design. Needed so players can adjust
-params without editing `game_config.toml`. Lower priority than 8a–8d.
+See `autonomous-improvement.md` for full design. Lower priority.
 
 ---
 

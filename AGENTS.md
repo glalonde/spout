@@ -73,4 +73,8 @@ work — it documents decisions made, known gotchas, and work already scoped.
 non-obvious gotchas to `_context/wasm-debugging.md`, and move completed plans
 to `_context/plans/archive/`.
 
+**When committing code that closes a plan item:** update the relevant
+`_context/plans/` file in the same commit. Plan files and code changes that
+belong together ship together — don't leave the plans to drift.
+
 See `_context/README.md` for the full process.
