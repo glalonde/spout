@@ -388,19 +388,21 @@ pub struct InputState {
 //
 // Screen is split vertically at center (landscape orientation assumed):
 //   Left half  → thrust zone: any touch here fires the thruster.
-//   Right half → rotate zone: horizontal position within the half controls
-//                rotation rate (left edge of half = full CCW, right = full CW,
-//                center of half = 0 with a small deadzone).
+//   Right half → rotate zone (scheme-dependent, see TouchControlScheme):
+//     Drag:     drag from anchor sets an absolute target heading.
+//     Triangle: diagonal from (W/2,0)→(W,H) splits CW (upper-right) from
+//               CCW (lower-left); direction follows current touch position.
 //
-// Two simultaneous touches (one per zone) are supported so rotation and thrust
-// are fully independent.
+// Two simultaneous touches (one per zone) are supported so rotation and
+// thrust are fully independent.
 // ------------------------------------------------------------------------
 
 /// Touch state shared between JS event listeners and the game loop (WASM only).
 #[cfg(target_arch = "wasm32")]
 #[derive(Default)]
 struct WasmTouch {
-    canvas_width: f32, // CSS px, refreshed each event
+    canvas_width: f32,  // CSS px, refreshed each event
+    canvas_height: f32, // CSS px, refreshed each event
     thrust_id: Option<i32>,
     rotate_id: Option<i32>,
     rotate_anchor_x: f32, // x at touchstart
@@ -543,12 +545,14 @@ impl InputCollector {
             let cb = Closure::<dyn FnMut(_)>::new(move |event: web_sys::TouchEvent| {
                 event.prevent_default();
                 let canvas_width = canvas_ref.client_width() as f32;
-                if canvas_width <= 0.0 {
+                let canvas_height = canvas_ref.client_height() as f32;
+                if canvas_width <= 0.0 || canvas_height <= 0.0 {
                     return;
                 }
                 let center = canvas_width / 2.0;
                 let mut s = state.borrow_mut();
                 s.canvas_width = canvas_width;
+                s.canvas_height = canvas_height;
                 let changed = event.changed_touches();
                 for i in 0..changed.length() {
                     if let Some(touch) = changed.get(i) {
@@ -829,23 +833,32 @@ impl InputCollector {
         let (touch_thrust, touch_has_rotate, touch_heading, touch_rotate) = {
             let s = self.wasm_touch.borrow();
             let thrust = s.thrust_id.is_some();
-            let (has_rotate, heading) = if s.rotate_id.is_some() {
-                // Touch drag takes highest priority.
-                let h = touch_delta_to_target_heading(
-                    s.rotate_anchor_x,
-                    s.rotate_anchor_y,
-                    s.rotate_x,
-                    s.rotate_y,
-                );
-                (true, h)
+            let (has_rotate, heading, rotate) = if s.rotate_id.is_some() {
+                match self.touch_scheme {
+                    TouchControlScheme::Triangle => {
+                        let rx = s.rotate_x - s.canvas_width / 2.0;
+                        let is_cw =
+                            s.rotate_y * (s.canvas_width / 2.0) < s.canvas_height * rx;
+                        let rot = if is_cw { -1.0_f32 } else { 1.0_f32 };
+                        (true, None, rot)
+                    }
+                    TouchControlScheme::Drag => {
+                        let h = touch_delta_to_target_heading(
+                            s.rotate_anchor_x,
+                            s.rotate_anchor_y,
+                            s.rotate_x,
+                            s.rotate_y,
+                        );
+                        (true, h, 0.0_f32)
+                    }
+                }
             } else if s.accel_heading.is_some() {
-                // Accelerometer provides heading when no rotate touch is active.
-                (true, s.accel_heading)
+                // Accelerometer provides heading when no rotate touch is active (drag only).
+                (true, s.accel_heading, 0.0_f32)
             } else {
-                (false, None)
+                (false, None, 0.0_f32)
             };
-            // WASM always uses the drag scheme for now.
-            (thrust, has_rotate, heading, 0.0_f32)
+            (thrust, has_rotate, heading, rotate)
         };
 
         // Touch owns its axis entirely; keyboard fills the other.
