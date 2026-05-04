@@ -333,7 +333,6 @@ mod tests {
 /// Also used to detect "taps" (touchend with displacement below this threshold).
 const MIN_DRAG_PX: f32 = 8.0;
 
-
 /// Converts a 2-D touch drag into an absolute target heading in radians.
 ///
 /// Returns `None` when the drag is too small to reliably determine a direction
@@ -837,8 +836,7 @@ impl InputCollector {
                 match self.touch_scheme {
                     TouchControlScheme::Triangle => {
                         let rx = s.rotate_x - s.canvas_width / 2.0;
-                        let is_cw =
-                            s.rotate_y * (s.canvas_width / 2.0) < s.canvas_height * rx;
+                        let is_cw = s.rotate_y * (s.canvas_width / 2.0) < s.canvas_height * rx;
                         let rot = if is_cw { -1.0_f32 } else { 1.0_f32 };
                         (true, None, rot)
                     }
