@@ -171,6 +171,40 @@ aesthetic should translate to the icon.
 
 ---
 
+## 11. Virtual Joystick / Touch Visual Feedback
+
+Touch controls currently give no visual indication of where the thrust/rotate zones are or whether input is registered. A virtual joystick or translucent on-screen control overlay would make the iOS experience significantly more discoverable.
+
+Options to explore:
+- [ ] Simple semi-transparent zone indicators (left = rotate, right = thrust) drawn as HUD overlay
+- [ ] Virtual joystick: a thumb origin + knob that tracks the touch, emits thrust in the joystick direction
+- [ ] Haptic feedback on thrust (iOS `UIImpactFeedbackGenerator`) — requires FFI or a winit hook
+
+---
+
+## 12. Density-Based Fluid Dynamics for Particles
+
+Replace the current per-particle gravity + elasticity model with a grid-based fluid sim (e.g. SPH or a simple Eulerian pressure solve on the particle density field). Would make the particle exhaust behave more like a pressurized gas — spreading laterally, building up in enclosed spaces, etc.
+
+Notes:
+- The existing density grid (used for rendering/collision) is a natural starting point for a pressure field
+- A full Navier-Stokes solve is expensive; even a simple divergence-correction pass would add believable bulk flow
+- Interaction between fluid pressure and terrain destruction is the interesting design space
+
+---
+
+## 13. Damage-Accumulation Glow on Terrain
+
+Currently terrain cells either glow at full intensity (edge highlight) or don't. Cells should brighten progressively as they accumulate damage, giving the player clear feedback about which areas are weakened before they finally break.
+
+Tasks:
+- [ ] Pass per-cell health as a normalized value into the render shader (health / starting_health)
+- [ ] Map damage fraction to an additive glow: undamaged = no glow, half-health = dim, near-zero = bright
+- [ ] Ensure the glow blends with the existing bloom pipeline so heavily damaged terrain pulses visibly
+- [ ] Consider a color shift (e.g. white → orange → red) as cells approach destruction
+
+---
+
 ## Branch Audit Remainder
 
 The `legacy_wgpu` branch has been audited (see `legacy-port-inventory.md`). These branches have not yet been reviewed:
