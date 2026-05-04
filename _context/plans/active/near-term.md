@@ -62,7 +62,6 @@ Currently the game renders at a fixed internal resolution (240×135) upscaled to
 
 Tasks:
 - [x] Decide internal render resolution strategy → camera letterboxes game quad (261×160) into surface; bars on one axis only.
-- [x] On iOS: CRT barrel distortion disabled (`crt_strength=0.0` override) — CRT clips edges and makes no sense on OLED.
 - [x] Full-screen Metal surface on iOS — see 8d above.
 - [ ] Handle window resize gracefully (resize swapchain, update camera projection)
 - [ ] Optional: expose resolution config in `game_config.toml`
@@ -111,7 +110,6 @@ bars that don't pass touch events. Fixed by adding `<key>UILaunchScreen</key><di
 to `ios/Info.plist`. Also added:
 - `framework.rs` `init_gpu`: `window.outer_size()` on iOS (safe-area guard) + logging.
 - `framework.rs` `resumed`: landscape lock, hide status bar + home indicator.
-- `game_params.rs`: CRT disabled on iOS (`crt_strength=0.0`).
 
 ### 8e. In-game settings overlay (longer term)
 See `autonomous-improvement.md` for full design. Lower priority.
