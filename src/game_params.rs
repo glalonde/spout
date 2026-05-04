@@ -176,9 +176,14 @@ const EMBEDDED_CONFIG: &str = include_str!("../game_config.toml");
 pub fn get_game_config_from_default_file() -> GameParams {
     let params = load_params_from_file();
     // iOS has no keyboard, so music must default to on (no M-key to toggle).
+    // CRT barrel distortion makes no sense on a mobile OLED and clips screen edges.
     #[cfg(target_os = "ios")]
     let params = GameParams {
         music_starts_on: true,
+        visual_params: VisualParams {
+            crt_strength: 0.0,
+            ..params.visual_params
+        },
         ..params
     };
     params

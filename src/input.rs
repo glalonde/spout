@@ -346,9 +346,11 @@ pub struct InputCollector {
     held_cam_reset: bool,
 
     // Native touch (updated via winit WindowEvent::Touch; IDs are winit's u64).
-    // surface_width (physical px) must be kept current via set_surface_width().
+    // surface_width/height (physical px) must be kept current via set_surface_width/height().
     #[cfg(not(target_arch = "wasm32"))]
     surface_width: f32,
+    #[cfg(not(target_arch = "wasm32"))]
+    surface_height: f32,
     #[cfg(not(target_arch = "wasm32"))]
     thrust_id: Option<u64>,
     #[cfg(not(target_arch = "wasm32"))]
@@ -387,6 +389,8 @@ impl Default for InputCollector {
             #[cfg(not(target_arch = "wasm32"))]
             surface_width: 0.0,
             #[cfg(not(target_arch = "wasm32"))]
+            surface_height: 0.0,
+            #[cfg(not(target_arch = "wasm32"))]
             thrust_id: None,
             #[cfg(not(target_arch = "wasm32"))]
             rotate_id: None,
@@ -405,13 +409,18 @@ impl Default for InputCollector {
 }
 
 impl InputCollector {
-    /// Update the surface width used for zone-split calculation (native only).
+    /// Update surface dimensions used for touch zone calculations (native only).
     ///
-    /// Call once at init and again on every resize. On WASM the canvas width is
+    /// Call once at init and again on every resize. On WASM the canvas size is
     /// read inside each touch event, so this is not needed there.
     #[cfg(not(target_arch = "wasm32"))]
     pub fn set_surface_width(&mut self, width: f32) {
         self.surface_width = width;
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn set_surface_height(&mut self, height: f32) {
+        self.surface_height = height;
     }
 
     /// Register DOM touch event listeners on the game canvas (WASM only).
