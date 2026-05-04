@@ -71,12 +71,14 @@ struct Spout {
     background: background::BackgroundRenderer,
     /// Renders into the game view (240x135) — pixel-perfect with terrain/particles.
     game_text: text::TextRenderer,
-    /// Renders at display resolution on top of everything — for debug info.
-    overlay_text: text::TextRenderer,
     audio: audio::AudioPlayer,
     staging_belt: wgpu::util::StagingBelt,
-    show_debug_overlay: bool,
+    /// Debug overlay: FPS counter rendered at display resolution. Debug builds only.
+    #[cfg(debug_assertions)]
+    overlay_text: text::TextRenderer,
+    #[cfg(debug_assertions)]
     frame_times: Vec<f32>,
+    #[cfg(debug_assertions)]
     tick_wall_dt: f32,
 }
 
@@ -308,7 +310,10 @@ impl Spout {
             .work_until(Instant::now() + LEVEL_BUDGET);
 
         let (game_dt, wall_dt) = self.tick();
-        self.tick_wall_dt = wall_dt;
+        #[cfg(debug_assertions)]
+        {
+            self.tick_wall_dt = wall_dt;
+        }
 
         match self.state.mode {
             GameMode::Title => {
@@ -437,6 +442,7 @@ impl framework::Example for Spout {
             text::YDirection::Up,
             text::Font::O4b11,
         );
+        #[cfg(debug_assertions)]
         let overlay_text = text::TextRenderer::init(
             device,
             queue,
@@ -460,7 +466,10 @@ impl framework::Example for Spout {
         let mut collector = InputCollector::default();
 
         #[cfg(not(target_arch = "wasm32"))]
-        collector.set_surface_width(config.width as f32);
+        {
+            collector.set_surface_width(config.width as f32);
+            collector.set_surface_height(config.height as f32);
+        }
 
         #[cfg(target_arch = "wasm32")]
         {
@@ -486,11 +495,13 @@ impl framework::Example for Spout {
             collision_detector,
             background,
             game_text,
-            overlay_text,
             audio,
             staging_belt,
-            show_debug_overlay: true,
+            #[cfg(debug_assertions)]
+            overlay_text,
+            #[cfg(debug_assertions)]
             frame_times: Vec::with_capacity(60),
+            #[cfg(debug_assertions)]
             tick_wall_dt: 0.0,
         };
         spout.enter_title(device, queue);
@@ -527,7 +538,6 @@ impl framework::Example for Spout {
                     KeyCode::KeyT => self.audio.next_track(),
                     KeyCode::KeyY => self.audio.toggle(),
                     KeyCode::KeyR => self.state.reset_requested = true,
-                    KeyCode::F3 => self.show_debug_overlay = !self.show_debug_overlay,
                     _ => {}
                 }
             }
@@ -540,8 +550,15 @@ impl framework::Example for Spout {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
     ) {
+        // queue is only used by the debug overlay; suppress warning in release builds.
+        #[cfg(not(debug_assertions))]
+        let _ = queue;
+
         #[cfg(not(target_arch = "wasm32"))]
-        self.collector.set_surface_width(config.width as f32);
+        {
+            self.collector.set_surface_width(config.width as f32);
+            self.collector.set_surface_height(config.height as f32);
+        }
 
         let new_upscaled = make_texture(device, config.width, config.height);
         self.bloom = bloom::Bloom::new(
@@ -554,6 +571,7 @@ impl framework::Example for Spout {
         self.renderer
             .resize(config, device, &new_upscaled, self.bloom.bloom_view());
         self.upscaled_view = new_upscaled;
+        #[cfg(debug_assertions)]
         self.overlay_text.resize(queue, config.width, config.height);
     }
 
@@ -739,24 +757,25 @@ impl framework::Example for Spout {
         self.renderer.render(view, &mut encoder);
         self.level_manager.decompose_tiles(&mut encoder);
 
-        // Debug overlay (FPS) — renders at display resolution on top of everything.
-        if self.show_debug_overlay {
+        // Debug overlay — only compiled in debug builds.
+        #[cfg(debug_assertions)]
+        {
             let dt = self.tick_wall_dt;
             if self.frame_times.len() >= 60 {
                 self.frame_times.remove(0);
             }
             self.frame_times.push(dt);
-
-            let avg_dt: f32 = self.frame_times.iter().sum::<f32>() / self.frame_times.len() as f32;
+            let avg_dt = self.frame_times.iter().sum::<f32>() / self.frame_times.len() as f32;
             let fps = if avg_dt > 0.0 { 1.0 / avg_dt } else { 0.0 };
-            let fps_text = format!("FPS: {:.0}", fps);
-
+            let w = self.overlay_text.surface_width as u32;
+            let h = self.overlay_text.surface_height as u32;
+            let fps_text = format!("FPS:{:.0} {}x{}", fps, w, h);
             let white = [1.0, 1.0, 1.0, 1.0];
             self.overlay_text.draw(
                 device,
                 &mut encoder,
                 view,
-                &[(fps_text.as_str(), 8.0, 8.0, 1.0, white)],
+                &[(&fps_text, 8.0, 8.0, 1.0, white)],
             );
         }
 

@@ -171,6 +171,17 @@ async fn init_gpu<E: Example>(
         .await
         .expect("Unable to find a suitable GPU adapter!");
 
+    // On iOS, log both inner and outer size to diagnose window coverage.
+    #[cfg(target_os = "ios")]
+    {
+        let inner = window.inner_size();
+        let outer = window.outer_size();
+        log::info!("iOS init: inner_size={:?}  outer_size={:?}", inner, outer);
+    }
+    // Use outer_size() on iOS: inner_size() can clip to the safe area.
+    #[cfg(target_os = "ios")]
+    let size = window.outer_size();
+    #[cfg(not(target_os = "ios"))]
     let size = window.inner_size();
     let config = surface
         .get_default_config(&adapter, size.width.max(1), size.height.max(1))
@@ -203,6 +214,16 @@ impl<E: Example> ApplicationHandler for FrameworkApp<E> {
                     let attrs = winit::window::Window::default_attributes().with_title(&self.title);
                     #[cfg(target_arch = "wasm32")]
                     let attrs = attrs.with_append(true);
+                    // Lock to landscape, hide status bar and home indicator so the game
+                    // fills the entire display without overlapping OS chrome.
+                    #[cfg(target_os = "ios")]
+                    let attrs = {
+                        use winit::platform::ios::{ValidOrientations, WindowAttributesExtIOS};
+                        attrs
+                            .with_valid_orientations(ValidOrientations::Landscape)
+                            .with_prefers_status_bar_hidden(true)
+                            .with_prefers_home_indicator_hidden(true)
+                    };
                     attrs
                 })
                 .expect("Failed to create window"),

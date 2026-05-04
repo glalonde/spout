@@ -61,9 +61,9 @@ Independent — no blockers. More urgent now that iOS is running on device.
 Currently the game renders at a fixed internal resolution (240×135) upscaled to fill the window. On iPhone 15 Pro (2556×1179, ~19.5:9) the game viewport doesn't fill the screen correctly — letterboxed or wrong aspect.
 
 Tasks:
-- [ ] Decide internal render resolution strategy (fixed game viewport with letterboxing vs. stretch vs. dynamic)
+- [x] Decide internal render resolution strategy → camera letterboxes game quad (261×160) into surface; bars on one axis only.
+- [x] Full-screen Metal surface on iOS — see 8d above.
 - [ ] Handle window resize gracefully (resize swapchain, update camera projection)
-- [ ] On iOS: match viewport to device screen aspect ratio (iPhone 15 Pro is ~19.5:9, game is currently 16:9 ish)
 - [ ] Optional: expose resolution config in `game_config.toml`
 
 ---
@@ -102,10 +102,14 @@ says "TAP TO RESTART" on iOS (cfg-gated).
 ### 8c. Music on by default on iOS ✅
 Fixed in 4cc9000: `cfg(target_os = "ios")` override forces `music_starts_on = true`.
 
-### 8d. FPS overlay drawn outside the game viewport
-The `overlay_text` renderer appears above the game area on iOS. Safe area
-insets may be pushing the viewport down. Needs investigation in `framework.rs`.
-Related to #5 (aspect ratio).
+### 8d. Full-screen surface + letterboxing ✅
+Root cause: missing `UILaunchScreen` key in `ios/Info.plist`. Without it, iOS
+treats the app as a legacy app and runs it in 480×320-point compatibility mode
+(1440×960 px at 3×), centered on the real screen with massive OS-level black
+bars that don't pass touch events. Fixed by adding `<key>UILaunchScreen</key><dict/>`
+to `ios/Info.plist`. Also added:
+- `framework.rs` `init_gpu`: `window.outer_size()` on iOS (safe-area guard) + logging.
+- `framework.rs` `resumed`: landscape lock, hide status bar + home indicator.
 
 ### 8e. In-game settings overlay (longer term)
 See `autonomous-improvement.md` for full design. Lower priority.
