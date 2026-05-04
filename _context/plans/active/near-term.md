@@ -26,13 +26,15 @@ but collision is not pixel-perfect enough in practice — the ship can visually
 overlap terrain without dying, or die when it looks like it shouldn't.
 
 Tasks:
-- [ ] Audit the collision shape: verify the triangle vertices used match the
-  rendered ship geometry exactly (check `ship.rs` fill vertices vs collision
-  vertices in `collision.rs`)
-- [ ] Consider testing every pixel of the ship outline rather than just triangle
-  edges — rasterize the filled triangle and test all interior + border cells
+- [x] Audit the collision shape: `collision.wgsl` was missing the tail-notch
+  vertex (-5,0) — hull was a 3-vertex triangle instead of the 4-vertex chevron
+  outline rendered by `ship.wgsl`. Fixed: HULL_VERTS updated to 4 verts.
+- [x] Dense edge sampling: replaced 3-vert + 3-midpoint approach with sampling
+  each of the 4 edges at ~2 world-unit intervals (~32 sample points total).
+  Each sample is still Bresenham-swept from prev→curr frame position.
 - [ ] Test at different speeds: fast-moving ships may tunnel through 1-cell walls
-  between frames; if so, sweep the ship path between frames
+  between frames; the per-point sweep handles moderate speeds but extreme
+  velocities could still tunnel if the swept distance exceeds cell size.
 
 ---
 
