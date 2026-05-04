@@ -464,6 +464,7 @@ impl framework::Example for Spout {
         };
 
         let mut collector = InputCollector::default();
+        collector.set_touch_scheme(game_params.touch_control_scheme);
 
         #[cfg(not(target_arch = "wasm32"))]
         {
