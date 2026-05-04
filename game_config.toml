@@ -6,6 +6,10 @@ level_height = 480
 fps = 60.0
 music_starts_on = false
 render_ship = true
+# Touch control layout on mobile.
+# "triangle" = right half split by diagonal (top-center→bottom-right): upper-right → CW, lower-left → CCW.
+# "drag" = original drag-to-aim scheme.
+touch_control_scheme = "triangle"
 
 [particle_system_params]
 emission_rate = 10000

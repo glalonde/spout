@@ -2,6 +2,8 @@
 //! Supports desktop (winit keyboard events), mobile web (touch + DeviceOrientation),
 //! and absolute-angle heading via bang-bang controller.
 
+use crate::game_params::TouchControlScheme;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -233,11 +235,104 @@ mod tests {
         assert_eq!(state.thrust, 1.0);
         assert_eq!(state.rotate, 1.0);
     }
+
+    // --- triangle scheme (non-WASM only) --------------------------------------
+    //
+    // surface: 400×300. center_x=200. Diagonal from (200,0) to (400,300).
+    // CW condition: y * 200 < 300 * (x - 200)
+    //
+    // Upper-right triangle (CW): e.g. (380, 10) → 10*200=2000 < 300*180=54000 ✓
+    // Lower-left triangle (CCW): e.g. (210, 280) → 280*200=56000 ≥ 300*10=3000 ✓
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn triangle_collector() -> InputCollector {
+        let mut c = InputCollector::default();
+        c.surface_width = 400.0;
+        c.surface_height = 300.0;
+        c.touch_scheme = TouchControlScheme::Triangle;
+        c
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn set_right_touch(c: &mut InputCollector, x: f32, y: f32) {
+        c.rotate_id = Some(1);
+        c.rotate_x = x;
+        c.rotate_y = y;
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn triangle_upper_right_is_cw() {
+        // Upper-right area → CW → rotate = -1.0, no target heading.
+        let mut c = triangle_collector();
+        set_right_touch(&mut c, 380.0, 10.0);
+        let state = c.current_state();
+        assert_eq!(state.rotate, -1.0);
+        assert_eq!(state.target_heading, None);
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn triangle_lower_left_is_ccw() {
+        // Lower-left area of right half → CCW → rotate = +1.0.
+        let mut c = triangle_collector();
+        set_right_touch(&mut c, 210.0, 280.0);
+        let state = c.current_state();
+        assert_eq!(state.rotate, 1.0);
+        assert_eq!(state.target_heading, None);
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn triangle_drag_across_diagonal_switches_direction() {
+        // Same touch ID; moving from CW zone to CCW zone updates rotate.
+        let mut c = triangle_collector();
+        set_right_touch(&mut c, 380.0, 10.0); // CW
+        assert_eq!(c.current_state().rotate, -1.0);
+        c.rotate_x = 210.0;
+        c.rotate_y = 280.0; // moved to CCW zone
+        assert_eq!(c.current_state().rotate, 1.0);
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn triangle_suppresses_keyboard_when_active() {
+        // Any right-half touch suppresses keyboard rotation.
+        let mut c = triangle_collector();
+        set_right_touch(&mut c, 380.0, 10.0);
+        c.held_left = true;
+        let state = c.current_state();
+        assert_eq!(state.rotate, -1.0); // triangle wins, not keyboard
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn triangle_thrust_independent() {
+        // Left-half thrust + right-half CW touch → both active simultaneously.
+        let mut c = triangle_collector();
+        c.thrust_id = Some(1);
+        set_right_touch(&mut c, 380.0, 10.0);
+        c.rotate_id = Some(2); // override id set by set_right_touch
+        let state = c.current_state();
+        assert_eq!(state.thrust, 1.0);
+        assert_eq!(state.rotate, -1.0);
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn triangle_no_touch_no_rotate() {
+        // No right-half touch → no rotation, keyboard applies.
+        let mut c = triangle_collector();
+        c.held_left = true;
+        let state = c.current_state();
+        assert_eq!(state.rotate, 1.0); // keyboard
+    }
 }
 
 /// Minimum drag distance (px) before a touch heading is committed.
 /// Also used to detect "taps" (touchend with displacement below this threshold).
 const MIN_DRAG_PX: f32 = 8.0;
+
 
 /// Converts a 2-D touch drag into an absolute target heading in radians.
 ///
@@ -345,6 +440,8 @@ pub struct InputCollector {
     held_cam_perspective: bool,
     held_cam_reset: bool,
 
+    touch_scheme: TouchControlScheme,
+
     // Native touch (updated via winit WindowEvent::Touch; IDs are winit's u64).
     // surface_width/height (physical px) must be kept current via set_surface_width/height().
     #[cfg(not(target_arch = "wasm32"))]
@@ -353,12 +450,13 @@ pub struct InputCollector {
     surface_height: f32,
     #[cfg(not(target_arch = "wasm32"))]
     thrust_id: Option<u64>,
+    // Right-half touch (drag scheme: drag sets heading; triangle scheme: position vs diagonal).
     #[cfg(not(target_arch = "wasm32"))]
     rotate_id: Option<u64>,
     #[cfg(not(target_arch = "wasm32"))]
-    rotate_anchor_x: f32, // x at touchstart
+    rotate_anchor_x: f32, // x at touchstart (drag scheme only)
     #[cfg(not(target_arch = "wasm32"))]
-    rotate_anchor_y: f32, // y at touchstart
+    rotate_anchor_y: f32, // y at touchstart (drag scheme only)
     #[cfg(not(target_arch = "wasm32"))]
     rotate_x: f32, // x at latest touchmove/touchstart
     #[cfg(not(target_arch = "wasm32"))]
@@ -386,6 +484,7 @@ impl Default for InputCollector {
             held_cam_right: false,
             held_cam_perspective: false,
             held_cam_reset: false,
+            touch_scheme: TouchControlScheme::Drag,
             #[cfg(not(target_arch = "wasm32"))]
             surface_width: 0.0,
             #[cfg(not(target_arch = "wasm32"))]
@@ -421,6 +520,10 @@ impl InputCollector {
     #[cfg(not(target_arch = "wasm32"))]
     pub fn set_surface_height(&mut self, height: f32) {
         self.surface_height = height;
+    }
+
+    pub fn set_touch_scheme(&mut self, scheme: TouchControlScheme) {
+        self.touch_scheme = scheme;
     }
 
     /// Register DOM touch event listeners on the game canvas (WASM only).
@@ -639,9 +742,9 @@ impl InputCollector {
             use winit::event::TouchPhase;
             let center = self.surface_width / 2.0;
             let x = touch.location.x as f32;
+            let y = touch.location.y as f32;
             match touch.phase {
                 TouchPhase::Started => {
-                    let y = touch.location.y as f32;
                     if x < center {
                         if self.thrust_id.is_none() {
                             self.thrust_id = Some(touch.id);
@@ -655,9 +758,10 @@ impl InputCollector {
                     }
                 }
                 TouchPhase::Moved => {
+                    // Only the drag scheme tracks position after touch-down.
                     if Some(touch.id) == self.rotate_id {
                         self.rotate_x = x;
-                        self.rotate_y = touch.location.y as f32;
+                        self.rotate_y = y;
                     }
                 }
                 TouchPhase::Ended | TouchPhase::Cancelled => {
@@ -684,25 +788,45 @@ impl InputCollector {
             _ => 0.0,
         };
 
+        // touch_rotate: digital rotate value produced by touch (±1.0 for bezel, 0.0 for drag).
+        // touch_heading: absolute target heading produced by touch (drag scheme only).
         #[cfg(not(target_arch = "wasm32"))]
-        let (touch_thrust, touch_has_rotate, touch_heading) = {
+        let (touch_thrust, touch_has_rotate, touch_heading, touch_rotate) = {
             let thrust = self.thrust_id.is_some();
-            let (has_rotate, heading) = if self.rotate_id.is_some() {
-                let h = touch_delta_to_target_heading(
-                    self.rotate_anchor_x,
-                    self.rotate_anchor_y,
-                    self.rotate_x,
-                    self.rotate_y,
-                );
-                (true, h)
-            } else {
-                (false, None)
+            let (has_rotate, heading, rotate) = match self.touch_scheme {
+                TouchControlScheme::Drag => {
+                    if self.rotate_id.is_some() {
+                        let h = touch_delta_to_target_heading(
+                            self.rotate_anchor_x,
+                            self.rotate_anchor_y,
+                            self.rotate_x,
+                            self.rotate_y,
+                        );
+                        (true, h, 0.0_f32)
+                    } else {
+                        (false, None, 0.0_f32)
+                    }
+                }
+                TouchControlScheme::Triangle => {
+                    if self.rotate_id.is_some() {
+                        // Diagonal from (W/2, 0) to (W, H) splits the right half.
+                        // A point is CW (upper-right triangle) when:
+                        //   y * (W/2) < H * (x - W/2)
+                        let rx = self.rotate_x - self.surface_width / 2.0;
+                        let is_cw =
+                            self.rotate_y * (self.surface_width / 2.0) < self.surface_height * rx;
+                        let rot = if is_cw { -1.0_f32 } else { 1.0_f32 };
+                        (true, None, rot)
+                    } else {
+                        (false, None, 0.0_f32)
+                    }
+                }
             };
-            (thrust, has_rotate, heading)
+            (thrust, has_rotate, heading, rotate)
         };
 
         #[cfg(target_arch = "wasm32")]
-        let (touch_thrust, touch_has_rotate, touch_heading) = {
+        let (touch_thrust, touch_has_rotate, touch_heading, touch_rotate) = {
             let s = self.wasm_touch.borrow();
             let thrust = s.thrust_id.is_some();
             let (has_rotate, heading) = if s.rotate_id.is_some() {
@@ -720,15 +844,17 @@ impl InputCollector {
             } else {
                 (false, None)
             };
-            (thrust, has_rotate, heading)
+            // WASM always uses the drag scheme for now.
+            (thrust, has_rotate, heading, 0.0_f32)
         };
 
         // Touch owns its axis entirely; keyboard fills the other.
         let thrust = if touch_thrust { 1.0 } else { keyboard_thrust };
-        // When touch is in the rotate zone (even within the drag deadzone), it
-        // suppresses keyboard rotation so the two don't fight.
+        // When touch is in the rotate zone it suppresses keyboard rotation.
+        // For drag scheme touch_rotate=0.0 and target_heading drives rotation.
+        // For bezel scheme touch_rotate=±1.0 and target_heading is None.
         let rotate = if touch_has_rotate {
-            0.0
+            touch_rotate
         } else {
             keyboard_rotate
         };

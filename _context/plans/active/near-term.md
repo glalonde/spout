@@ -138,49 +138,49 @@ Steps:
 
 ---
 
-## 10. App Icon
+## 10. App Icon ✅
 
-All three platforms need a proper icon. Currently only `assets/spout_preview.png`
-exists (a gameplay screenshot, not a real icon).
+Done in PR #63. Source: in-game screenshot of ship (blue pixel-art triangle +
+fire thrust), cropped to 293×293.
 
-Design brief: the icon should evoke the game — a ship firing particles into
-terrain. Simple, bold, readable at small sizes. The particle glow/bloom
-aesthetic should translate to the icon.
-
-### macOS (.icns)
-- Source: 1024×1024 PNG → `iconutil` generates the `.icns`
-- Goes in `macos/` directory, referenced from `macos/Info.plist`
-- `scripts/package_macos.sh` copies it into the `.app` bundle
-- Sizes needed in the `.iconset`: 16, 32, 128, 256, 512 px (+ @2x variants)
-
-### iOS (asset catalog or individual PNGs)
-- Required sizes for iOS app icon: 60×60, 120×120, 180×180 px (iPhone)
-  and 76×76, 152×152, 167×167 px (iPad)
-- Plus 1024×1024 for App Store
-- Goes in `ios/` as an `AppIcon.appiconset` (Xcode asset catalog) or listed
-  in `Info.plist` under `CFBundleIcons`
-- Add `ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon` to Xcode build settings
-
-### Favicon (web / WASM)
-- 32×32 and 180×180 PNG (for apple-touch-icon) + `favicon.ico`
-- Goes in `web/` or wherever the gh-pages build drops static files
-
-### Suggested workflow
-1. Create master 1024×1024 artwork (Figma, Pixelmator, or procgen from game)
-2. Export PNGs → `scripts/generate_icons.sh` automates resizing with `sips`
-3. `iconutil --convert icns` for macOS
-4. Drop icon PNGs into iOS asset catalog
+- `macos/AppIcon.icns` — full iconset 16–1024px; picked up by `scripts/package_macos.sh`
+- `ios/Assets.xcassets/AppIcon.appiconset/` — all iPhone/iPad sizes + Contents.json;
+  Xcode project wired up with Resources build phase + `ASSETCATALOG_COMPILER_APPICON_NAME`
+- `wasm-resources/favicon.ico` + `favicon.png`; `index.template.html` updated with `<link rel="icon">`
 
 ---
 
-## 11. Virtual Joystick / Touch Visual Feedback
+## 11. Touch Controls — Visual Feedback & Layout Options
 
-Touch controls currently give no visual indication of where the thrust/rotate zones are or whether input is registered. A virtual joystick or translucent on-screen control overlay would make the iOS experience significantly more discoverable.
+Touch controls currently give no visual indication of where the thrust/rotate zones are or whether input is registered. The control layout should be configurable; at least two schemes are worth prototyping.
 
-Options to explore:
+### Option A: Triangle Split (implemented, try on device)
+
+The right half is divided by a diagonal from top-center `(W/2, 0)` to bottom-right `(W, H)`:
+- **Upper-right triangle** → rotate CW (`rotate = -1.0`)
+- **Lower-left triangle** → rotate CCW (`rotate = +1.0`)
+- Left half → thrust (unchanged)
+
+No dead zone. A single touch anywhere in the right half rotates; dragging across the diagonal switches direction instantly. Direction is computed from the current touch position, not where the touch started.
+
+CW condition: `y * (W/2) < H * (x - W/2)`
+
+Tasks:
+- [x] Implement triangle zone split in `input.rs` (`TouchControlScheme::Triangle`)
+- [x] Gate behind `touch_control_scheme = "triangle"` in `game_config.toml`
+- [ ] Draw a faint diagonal line indicator in the HUD (makes the split visible while learning)
+
+### Option B: Virtual Joystick
+
+A thumb origin + knob that tracks the touch, emits thrust in the joystick direction.
+
+Tasks:
 - [ ] Simple semi-transparent zone indicators (left = rotate, right = thrust) drawn as HUD overlay
-- [ ] Virtual joystick: a thumb origin + knob that tracks the touch, emits thrust in the joystick direction
+- [ ] Virtual joystick: thumb-origin + knob tracking touch position
 - [ ] Haptic feedback on thrust (iOS `UIImpactFeedbackGenerator`) — requires FFI or a winit hook
+
+### Config
+Both schemes should live behind `touch_control_scheme` in `game_config.toml` so they can be swapped without recompiling.
 
 ---
 

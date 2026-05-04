@@ -2,6 +2,20 @@
 
 use serde::{Deserialize, Serialize};
 
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum TouchControlScheme {
+    /// Drag-to-aim: touching the right half and dragging sets an absolute target
+    /// heading via a bang-bang controller. Original scheme.
+    #[default]
+    Drag,
+    /// Triangle split: the right half is divided by a diagonal from top-center to
+    /// bottom-right. Current touch position determines direction — above/right of
+    /// the diagonal → rotate CW, below/left → rotate CCW. Drag across the diagonal
+    /// to switch directions instantly, no dead zone.
+    Triangle,
+}
+
 // Parameters that define the game. These don't change at runtime.
 #[derive(Debug, Serialize, Deserialize, Clone, Copy)]
 pub struct GameParams {
@@ -13,6 +27,9 @@ pub struct GameParams {
     pub fps: f64,
     pub music_starts_on: bool,
     pub render_ship: bool,
+
+    #[serde(default)]
+    pub touch_control_scheme: TouchControlScheme,
 
     #[serde(default)]
     pub particle_system_params: ParticleSystemParams,
@@ -159,6 +176,7 @@ impl Default for GameParams {
             fps: 60.0,
             music_starts_on: false,
             render_ship: false,
+            touch_control_scheme: TouchControlScheme::Drag,
             particle_system_params: ParticleSystemParams::default(),
             ship_params: ShipParams::default(),
             level_params: LevelParams::default(),
@@ -223,6 +241,7 @@ mod tests {
             fps: 60.0,
             music_starts_on: false,
             render_ship: true,
+            touch_control_scheme: TouchControlScheme::Drag,
             particle_system_params: ParticleSystemParams::default(),
             ship_params: ShipParams::default(),
             level_params: LevelParams::default(),
