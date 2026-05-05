@@ -30,6 +30,56 @@ const LEVEL_BUDGET: std::time::Duration = std::time::Duration::from_nanos(3_333_
 /// don't cause the ship and particles to simulate a huge time jump.
 const MAX_FRAME_DT: std::time::Duration = std::time::Duration::from_millis(50);
 
+fn restart_prompt() -> &'static str {
+    if tap_restart_prompt() {
+        "TAP TO RESTART"
+    } else {
+        "R TO RESTART"
+    }
+}
+
+#[cfg(any(target_os = "ios", target_os = "android"))]
+fn tap_restart_prompt() -> bool {
+    true
+}
+
+#[cfg(all(
+    target_arch = "wasm32",
+    not(any(target_os = "ios", target_os = "android"))
+))]
+fn tap_restart_prompt() -> bool {
+    let Some(window) = web_sys::window() else {
+        return false;
+    };
+
+    let touch_event = js_sys::Reflect::has(
+        window.as_ref(),
+        &wasm_bindgen::JsValue::from_str("ontouchstart"),
+    )
+    .unwrap_or(false);
+    let max_touch_points = js_sys::Reflect::get(
+        window.as_ref(),
+        &wasm_bindgen::JsValue::from_str("navigator"),
+    )
+    .ok()
+    .and_then(|navigator| {
+        js_sys::Reflect::get(
+            &navigator,
+            &wasm_bindgen::JsValue::from_str("maxTouchPoints"),
+        )
+        .ok()
+    })
+    .and_then(|value| value.as_f64())
+    .unwrap_or(0.0);
+
+    touch_event || max_touch_points > 0.0
+}
+
+#[cfg(not(any(target_os = "ios", target_os = "android", target_arch = "wasm32")))]
+fn tap_restart_prompt() -> bool {
+    false
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 enum GameMode {
     /// Title screen: "SPOUT" rendered as terrain, eroded by a fixed emitter.
@@ -302,6 +352,11 @@ impl Spout {
         // Snapshot all input sources into logical InputState for this frame.
         self.state.prev_input_state = self.state.input_state;
         self.state.input_state = self.collector.current_state();
+        if self.state.input_state.restart
+            || (self.state.dead && self.state.input_state.touch_started)
+        {
+            self.state.reset_requested = true;
+        }
 
         self.update_paused();
 
@@ -512,15 +567,6 @@ impl framework::Example for Spout {
     fn update(&mut self, event: winit::event::WindowEvent) {
         self.collector.handle_winit_event(&event);
 
-        // Touch-to-restart: any tap while the ship is dead restarts the game.
-        #[cfg(not(target_arch = "wasm32"))]
-        if let winit::event::WindowEvent::Touch(touch) = &event {
-            use winit::event::TouchPhase;
-            if touch.phase == TouchPhase::Started && self.state.dead {
-                self.state.reset_requested = true;
-            }
-        }
-
         // One-shot audio actions are handled here directly since they are
         // immediate commands, not held state.
         use winit::keyboard::{KeyCode, PhysicalKey};
@@ -538,7 +584,6 @@ impl framework::Example for Spout {
                 match key {
                     KeyCode::KeyT => self.audio.next_track(),
                     KeyCode::KeyY => self.audio.toggle(),
-                    KeyCode::KeyR => self.state.reset_requested = true,
                     _ => {}
                 }
             }
@@ -727,10 +772,7 @@ impl framework::Example for Spout {
                 let sc_x = (w - self.game_text.text_width(&sc, 1.0)) / 2.0;
                 let sc_y = go_y - 18.0;
 
-                #[cfg(target_os = "ios")]
-                let restart = "TAP TO RESTART";
-                #[cfg(not(target_os = "ios"))]
-                let restart = "R TO RESTART";
+                let restart = restart_prompt();
                 let r_x = (w - self.game_text.text_width(restart, 1.0)) / 2.0;
                 let r_y = sc_y - 18.0;
 
