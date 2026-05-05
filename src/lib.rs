@@ -12,6 +12,7 @@ pub(crate) mod gpu_test_utils;
 pub mod input;
 pub mod level_manager;
 pub mod particles;
+pub mod pip;
 pub mod render;
 pub mod shader_util;
 pub mod ship;
