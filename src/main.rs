@@ -16,6 +16,7 @@ use spout::particles;
 use spout::render;
 use spout::ship;
 use spout::text;
+use spout::touch_zone_indicator;
 
 /// Shortest signed angular distance from `current` to `target`, in [-π, π].
 fn angle_diff(target: f32, current: f32) -> f32 {
@@ -123,6 +124,7 @@ struct Spout {
     game_text: text::TextRenderer,
     audio: audio::AudioPlayer,
     staging_belt: wgpu::util::StagingBelt,
+    touch_zone_indicator: touch_zone_indicator::TouchZoneIndicator,
     /// Debug overlay: FPS counter rendered at display resolution. Debug builds only.
     #[cfg(debug_assertions)]
     overlay_text: text::TextRenderer,
@@ -527,6 +529,14 @@ impl framework::Example for Spout {
             audio::AudioPlayer::disabled()
         };
 
+        let touch_zone_indicator = touch_zone_indicator::TouchZoneIndicator::new(
+            device,
+            queue,
+            config.format,
+            config.width,
+            config.height,
+        );
+
         let mut collector = InputCollector::default();
         collector.set_touch_scheme(game_params.touch_control_scheme);
 
@@ -562,6 +572,7 @@ impl framework::Example for Spout {
             game_text,
             audio,
             staging_belt,
+            touch_zone_indicator,
             #[cfg(debug_assertions)]
             overlay_text,
             frame_times: Vec::with_capacity(60),
@@ -605,10 +616,6 @@ impl framework::Example for Spout {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
     ) {
-        // queue is only used by the debug overlay; suppress warning in release builds.
-        #[cfg(not(debug_assertions))]
-        let _ = queue;
-
         #[cfg(not(target_arch = "wasm32"))]
         {
             self.collector.set_surface_width(config.width as f32);
@@ -626,6 +633,8 @@ impl framework::Example for Spout {
         self.renderer
             .resize(config, device, &new_upscaled, self.bloom.bloom_view());
         self.upscaled_view = new_upscaled;
+        self.touch_zone_indicator
+            .resize(queue, config.width, config.height);
         #[cfg(debug_assertions)]
         self.overlay_text.resize(queue, config.width, config.height);
     }
@@ -810,6 +819,21 @@ impl framework::Example for Spout {
 
         // Composite upscaled HDR + bloom → surface (LDR).
         self.renderer.render(view, &mut encoder);
+
+        // Touch-zone diagonal hint. Only render if:
+        //   - Triangle scheme is active,
+        //   - the player has actually used touch this session (so it stays
+        //     hidden on keyboard-driven desktop and web), and
+        //   - we are in active gameplay (not title or game-over).
+        if matches!(
+            self.game_params.touch_control_scheme,
+            game_params::TouchControlScheme::Triangle
+        ) && self.collector.has_been_touched()
+            && self.state.mode == GameMode::Playing
+        {
+            self.touch_zone_indicator.render(view, &mut encoder);
+        }
+
         self.level_manager.decompose_tiles(&mut encoder);
 
         // Frame timing — collected in all build profiles.
