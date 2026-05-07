@@ -327,6 +327,12 @@ fn touch_delta_to_target_heading(
 }
 
 #[derive(Debug, Copy, Clone, Default)]
+pub struct PointerPress {
+    pub x: f32,
+    pub y: f32,
+}
+
+#[derive(Debug, Copy, Clone, Default)]
 pub struct InputState {
     pub thrust: f32, // [0.0, 1.0]
     pub rotate: f32, // [-1.0, 1.0]; positive = CCW/left, negative = CW/right (keyboard only)
@@ -337,6 +343,8 @@ pub struct InputState {
 
     pub restart: bool,
     pub touch_started: bool,
+    pub pointer_pressed: Option<PointerPress>,
+    pub help: bool,
 
     pub pause: bool,
     pub fullscreen: bool,
@@ -394,6 +402,8 @@ struct TouchTracker {
     rotate_x: f32,
     rotate_y: f32,
     touch_started: bool,
+    touch_started_x: f32,
+    touch_started_y: f32,
     /// Sticky "any touch event has occurred this session" flag — used to
     /// detect that the player is on a touch device so we can show the
     /// touch-zone hint. Never resets after the first touch.
@@ -411,6 +421,8 @@ impl TouchTracker {
 
     fn started(&mut self, id: TouchId, x: f32, y: f32) {
         self.touch_started = true;
+        self.touch_started_x = x;
+        self.touch_started_y = y;
         self.ever_touched = true;
         if self.surface_width <= 0.0 || self.surface_height <= 0.0 {
             return;
@@ -450,10 +462,17 @@ impl TouchTracker {
         }
     }
 
-    fn consume_touch_started(&mut self) -> bool {
+    fn consume_touch_started(&mut self) -> Option<PointerPress> {
         let started = self.touch_started;
         self.touch_started = false;
-        started
+        if started {
+            Some(PointerPress {
+                x: self.touch_started_x,
+                y: self.touch_started_y,
+            })
+        } else {
+            None
+        }
     }
 
     fn current_input(&self, scheme: TouchControlScheme) -> TouchInput {
@@ -513,6 +532,10 @@ pub struct InputCollector {
     held_cam_perspective: bool,
     held_cam_reset: bool,
     restart_requested: bool,
+    help_requested: bool,
+    pointer_press: Option<PointerPress>,
+    cursor_x: f32,
+    cursor_y: f32,
 
     touch_scheme: TouchControlScheme,
 
@@ -542,6 +565,10 @@ impl Default for InputCollector {
             held_cam_perspective: false,
             held_cam_reset: false,
             restart_requested: false,
+            help_requested: false,
+            pointer_press: None,
+            cursor_x: 0.0,
+            cursor_y: 0.0,
             touch_scheme: TouchControlScheme::Drag,
             #[cfg(not(target_arch = "wasm32"))]
             touch: TouchTracker::default(),
@@ -691,6 +718,7 @@ impl InputCollector {
                 KeyCode::KeyD => self.held_right = pressed,
                 KeyCode::KeyP => self.held_pause = pressed,
                 KeyCode::KeyR if pressed => self.restart_requested = true,
+                KeyCode::KeyH | KeyCode::Slash if pressed => self.help_requested = true,
 
                 // Camera
                 KeyCode::KeyU => self.held_cam_in = pressed,
@@ -709,6 +737,23 @@ impl InputCollector {
             }
         }
 
+        match event {
+            winit::event::WindowEvent::CursorMoved { position, .. } => {
+                self.cursor_x = position.x as f32;
+                self.cursor_y = position.y as f32;
+            }
+            winit::event::WindowEvent::MouseInput { state, button, .. }
+                if *state == winit::event::ElementState::Pressed
+                    && *button == winit::event::MouseButton::Left =>
+            {
+                self.pointer_press = Some(PointerPress {
+                    x: self.cursor_x,
+                    y: self.cursor_y,
+                });
+            }
+            _ => {}
+        }
+
         // Native touch: winit relays WindowEvent::Touch on platforms with touch
         // support (iOS, Android, touchscreen desktops). Not available on WASM —
         // handled via DOM listeners registered in init_touch().
@@ -719,7 +764,10 @@ impl InputCollector {
             let y = touch.location.y as f32;
             let id = touch.id as i64;
             match touch.phase {
-                TouchPhase::Started => self.touch.started(id, x, y),
+                TouchPhase::Started => {
+                    self.pointer_press = Some(PointerPress { x, y });
+                    self.touch.started(id, x, y);
+                }
                 TouchPhase::Moved => self.touch.moved(id, x, y),
                 TouchPhase::Ended | TouchPhase::Cancelled => self.touch.ended(id),
             }
@@ -729,6 +777,9 @@ impl InputCollector {
     pub fn current_state(&mut self) -> InputState {
         let restart = self.restart_requested;
         self.restart_requested = false;
+        let help = self.help_requested;
+        self.help_requested = false;
+        let mut pointer_pressed = self.pointer_press.take();
 
         let keyboard_thrust = if self.held_thrust { 1.0 } else { 0.0 };
         let keyboard_rotate = match (self.held_left, self.held_right) {
@@ -739,7 +790,11 @@ impl InputCollector {
 
         #[cfg(not(target_arch = "wasm32"))]
         let (touch_started, touch_input) = {
-            let touch_started = self.touch.consume_touch_started();
+            let touch_press = self.touch.consume_touch_started();
+            if pointer_pressed.is_none() {
+                pointer_pressed = touch_press;
+            }
+            let touch_started = touch_press.is_some();
             let touch_input = self.touch.current_input(self.touch_scheme);
             (touch_started, touch_input)
         };
@@ -747,7 +802,11 @@ impl InputCollector {
         #[cfg(target_arch = "wasm32")]
         let (touch_started, touch_input) = {
             let mut touch = self.wasm_touch.borrow_mut();
-            let touch_started = touch.consume_touch_started();
+            let touch_press = touch.consume_touch_started();
+            if pointer_pressed.is_none() {
+                pointer_pressed = touch_press;
+            }
+            let touch_started = touch_press.is_some();
             let touch_input = touch.current_input(self.touch_scheme);
             (touch_started, touch_input)
         };
@@ -771,6 +830,8 @@ impl InputCollector {
             target_heading,
             restart,
             touch_started,
+            pointer_pressed,
+            help,
             pause: self.held_pause,
             fullscreen: self.held_fullscreen,
             cam_in: self.held_cam_in,

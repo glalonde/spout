@@ -1,6 +1,5 @@
 //! Bitmap font text renderer using `fontdue` for glyph rasterization and a
-//! GPU texture atlas. Designed for the Pixel Six 8px bitmap font but works
-//! with any TTF/OTF.
+//! GPU texture atlas. Designed for pixel fonts but works with any TTF/OTF.
 
 use wgpu::util::DeviceExt;
 
@@ -50,7 +49,7 @@ struct GlyphInfo {
     /// Offset from the pen position to the top-left of the glyph bitmap.
     x_offset: f32,
     y_offset: f32,
-    /// Horizontal advance to the next glyph.
+    /// Horizontal advance to the next glyph, snapped to whole pixels.
     advance: f32,
 }
 
@@ -92,6 +91,10 @@ pub struct TextRenderer {
 }
 
 impl TextRenderer {
+    fn pixel_scale(scale: f32) -> f32 {
+        scale.round().max(1.0)
+    }
+
     pub fn init(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
@@ -165,7 +168,7 @@ impl TextRenderer {
                 height: gh as f32,
                 x_offset: metrics.xmin as f32,
                 y_offset: metrics.ymin as f32,
-                advance: metrics.advance_width,
+                advance: metrics.advance_width.round().max(0.0),
             });
 
             cursor_x += gw + padding;
@@ -365,13 +368,14 @@ impl TextRenderer {
 
     /// Measure the width of a text string in pixels at the given scale.
     pub fn text_width(&self, text: &str, scale: f32) -> f32 {
+        let pixel_scale = Self::pixel_scale(scale);
         let mut w = 0.0;
         for ch in text.bytes() {
             if !(FIRST_CHAR..=LAST_CHAR).contains(&ch) {
                 continue;
             }
             let idx = (ch - FIRST_CHAR) as usize;
-            w += self.glyphs[idx].advance * scale;
+            w += self.glyphs[idx].advance * pixel_scale;
         }
         w
     }
@@ -399,7 +403,9 @@ impl TextRenderer {
         let mut instances: Vec<GlyphInstance> = Vec::new();
 
         for &(text, start_x, start_y, scale, color) in texts {
-            let mut pen_x = start_x;
+            let pixel_scale = Self::pixel_scale(scale);
+            let line_top = start_y.round();
+            let mut pen_x = start_x.round();
             for ch in text.bytes() {
                 if !(FIRST_CHAR..=LAST_CHAR).contains(&ch) {
                     continue;
@@ -410,18 +416,18 @@ impl TextRenderer {
                 if g.width > 0.0 && g.height > 0.0 {
                     // In screen coords (y-down), baseline is at start_y + ascent.
                     // Glyph top = baseline - (ymin + height), bottom = baseline - ymin.
-                    let baseline_y = start_y + self.ascent * scale;
-                    let glyph_top = baseline_y - (g.y_offset + g.height) * scale;
+                    let baseline_y = line_top + self.ascent * pixel_scale;
+                    let glyph_top = (baseline_y - (g.y_offset + g.height) * pixel_scale).round();
 
                     instances.push(GlyphInstance {
-                        pos: [pen_x + g.x_offset * scale, glyph_top],
-                        size: [g.width * scale, g.height * scale],
+                        pos: [(pen_x + g.x_offset * pixel_scale).round(), glyph_top],
+                        size: [g.width * pixel_scale, g.height * pixel_scale],
                         uv: [g.uv_x, g.uv_y, g.uv_x + g.uv_w, g.uv_y + g.uv_h],
                         color,
                     });
                 }
 
-                pen_x += g.advance * scale;
+                pen_x = (pen_x + g.advance * pixel_scale).round();
             }
         }
 

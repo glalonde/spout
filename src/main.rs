@@ -10,12 +10,13 @@ use spout::background;
 use spout::bloom;
 use spout::collision;
 use spout::game_params;
-use spout::input::{InputCollector, InputState};
+use spout::input::{InputCollector, InputState, PointerPress};
 use spout::level_manager;
 use spout::particles;
 use spout::render;
 use spout::ship;
 use spout::text;
+use spout::title_overlay;
 use spout::touch_zone_indicator;
 
 /// Shortest signed angular distance from `current` to `target`, in [-π, π].
@@ -101,8 +102,35 @@ struct GameState {
     score: i32,
     paused: bool,
     reset_requested: bool,
+    instructions_open: bool,
     dead: bool,
     explosion_pending: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TitleButtonAction {
+    Music,
+    Help,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct UiRect {
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+}
+
+impl UiRect {
+    fn contains(&self, x: f32, y: f32) -> bool {
+        x >= self.x && x <= self.x + self.w && y >= self.y && y <= self.y + self.h
+    }
+}
+
+struct TitleButton {
+    action: TitleButtonAction,
+    label: &'static str,
+    rect: UiRect,
 }
 
 struct Spout {
@@ -113,9 +141,11 @@ struct Spout {
     game_time: std::time::Duration,
     iteration_start: Instant,
     game_view_texture: wgpu::TextureView,
+    title_ui_view: wgpu::TextureView,
     upscaled_view: wgpu::TextureView,
     bloom: bloom::Bloom,
     renderer: render::Render,
+    title_overlay: title_overlay::TitleOverlay,
     particle_system: particles::ParticleSystem,
     ship_renderer: ship::ShipRenderer,
     collision_detector: collision::CollisionDetector,
@@ -135,6 +165,213 @@ struct Spout {
 }
 
 impl Spout {
+    fn surface_to_game_point(
+        &self,
+        point: PointerPress,
+        surface_width: u32,
+        surface_height: u32,
+    ) -> Option<(f32, f32)> {
+        if surface_width == 0 || surface_height == 0 {
+            return None;
+        }
+
+        let game_w = self.game_params.viewport_width as f32;
+        let game_h = self.game_params.viewport_height as f32;
+        let surface_w = surface_width as f32;
+        let surface_h = surface_height as f32;
+        let scale = (surface_w / game_w)
+            .min(surface_h / game_h)
+            .floor()
+            .max(1.0);
+        let draw_w = game_w * scale;
+        let draw_h = game_h * scale;
+        let offset_x = ((surface_w - draw_w) * 0.5).floor();
+        let offset_y = ((surface_h - draw_h) * 0.5).floor();
+
+        if point.x < offset_x
+            || point.x > offset_x + draw_w
+            || point.y < offset_y
+            || point.y > offset_y + draw_h
+        {
+            return None;
+        }
+
+        let game_x = (point.x - offset_x) / draw_w * game_w;
+        // The game-view blit flips texture Y (see `textured_quad` UVs), so
+        // visual top on the surface corresponds to low Y in the game texture.
+        let game_y = (point.y - offset_y) / draw_h * game_h;
+        Some((game_x, game_y))
+    }
+
+    fn title_buttons(&self) -> Vec<TitleButton> {
+        let pad_x = 4.0;
+        let button_h = 32.0;
+        let help_y = self.game_params.viewport_height as f32 - button_h - 6.0;
+        let help_label = if self.state.instructions_open {
+            "X"
+        } else {
+            "?"
+        };
+        let mut buttons = vec![TitleButton {
+            action: TitleButtonAction::Help,
+            label: help_label,
+            rect: UiRect {
+                x: self.game_params.viewport_width as f32 - 56.0 - 6.0,
+                y: help_y,
+                w: 56.0,
+                h: button_h,
+            },
+        }];
+
+        if self.state.instructions_open {
+            let music_label = if self.audio.is_playing() {
+                "[MUSIC ON]"
+            } else {
+                "[MUSIC OFF]"
+            };
+            let music_w = self.game_text.text_width(music_label, 1.0) + pad_x * 2.0;
+            buttons.push(TitleButton {
+                action: TitleButtonAction::Music,
+                label: music_label,
+                rect: UiRect {
+                    x: 18.0,
+                    y: 100.0,
+                    w: music_w,
+                    h: button_h,
+                },
+            });
+        }
+
+        buttons
+    }
+
+    fn title_button_at(
+        &self,
+        point: PointerPress,
+        surface_width: u32,
+        surface_height: u32,
+    ) -> Option<TitleButtonAction> {
+        if self.title_help_surface_hit(point, surface_width, surface_height) {
+            return Some(TitleButtonAction::Help);
+        }
+
+        let (game_x, game_y) = self.surface_to_game_point(point, surface_width, surface_height)?;
+        self.title_buttons()
+            .iter()
+            .find(|button| button.rect.contains(game_x, game_y))
+            .map(|button| button.action)
+    }
+
+    fn title_help_surface_hit(
+        &self,
+        point: PointerPress,
+        surface_width: u32,
+        surface_height: u32,
+    ) -> bool {
+        let w = surface_width as f32;
+        let h = surface_height as f32;
+        point.x >= w * 0.72 && point.y >= h * 0.62
+    }
+
+    fn draw_title_help_button(&self, device: &wgpu::Device, encoder: &mut wgpu::CommandEncoder) {
+        if self.state.instructions_open {
+            return;
+        }
+
+        let Some(button) = self
+            .title_buttons()
+            .into_iter()
+            .find(|button| button.action == TitleButtonAction::Help)
+        else {
+            return;
+        };
+
+        let color = [0.55, 0.55, 0.55, 1.0];
+        let label_x =
+            button.rect.x + (button.rect.w - self.game_text.text_width(button.label, 1.0)) / 2.0;
+        let label_y = button.rect.y + (button.rect.h - 12.0) / 2.0;
+
+        self.game_text.draw(
+            device,
+            encoder,
+            &self.game_view_texture,
+            &[(button.label, label_x, label_y, 1.0, color)],
+        );
+    }
+
+    fn prepare_title_ui(&self, device: &wgpu::Device, encoder: &mut wgpu::CommandEncoder) {
+        let clear_color = if self.state.instructions_open {
+            wgpu::Color {
+                r: 0.02,
+                g: 0.05,
+                b: 0.07,
+                a: 0.76,
+            }
+        } else {
+            wgpu::Color::TRANSPARENT
+        };
+        {
+            let _pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("title_ui_clear"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &self.title_ui_view,
+                    resolve_target: None,
+                    depth_slice: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(clear_color),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                ..Default::default()
+            });
+        }
+
+        let button_color = [0.7, 0.78, 0.78, 1.0];
+        let text_color = [0.82, 0.86, 0.82, 1.0];
+        let accent_color = [0.9, 0.72, 0.48, 1.0];
+        let buttons = self.title_buttons();
+
+        let mut texts: Vec<(&str, f32, f32, f32, [f32; 4])> = Vec::new();
+        for button in buttons.iter().filter(|button| {
+            button.action != TitleButtonAction::Help || self.state.instructions_open
+        }) {
+            let scale = 1.0;
+            let label_x = button.rect.x
+                + (button.rect.w - self.game_text.text_width(button.label, scale)) / 2.0;
+            let label_y = button.rect.y + (button.rect.h - 12.0) / 2.0;
+            texts.push((button.label, label_x, label_y, scale, button_color));
+        }
+
+        if self.state.instructions_open {
+            let w = self.game_text.surface_width;
+            let scale = 1.0;
+            let using_touch = self.collector.has_been_touched() || tap_restart_prompt();
+            let lines: Vec<(&str, f32, [f32; 4])> = if using_touch {
+                vec![
+                    ("OBJECTIVE", 24.0, accent_color),
+                    ("BLAST AND CLIMB", 42.0, text_color),
+                    ("LEFT SIDE -> GAS", 64.0, text_color),
+                    ("RIGHT SIDE -> STEER", 82.0, text_color),
+                ]
+            } else {
+                vec![
+                    ("OBJECTIVE", 24.0, accent_color),
+                    ("BLAST AND CLIMB", 42.0, text_color),
+                    ("W -> GAS", 64.0, text_color),
+                    ("A/D -> STEER", 82.0, text_color),
+                ]
+            };
+            texts.extend(lines.into_iter().map(|(line, y, color)| {
+                let x = (w - self.game_text.text_width(line, scale)) / 2.0;
+                (line, x, y, scale, color)
+            }));
+        }
+
+        self.game_text
+            .draw(device, encoder, &self.title_ui_view, &texts);
+    }
+
     fn enter_title(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
         // Preserve input state across transitions to avoid false edges
         // (e.g. fullscreen toggle firing because prev_input was cleared).
@@ -451,6 +688,11 @@ impl framework::Example for Spout {
             game_params.viewport_width,
             game_params.viewport_height,
         );
+        let title_ui_view = make_texture(
+            device,
+            game_params.viewport_width,
+            game_params.viewport_height,
+        );
 
         let upscaled_view = make_texture(device, config.width, config.height);
 
@@ -490,6 +732,15 @@ impl framework::Example for Spout {
             &game_view_texture,
             &upscaled_view,
             bloom.bloom_view(),
+        );
+        let title_overlay = title_overlay::TitleOverlay::new(
+            device,
+            config.format,
+            &title_ui_view,
+            config.width,
+            config.height,
+            game_params.viewport_width,
+            game_params.viewport_height,
         );
 
         let particle_system =
@@ -562,9 +813,11 @@ impl framework::Example for Spout {
             game_time: std::time::Duration::default(),
             iteration_start: Instant::now(),
             game_view_texture,
+            title_ui_view,
             upscaled_view,
             bloom,
             renderer,
+            title_overlay,
             particle_system,
             ship_renderer,
             collision_detector,
@@ -633,6 +886,13 @@ impl framework::Example for Spout {
         self.renderer
             .resize(config, device, &new_upscaled, self.bloom.bloom_view());
         self.upscaled_view = new_upscaled;
+        self.title_overlay.resize_with_game(
+            queue,
+            config.width,
+            config.height,
+            self.game_params.viewport_width,
+            self.game_params.viewport_height,
+        );
         self.touch_zone_indicator
             .resize(queue, config.width, config.height);
         #[cfg(debug_assertions)]
@@ -659,6 +919,7 @@ impl framework::Example for Spout {
 
         // Update input and game state first, so transitions see correct prev/current.
         self.update_state();
+        let win_size = window.inner_size();
 
         // Fullscreen toggle (edge-triggered, independent of game state).
         if !self.state.prev_input_state.fullscreen && self.state.input_state.fullscreen {
@@ -676,12 +937,36 @@ impl framework::Example for Spout {
             self.state.reset_requested = false;
             self.enter_title(device, queue);
         } else if self.state.mode == GameMode::Title {
+            let input = self.state.input_state;
+            let clicked_button = input
+                .pointer_pressed
+                .and_then(|point| self.title_button_at(point, win_size.width, win_size.height));
+            let mut title_action_handled = false;
+
+            if input.help {
+                self.state.instructions_open = !self.state.instructions_open;
+                title_action_handled = true;
+            }
+
+            if let Some(action) = clicked_button {
+                match action {
+                    TitleButtonAction::Music => self.audio.toggle(),
+                    TitleButtonAction::Help => {
+                        self.state.instructions_open = !self.state.instructions_open;
+                    }
+                }
+                title_action_handled = true;
+            } else if self.state.instructions_open && input.pointer_pressed.is_some() {
+                self.state.instructions_open = false;
+                title_action_handled = true;
+            }
+
             // Start game on a NEW press of thrust or rotate (edge, not held).
-            let input = &self.state.input_state;
-            let prev = &self.state.prev_input_state;
+            let prev = self.state.prev_input_state;
             let new_thrust = input.thrust > 0.0 && prev.thrust == 0.0;
             let new_rotate = input.rotate.abs() > 0.0 && prev.rotate.abs() == 0.0;
-            if new_thrust || new_rotate {
+            if !title_action_handled && !self.state.instructions_open && (new_thrust || new_rotate)
+            {
                 self.start_game(device, queue);
             }
         }
@@ -745,6 +1030,11 @@ impl framework::Example for Spout {
         // Render particles.
         self.particle_system
             .render(&self.game_view_texture, &mut encoder);
+
+        if self.state.mode == GameMode::Title {
+            self.draw_title_help_button(device, &mut encoder);
+            self.prepare_title_ui(device, &mut encoder);
+        }
 
         // Render ship — only during gameplay, and not when dead.
         if self.state.mode == GameMode::Playing && self.game_params.render_ship && !self.state.dead
@@ -820,6 +1110,10 @@ impl framework::Example for Spout {
         // Composite upscaled HDR + bloom → surface (LDR).
         self.renderer.render(view, &mut encoder);
 
+        if self.state.mode == GameMode::Title {
+            self.title_overlay.render(view, &mut encoder);
+        }
+
         // Touch-zone diagonal hint. Only render if:
         //   - Triangle scheme is active,
         //   - the player has actually used touch this session (so it stays
@@ -844,7 +1138,6 @@ impl framework::Example for Spout {
         self.frame_times.push(dt);
         let avg_dt = self.frame_times.iter().sum::<f32>() / self.frame_times.len() as f32;
         let fps = if avg_dt > 0.0 { 1.0 / avg_dt } else { 0.0 };
-        let win_size = window.inner_size();
         let w = win_size.width;
         let h = win_size.height;
 
