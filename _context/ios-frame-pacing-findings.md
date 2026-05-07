@@ -116,3 +116,136 @@ Use tight A/B tests on the same physical phone:
 Mobile devices are expected to allow short GPU bursts above their sustained
 thermal envelope. A fix should target a stable sustained budget, not maximum
 short-burst GPU use.
+
+## Follow-up: Xcode Metal Frame Capture (2026-05-07)
+
+A Metal frame capture (Xcode → Debug → Capture GPU Frame, not Instruments) on
+native iOS showed the bloom horizontal/vertical blur kernels accounting for a
+large share of per-frame GPU time. This rules in bloom as a meaningful
+contributor but does not yet answer the structural question below.
+
+## Open Question: structural vs throughput
+
+The earlier Instruments trace showed short individual GPU command durations
+(~1.23 ms max in the summary) alongside high CPU-to-display latency
+(33-50 ms) and GPU Performance State time at `Minimum`. That is consistent
+with throttling/pacing rather than the GPU being unable to keep up at full
+clock. We do not yet know whether:
+
+- mobile web runs the **same workload** faster (→ native has a fixable
+  per-pass inefficiency: load/store actions, pixel format, pass merging), or
+- mobile web runs a **structurally smaller workload** (fewer passes, smaller
+  surface, different format) and native is genuinely doing more work.
+
+Per-pass GPU timing on web is hard to capture: production iOS Safari and
+Chrome are not attachable from Instruments (no `get-task-allow` entitlement).
+Firefox Focus on iOS shows up as profilable, but only if it actually runs
+the WebGPU build. WebGPU `timestamp-query` may not be enabled in iOS Safari.
+
+## Comparison-test recipe
+
+Goal: compare frame time vs `bloom_passes` on native iOS and mobile web on
+the same physical iPhone. Slope of the line attributes per-pass cost.
+
+### 1. Frame-time log line
+
+`src/main.rs` emits one `log::info!` line per ~60 frames in both debug and
+release builds:
+
+```
+frame avg_dt=16.74ms fps=59.7 surface=2556x1179 bloom_passes=16
+```
+
+- **Native (Xcode):** appears in the Xcode console pane when the app is
+  launched via the Run scheme. `env_logger` is initialized at `Info` level
+  in `examples/framework.rs`, so no `RUST_LOG` is needed.
+- **Web:** appears in the JS console. View it via Mac Safari → Develop →
+  [iPhone] → [tab] → Console. iOS Safari supports Web Inspector (no special
+  entitlement needed); iOS Chrome does not — use Safari for the comparison
+  since all iOS browsers run WebKit anyway.
+
+### 2. Tailscale HTTPS for the web build
+
+iOS Safari WebGPU requires a secure context. `localhost` qualifies but a
+plain `http://100.x.x.x:1234` does not. `run_wasm.sh --https` runs the
+static file server on `127.0.0.1:1234` and fronts it with
+`tailscale serve --https=443 http://127.0.0.1:1234`, exposing
+`https://<host>.<tailnet>.ts.net/` to the iPhone over Tailscale.
+
+### 3. Sweep protocol
+
+For each value of `visual_params.bloom_passes` in `game_config.toml`
+(suggested: 0, 4, 8, 12, 16):
+
+1. Set `bloom_passes` and rebuild.
+2. Cool the device down (pause for a few minutes if it just ran).
+3. Play for ~30s to reach steady state, then read `avg_dt` from the log line
+   for another ~30s and average.
+4. Record native and web side by side.
+
+Interpretation:
+
+- **Equal slope, equal intercept** — same workload, same throughput; the
+  cliff is thermal/pacing, not bloom workload.
+- **Native slope steeper than web** — each pass is genuinely more expensive
+  on native; investigate load/store actions, pixel format, pass merging.
+- **Equal slope, native intercept higher** — non-bloom work (audio, present
+  loop, ship/particle render) is the actual cost gap; bloom is a red
+  herring.
+
+### Known confound
+
+Mobile web during prior testing rendered at 2202×1011; native iOS renders at
+2556×1179. The web-side test inherits whatever resolution Safari chose, so
+"web has fewer pixels per pass" is baked into the comparison. The log line
+prints `surface=WxH` on both sides — record this alongside `avg_dt` so you
+can normalize per-pixel cost if needed.
+
+## Resolution: dual-filter bloom (2026-05-07)
+
+The bloom-passes sweep + frame log analysis confirmed the cliff was a sustained
+GPU bandwidth/throughput ceiling, not a CPU encoding cost or a native-specific
+inefficiency. Per-pass GPU cost was effectively identical per pixel between
+native and web (~340-390μs). Native cliffed at `bloom_passes = 16` after ~10s
+of warmup; web held until forced past its instantaneous throughput limit at
+`bloom_passes = 32`. Both behaviours match a model where each platform sits
+just on its respective side of the device's sustainable bandwidth threshold.
+
+The original separable-Gaussian ping-pong bloom at full surface resolution
+costs roughly 33 fullscreen passes × (read + write) per frame. At 2202×1119
+RGBA16Float that is ~78 GiB/s of memory bandwidth for bloom alone, which is
+the proximate cause of the thermal throttling.
+
+Replaced with **dual-filter (mip-pyramid) bloom** (Jimenez COD AW recipe):
+
+- New shaders: `bloom_prefilter.wgsl`, `bloom_downsample.wgsl`,
+  `bloom_upsample.wgsl`. Old `bloom_threshold.wgsl` and `bloom_blur.wgsl`
+  removed.
+- `Bloom::render` builds a mip pyramid starting at half surface resolution.
+- Prefilter combines threshold + first downsample. Downsample chain uses a
+  13-tap weighted box. Upsample chain uses a 9-tap tent filter with
+  **additive blending** so the destination read for the blend stays in tile
+  memory on TBDR GPUs (no main-memory traffic for the read-modify-write).
+- `VisualParams::bloom_passes` renamed to `bloom_mip_levels`. The old field
+  name still deserialises via a serde alias for backward compat. Default 6.
+
+Predicted bandwidth at 2202×1119 with 6 mip levels:
+
+| stage | bandwidth (× full surface area) |
+|-------|---------------------------------|
+| Prefilter | 1.25 |
+| Downsample chain | 0.42 |
+| Upsample chain | 0.42 |
+| **Total** | **~2.08** |
+
+Compared to the old pipeline's ~66× full surface area, that is
+**~32× less bandwidth**. Predicted sustained ~2.5 GiB/s for bloom on native,
+well under the device thermal envelope.
+
+The composite shader (`bloom_composite.wgsl`) is unchanged. It samples the
+bloom output (now the half-resolution mip 0 of the pyramid) with bilinear
+filtering, which is visually fine because bloom halos are inherently wide.
+
+Verification needed on device: confirm 60 FPS sustained at the default mip
+count, and compare visual output against the previous bloom for any
+unexpected halo-shape regressions.

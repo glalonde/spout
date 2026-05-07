@@ -57,7 +57,7 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     // Dark steel-blue — well below the bloom threshold so it doesn't over-glow.
-    return vec4<f32>(0.25, 0.42, 0.75, 0.9);
+    return vec4<f32>(0.25, 0.42, 0.75, 0.5);
 }
 
 @vertex

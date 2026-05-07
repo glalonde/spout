@@ -58,10 +58,11 @@ pub struct VisualParams {
     /// 0.0 = no bloom, 1.0 = full additive bloom, 2.0+ = oversaturated.
     pub bloom_strength: f32,
 
-    /// Number of separable H+V blur iterations applied to the thresholded image.
-    /// Each additional pass widens the halo by roughly √2 (Gaussian convolution).
-    /// 1 = tight (~4 px radius), 2 = moderate (~6 px), 4 = wide (~8 px).
-    pub bloom_passes: u32,
+    /// Depth of the dual-filter bloom mip pyramid. More levels = wider halo.
+    /// Each level halves dimensions; the smallest mip is 2^N times smaller per axis.
+    /// 4 = tight halo, 6 = typical, 8 = very wide. Clamped to what the surface allows.
+    #[serde(default = "default_bloom_mip_levels", alias = "bloom_passes")]
+    pub bloom_mip_levels: u32,
 
     /// CRT post-process intensity. 0.0 = bypass, 1.0 = full effect.
     /// Applies barrel distortion, chromatic aberration, phosphor mask,
@@ -87,6 +88,10 @@ fn default_density_scale() -> f32 {
     100.0
 }
 
+fn default_bloom_mip_levels() -> u32 {
+    6
+}
+
 fn default_density_exponent() -> f32 {
     1.0
 }
@@ -97,7 +102,7 @@ impl Default for VisualParams {
             color_map: 0,
             bloom_threshold: 0.6,
             bloom_strength: 1.0,
-            bloom_passes: 2,
+            bloom_mip_levels: default_bloom_mip_levels(),
             crt_strength: 0.0,
             density_scale: default_density_scale(),
             density_exponent: default_density_exponent(),

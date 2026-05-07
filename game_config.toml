@@ -34,13 +34,13 @@ color_map = 1
 # Set to 1.1 to effectively disable bloom.
 bloom_threshold = 0.4
 # Bloom intensity in the final composite. 0.0 = off, 1.0 = full, 2.0+ = oversaturated.
-bloom_strength = 2.0
-# Number of separable H+V blur iterations. Each pass widens the halo by ~√2.
-# 1 = tight, 2 = moderate, 4 = wide.
-bloom_passes = 16
+bloom_strength = 1.1
+# Depth of the dual-filter bloom mip pyramid. Each level halves dimensions.
+# 4 = tight halo, 6 = typical, 8 = very wide. Clamped to what the surface allows.
+bloom_mip_levels = 4
 # CRT post-process: barrel distortion, chromatic aberration, phosphor mask,
 # scanlines, vignette. 0.0 = off, 1.0 = full.
-crt_strength = 0.3
+crt_strength = 0.0
 # Density-to-color mapping. density_scale = how many particles per cell for
 # ~half saturation. Lower = saturates faster. density_exponent controls the
 # sigmoid curve steepness: >1 = sharper transition, <1 = gentler.
