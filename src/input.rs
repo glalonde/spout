@@ -394,6 +394,10 @@ struct TouchTracker {
     rotate_x: f32,
     rotate_y: f32,
     touch_started: bool,
+    /// Sticky "any touch event has occurred this session" flag — used to
+    /// detect that the player is on a touch device so we can show the
+    /// touch-zone hint. Never resets after the first touch.
+    ever_touched: bool,
 }
 
 impl TouchTracker {
@@ -407,6 +411,7 @@ impl TouchTracker {
 
     fn started(&mut self, id: TouchId, x: f32, y: f32) {
         self.touch_started = true;
+        self.ever_touched = true;
         if self.surface_width <= 0.0 || self.surface_height <= 0.0 {
             return;
         }
@@ -563,6 +568,20 @@ impl InputCollector {
 
     pub fn set_touch_scheme(&mut self, scheme: TouchControlScheme) {
         self.touch_scheme = scheme;
+    }
+
+    /// True once any touch event has been observed this session. Used by the
+    /// renderer to gate touch-only HUD elements so they don't appear on
+    /// keyboard-driven desktop or web sessions.
+    pub fn has_been_touched(&self) -> bool {
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            self.touch.ever_touched
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            self.wasm_touch.borrow().ever_touched
+        }
     }
 
     /// Register DOM touch event listeners on the game canvas (WASM only).

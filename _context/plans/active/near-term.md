@@ -168,7 +168,10 @@ CW condition: `y * (W/2) < H * (x - W/2)`
 Tasks:
 - [x] Implement triangle zone split in `input.rs` (`TouchControlScheme::Triangle`)
 - [x] Gate behind `touch_control_scheme = "triangle"` in `game_config.toml`
-- [ ] Draw a faint diagonal line indicator in the HUD (makes the split visible while learning)
+- [x] Draw a faint diagonal line indicator in the HUD (makes the split visible
+      while learning) — `touch_zone_indicator.rs` renders an alpha-blended
+      thin line on the surface after composite, only when scheme is Triangle
+      and game is in Playing mode
 
 ### Option B: Virtual Joystick
 
