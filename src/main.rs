@@ -13,6 +13,7 @@ use spout::game_params;
 use spout::input::{InputCollector, InputState, PointerPress};
 use spout::level_manager;
 use spout::particles;
+use spout::pip;
 use spout::render;
 use spout::ship;
 use spout::text;
@@ -148,6 +149,7 @@ struct Spout {
     title_overlay: title_overlay::TitleOverlay,
     particle_system: particles::ParticleSystem,
     ship_renderer: ship::ShipRenderer,
+    pip_renderer: pip::PipRenderer,
     collision_detector: collision::CollisionDetector,
     background: background::BackgroundRenderer,
     /// Renders into the game view (240x135) — pixel-perfect with terrain/particles.
@@ -747,6 +749,7 @@ impl framework::Example for Spout {
             particles::ParticleSystem::new(device, &game_params, &mut init_encoder, &level_manager);
 
         let ship_renderer = ship::ShipRenderer::init(device);
+        let pip_renderer = pip::PipRenderer::init(device);
         let collision_detector = collision::CollisionDetector::init(device);
         let background = background::BackgroundRenderer::init(device, queue);
 
@@ -820,6 +823,7 @@ impl framework::Example for Spout {
             title_overlay,
             particle_system,
             ship_renderer,
+            pip_renderer,
             collision_detector,
             background,
             game_text,
@@ -1046,6 +1050,55 @@ impl framework::Example for Spout {
                 &self.game_view_texture,
                 &mut encoder,
                 &mut self.staging_belt,
+            );
+        }
+
+        // PIP overlay — shown when the ship is outside the visible viewport.
+        if self.state.mode == GameMode::Playing
+            && !self.state.dead
+            && pip::PipRenderer::is_ship_offscreen(
+                self.state.ship_state.position[1],
+                self.state.viewport_offset,
+                self.game_params.viewport_height,
+            )
+        {
+            self.pip_renderer.render(
+                self.state.ship_state.position,
+                self.state.ship_state.orientation,
+                self.state.input_state.thrust > 0.0,
+                &self.game_params,
+                &self.game_view_texture,
+                &mut encoder,
+                &mut self.staging_belt,
+            );
+
+            // Distance label centred inside the PIP panel.
+            // game_text uses y-from-top; convert the panel centre (pip.wgsl uses
+            // y-from-bottom) with:  text_y = viewport_height - world_y_from_bottom.
+            let dist = (self.state.viewport_offset
+                - self.state.ship_state.position[1] as i32)
+                .max(0);
+            let dist_text = format!("-{}", dist);
+            let scale = 0.65;
+            let pip_cx = pip::PipRenderer::pip_center_x(
+                self.state.ship_state.position[0],
+                self.game_params.viewport_width,
+            );
+            let tw = self.game_text.text_width(&dist_text, scale);
+            let tx = pip_cx - tw / 2.0;
+            // Place the text just above the panel top edge.
+            // Panel top = PIP_CENTER_Y + PIP_HH from screen bottom.
+            // game_text y=0 is screen top, so convert and leave a 2 px gap.
+            let font_h = 16.0 * scale;
+            let panel_top_gt = self.game_params.viewport_height as f32
+                - (pip::PIP_CENTER_Y + pip::PIP_HH);
+            let ty = panel_top_gt - font_h - 2.0;
+            let amber = [1.0, 0.75, 0.15, 1.0];
+            self.game_text.draw(
+                device,
+                &mut encoder,
+                &self.game_view_texture,
+                &[(&dist_text, tx, ty, scale, amber)],
             );
         }
 
