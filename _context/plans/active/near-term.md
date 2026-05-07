@@ -14,6 +14,9 @@ Used `fontdue` (pure Rust font rasterizer) instead of `glyphon` — glyphon does
 Tasks:
 - [x] Embed Pixel Six font via `include_bytes!` (already in repo from legacy)
 - [x] Implement `TextRenderer` struct (fontdue atlas + instanced glyph quads, WGSL shader)
+- [x] Snap bitmap text layout to whole pixels: integer glyph advances,
+      integer start positions, and integer render scales. This avoids long
+      strings (e.g. "TAP TO RESTART") accumulating fractional glyph positions.
 - [x] FPS counter + score debug overlay (toggle with F3)
 - [ ] In-game settings UI (see `autonomous-improvement.md` for design)
 
@@ -216,10 +219,15 @@ Brief tutorial reachable from the title screen. New players (especially on
 mobile) currently have no in-app way to learn the controls or objective.
 
 Tasks:
-- [ ] Add an "INSTRUCTIONS" / "?" button to the title screen
-- [ ] Overlay shows controls (touch zones + keyboard) and objective in a few lines
-- [ ] Tap-to-dismiss returns to title with no game-state side effects
-- [ ] Style consistent with existing `TextRenderer` + game palette
+- [x] Add an "INSTRUCTIONS" / "?" button to the title screen
+- [x] Overlay shows controls (touch zones + keyboard) and objective in a few lines
+- [x] Tap-to-dismiss returns to title with no game-state side effects
+- [x] Style consistent with existing `TextRenderer` + game palette
+- [x] Render help overlay into a game-resolution texture and composite it
+      post-bloom with nearest integer scaling, so the small pixel font stays
+      sharp and does not glow.
+- [x] Use a bottom-right `X` close button inside the overlay instead of a
+      textual close instruction.
 
 ---
 
@@ -230,8 +238,9 @@ knob; the player should be able to flip it from the title without editing
 TOML.
 
 Tasks:
-- [ ] Music icon button on the title screen (note glyph; slash overlay when muted)
-- [ ] Tap toggles whether music starts in the next play session
+- [x] Music ON/OFF button on the title screen
+- [x] Tap toggles current music playback from the title screen
+- [ ] Replace text button with compact icon treatment if/when Pixel Six has a good glyph
 - [ ] Persist the preference across launches (depends on §16)
 
 ---

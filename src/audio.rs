@@ -143,6 +143,7 @@ pub struct AudioPlayer {
     playlist: Vec<usize>,
     playlist_pos: usize,
     playing: bool,
+    started: bool,
 }
 
 impl AudioPlayer {
@@ -154,6 +155,7 @@ impl AudioPlayer {
             playlist,
             playlist_pos: 0,
             playing: true,
+            started: true,
         };
         player.backend.start_track(first);
         player
@@ -165,6 +167,7 @@ impl AudioPlayer {
             playlist: shuffled_playlist(),
             playlist_pos: 0,
             playing: false,
+            started: false,
         }
     }
 
@@ -178,12 +181,21 @@ impl AudioPlayer {
     }
 
     pub fn toggle(&mut self) {
+        if !self.playing && !self.started {
+            self.backend.start_track(self.playlist[self.playlist_pos]);
+            self.started = true;
+        }
         self.playing = !self.playing;
         self.backend.set_playing(self.playing);
     }
 
+    pub fn is_playing(&self) -> bool {
+        self.playing
+    }
+
     pub fn next_track(&mut self) {
         self.playing = true;
+        self.started = true;
         self.backend.stop_current();
         self.playlist_pos = (self.playlist_pos + 1) % self.playlist.len();
         let next = self.playlist[self.playlist_pos];
