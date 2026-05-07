@@ -207,6 +207,141 @@ Tasks:
 
 ---
 
+## 14. Title Screen: Instructions Overlay
+
+Brief tutorial reachable from the title screen. New players (especially on
+mobile) currently have no in-app way to learn the controls or objective.
+
+Tasks:
+- [ ] Add an "INSTRUCTIONS" / "?" button to the title screen
+- [ ] Overlay shows controls (touch zones + keyboard) and objective in a few lines
+- [ ] Tap-to-dismiss returns to title with no game-state side effects
+- [ ] Style consistent with existing `TextRenderer` + game palette
+
+---
+
+## 15. Title Screen: Music Toggle
+
+Player-facing music on/off control. Today `music_starts_on` is a config-file
+knob; the player should be able to flip it from the title without editing
+TOML.
+
+Tasks:
+- [ ] Music icon button on the title screen (note glyph; slash overlay when muted)
+- [ ] Tap toggles whether music starts in the next play session
+- [ ] Persist the preference across launches (depends on §16)
+
+---
+
+## 16. Persistent Local State / Scoreboard
+
+A small key-value store on each platform for player-visible state that
+should survive relaunches: high scores, music preference (§15), and
+similar.
+
+Tasks:
+- [ ] Decide approach: file in app documents dir (cross-platform; one
+      `serde`-encoded struct) vs platform-native (`UserDefaults` on iOS/macOS,
+      `localStorage` on WASM)
+- [ ] `PersistentState` struct with read/write API behind a thin platform shim
+- [ ] Track top-N high scores with timestamp; show on title and game-over
+- [ ] Document storage location per platform in `_context/`
+
+---
+
+## 17. Drop-Below-Viewport Game Over
+
+Once a timed level mechanic exists (§18), the camera will stop scrolling
+with the ship in some failure modes — meaning the ship can fall out of the
+visible window. When that happens, declare game over rather than letting
+the player chase an offscreen ship.
+
+Tasks:
+- [ ] Define drop threshold (e.g. `ship.pos.y < viewport_offset - viewport_height`)
+- [ ] Trigger death + game over when crossed
+- [ ] Visual cue as the ship nears the threshold (the offscreen-ship
+      indicator in `longterm-features.md` complements this)
+
+---
+
+## 18. Time-Attack: Per-Level Timer
+
+Each level has a target time. Reaching the next level early awards bonus
+points; running out triggers game over. Adds pressure and gives each level
+a clear arc.
+
+Tasks:
+- [ ] Add `level_time_limit_seconds` to `LevelParams` (per-level override
+      possible later)
+- [ ] HUD countdown timer; visual emphasis as time runs low
+- [ ] On level transition: compute remaining time → bonus points
+- [ ] On expiry: game over (consider an "OUT OF TIME" overlay variant)
+- [ ] Tune so early levels feel generous, later ones tighten
+
+---
+
+## 19. HDR / EDR Output on Native Platforms
+
+iPhone and modern Macs support Extended Dynamic Range — pixel values >1.0 in
+a float framebuffer light up the panel above SDR white (up to ~1600 nits on
+recent iPhones). The bloom pyramid already produces HDR values; the final
+composite throws them away with a `clamp(..., 0.0, 1.0)`. Wiring up EDR
+would let dense particle clusters and the ship outline genuinely "pop"
+rather than topping out at SDR white.
+
+Tasks:
+- [ ] iOS / macOS surface configured for EDR. wgpu 29's `SurfaceConfiguration`
+      doesn't expose this directly; reach into `wgpu::hal::api::Metal` via
+      `Surface::as_hal` to set `wantsExtendedDynamicRangeContent = true` and
+      pick an EDR-capable colorspace + float pixel format on the underlying
+      `CAMetalLayer`. Code lives in framework's surface init; iOS-only.
+- [ ] Drop the `clamp(0,1)` in `bloom_composite.wgsl` and replace with a
+      tone-mapper (Reinhard or ACES) so SDR fallback stays sane and HDR
+      output rolls off gracefully at panel peak.
+- [ ] Tune `bloom_strength` and the threshold so that only the brightest
+      stacked particle clusters cross 1.0 — the goal is "occasional
+      eye-grabbing flashes," not a generally over-bright scene.
+- [ ] Verify behaviour as EDR headroom collapses (Low Power Mode, bright
+      ambient, thermal throttle): rendering should degrade smoothly to
+      SDR-equivalent rather than going dim or banded.
+- [ ] Web / mobile-Safari WebGPU EDR is not in scope here — deferred until
+      browser support stabilises.
+
+---
+
+## 20. Ship Visual Stability (Per-Orientation Cached Sprite)
+
+The ship's filled triangle and wireframe outline are rasterised by the GPU
+every frame at the ship's current sub-pixel position. At the game's small
+internal resolution (261×160) this produces visible per-pixel shimmer along
+the edges as the ship translates — distracting, especially on a static
+ship that's only thrusting slightly.
+
+Idea: render the ship once per *orientation* into a small offscreen
+texture, then each frame blit that texture to the game view at the ship's
+pixel-snapped position. Translation no longer changes which pixels light
+up; only rotation does. Rotation is rare enough that the shimmer there is
+acceptable (and could be smoothed further by quantising orientation to,
+say, 64 buckets and pre-rasterising once per bucket).
+
+Tasks:
+- [ ] Pick approach: live re-rasterise on orientation change (small wgpu
+      render-to-texture each time `ship.orientation` moves more than ε) vs.
+      pre-build a sprite atlas of N quantised orientations at startup
+- [ ] Allocate a small ship sprite texture sized to the worst-case bounding
+      box of the rotated ship (chevron is ~24×18 in game-view units)
+- [ ] Render path: textured-quad blit to `game_view_texture` at
+      `floor(ship.pos)` (pixel-snapped); orientation-dependent texture
+      selected by the cache key
+- [ ] Confirm the wireframe outline still bloomes correctly — the
+      offscreen texture needs to be the same `Rgba16Float` HDR format as
+      the game view so the bright-blue outline retains its >1.0 channel
+- [ ] Verify visually that the shimmer is gone during pure translation,
+      and that rotation jitter is bounded (or invisible) at the chosen
+      bucket count
+
+---
+
 ## Branch Audit Remainder
 
 The `legacy_wgpu` branch has been audited (see `legacy-port-inventory.md`). These branches have not yet been reviewed:
