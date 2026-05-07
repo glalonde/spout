@@ -51,7 +51,7 @@ Visuals are considered high-priority — the game lives or dies on how stimulati
 - ~~**Glowing terrain edges**~~ ✅ Done — 4-connected edge detection in terrain fragment shader; HDR red-orange edges drive bloom
 - ✦ **Background texture / parallax** — nebula, star field, or noise-based background layer with depth
 - ✦ **Terrain texture** — procedural or sampled texture overlaid on terrain rather than flat color
-- ~~**Bloom**~~ ✅ Done — HDR pipeline with configurable threshold/strength/passes; runs at full display resolution
+- ~~**Bloom**~~ ✅ Done — HDR pipeline with configurable threshold/strength + dual-filter mip pyramid (Jimenez COD-AW); runs at half surface resolution. See `_context/plans/archive/2026-05-07-ios-frame-pacing.md` for the bandwidth investigation that motivated the dual-filter rewrite.
 - ~~**CRT / phosphor filter**~~ ✅ Done — barrel distortion, chromatic aberration, phosphor mask, scanlines, vignette via `crt_strength`
 - ✦ **Vector screen effect** — simulate an oscilloscope/Asteroids-original look; particles and ship drawn as glowing vector lines rather than rasterized pixels
 - ✦ **Multiple particle types** — smoke, sparks, debris with distinct visual profiles
