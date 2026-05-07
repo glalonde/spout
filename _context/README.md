@@ -19,7 +19,6 @@ _context/
 | File/dir | Purpose |
 |----------|---------|
 | `wasm-debugging.md` | Concrete WASM gotchas with fixes; WGSL pitfalls; browser debugging workflow |
-| `ios-frame-pacing-findings.md` | Findings from the native iOS vs mobile web framerate investigation |
 | `plans/active/` | In-progress plans — decisions made, scope, status, open items |
 | `plans/archive/` | Completed plans and old assessments (preserved for history) |
 

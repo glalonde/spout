@@ -126,10 +126,10 @@ struct Spout {
     /// Debug overlay: FPS counter rendered at display resolution. Debug builds only.
     #[cfg(debug_assertions)]
     overlay_text: text::TextRenderer,
-    #[cfg(debug_assertions)]
     frame_times: Vec<f32>,
-    #[cfg(debug_assertions)]
+    cpu_times: Vec<f32>,
     tick_wall_dt: f32,
+    frame_log_count: u32,
 }
 
 impl Spout {
@@ -365,10 +365,7 @@ impl Spout {
             .work_until(Instant::now() + LEVEL_BUDGET);
 
         let (game_dt, wall_dt) = self.tick();
-        #[cfg(debug_assertions)]
-        {
-            self.tick_wall_dt = wall_dt;
-        }
+        self.tick_wall_dt = wall_dt;
 
         match self.state.mode {
             GameMode::Title => {
@@ -555,10 +552,10 @@ impl framework::Example for Spout {
             staging_belt,
             #[cfg(debug_assertions)]
             overlay_text,
-            #[cfg(debug_assertions)]
             frame_times: Vec::with_capacity(60),
-            #[cfg(debug_assertions)]
+            cpu_times: Vec::with_capacity(60),
             tick_wall_dt: 0.0,
+            frame_log_count: 0,
         };
         spout.enter_title(device, queue);
         spout
@@ -629,6 +626,8 @@ impl framework::Example for Spout {
         _spawner: &framework::Spawner,
         window: &winit::window::Window,
     ) {
+        let cpu_start = Instant::now();
+
         // Read back GPU collision result from previous frame.
         if self.state.mode == GameMode::Playing {
             self.collision_detector.poll_result();
@@ -744,7 +743,10 @@ impl framework::Example for Spout {
             let current_level = self.state.score / self.game_params.level_height as i32 + 1;
             let score_text = format!("{}", self.state.score);
             let level_text = format!("LV{}", current_level);
-            let white = [1.0, 1.0, 1.0, 1.0];
+            // Held below 1.0 so bloom contribution stays well under what the
+            // particle/ship neon hits when stacked. With bloom_threshold=0.4
+            // and soft-knee, value v → bloom contribution v*(v-0.4)/v = v-0.4.
+            let text_color = [0.7, 0.7, 0.7, 1.0];
             let level_x =
                 self.game_text.surface_width - self.game_text.text_width(&level_text, 1.0) - 2.0;
             self.game_text.draw(
@@ -752,8 +754,8 @@ impl framework::Example for Spout {
                 &mut encoder,
                 &self.game_view_texture,
                 &[
-                    (&score_text, 2.0, 2.0, 1.0, white),
-                    (&level_text, level_x, 2.0, 1.0, white),
+                    (&score_text, 2.0, 2.0, 1.0, text_color),
+                    (&level_text, level_x, 2.0, 1.0, text_color),
                 ],
             );
 
@@ -761,8 +763,6 @@ impl framework::Example for Spout {
             if self.state.dead {
                 let w = self.game_text.surface_width;
                 let h = self.game_text.surface_height;
-                let white = [1.0, 1.0, 1.0, 1.0];
-                let dim = [0.6, 0.6, 0.6, 1.0];
 
                 let go = "GAME OVER";
                 let go_x = (w - self.game_text.text_width(go, 1.0)) / 2.0;
@@ -781,9 +781,9 @@ impl framework::Example for Spout {
                     &mut encoder,
                     &self.game_view_texture,
                     &[
-                        (go, go_x, go_y, 1.0, white),
-                        (&sc, sc_x, sc_y, 1.0, white),
-                        (restart, r_x, r_y, 1.0, dim),
+                        (go, go_x, go_y, 1.0, text_color),
+                        (&sc, sc_x, sc_y, 1.0, text_color),
+                        (restart, r_x, r_y, 1.0, text_color),
                     ],
                 );
             }
@@ -800,18 +800,21 @@ impl framework::Example for Spout {
         self.renderer.render(view, &mut encoder);
         self.level_manager.decompose_tiles(&mut encoder);
 
-        // Debug overlay — only compiled in debug builds.
+        // Frame timing — collected in all build profiles.
+        let dt = self.tick_wall_dt;
+        if self.frame_times.len() >= 60 {
+            self.frame_times.remove(0);
+        }
+        self.frame_times.push(dt);
+        let avg_dt = self.frame_times.iter().sum::<f32>() / self.frame_times.len() as f32;
+        let fps = if avg_dt > 0.0 { 1.0 / avg_dt } else { 0.0 };
+        let win_size = window.inner_size();
+        let w = win_size.width;
+        let h = win_size.height;
+
+        // On-screen FPS overlay — debug builds only.
         #[cfg(debug_assertions)]
         {
-            let dt = self.tick_wall_dt;
-            if self.frame_times.len() >= 60 {
-                self.frame_times.remove(0);
-            }
-            self.frame_times.push(dt);
-            let avg_dt = self.frame_times.iter().sum::<f32>() / self.frame_times.len() as f32;
-            let fps = if avg_dt > 0.0 { 1.0 / avg_dt } else { 0.0 };
-            let w = self.overlay_text.surface_width as u32;
-            let h = self.overlay_text.surface_height as u32;
             let fps_text = format!("FPS:{:.0} {}x{}", fps, w, h);
             let white = [1.0, 1.0, 1.0, 1.0];
             self.overlay_text.draw(
@@ -835,6 +838,29 @@ impl framework::Example for Spout {
         // On native the callback fires during the next poll(); on WASM it fires
         // asynchronously before the next frame.
         self.collision_detector.start_readback();
+
+        // CPU-side render time: top of render() through post-submit cleanup.
+        // Excludes the spare-budget `work_until` block below. Not vsync-bounded,
+        // so this number changes with workload even when avg_dt is at the 60Hz floor.
+        let cpu_dt = cpu_start.elapsed().as_secs_f32();
+        if self.cpu_times.len() >= 60 {
+            self.cpu_times.remove(0);
+        }
+        self.cpu_times.push(cpu_dt);
+        let avg_cpu = self.cpu_times.iter().sum::<f32>() / self.cpu_times.len() as f32;
+
+        self.frame_log_count = self.frame_log_count.wrapping_add(1);
+        if self.frame_log_count.is_multiple_of(60) {
+            log::info!(
+                "frame avg_dt={:.2}ms cpu={:.2}ms fps={:.1} surface={}x{} bloom_mips={}",
+                avg_dt * 1000.0,
+                avg_cpu * 1000.0,
+                fps,
+                w,
+                h,
+                self.game_params.visual_params.bloom_mip_levels,
+            );
+        }
 
         {
             // After rendering, do some "async" work:
