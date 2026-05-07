@@ -257,8 +257,9 @@ visible window. When that happens, declare game over rather than letting
 the player chase an offscreen ship.
 
 Tasks:
-- [ ] Define drop threshold (e.g. `ship.pos.y < viewport_offset - viewport_height`)
-- [ ] Trigger death + game over when crossed
+- [x] Define drop threshold (`ship.pos.y < viewport_offset - viewport_height`)
+- [x] Trigger death + game over when crossed (in `update_ship`, alongside the
+      existing horizontal-edge check)
 - [ ] Visual cue as the ship nears the threshold (the offscreen-ship
       indicator in `longterm-features.md` complements this)
 
@@ -339,6 +340,38 @@ Tasks:
 - [ ] Verify visually that the shimmer is gone during pure translation,
       and that rotation jitter is bounded (or invisible) at the chosen
       bucket count
+
+---
+
+## 21. Visible Indestructible Side Walls
+
+Today the leftmost and rightmost terrain columns hold max-health cells
+(§8a) and a secondary bounds check kills the ship if it crosses the level
+edge. Both are correct but visually subtle — the player may not realise
+*why* they died, since the boundary looks like ordinary terrain that
+could (in principle) be eroded.
+
+The fix is to make the side walls *look* unkillable: a clear visual
+distinction (e.g. a brighter colour, a hatched/striped pattern, a glowing
+edge) that signals "you cannot break through here." Combined with the
+existing kill behaviour, the player should immediately understand what
+happens when the ship crosses that line.
+
+Tasks:
+- [ ] Decide visual treatment: distinct colour vs. pattern vs. animated
+      glow. Should be readable at the small game-view resolution and not
+      compete with the bloom-driven neon palette.
+- [ ] Render path: probably a separate render pass / shader override on
+      the leftmost+rightmost N columns, drawn after terrain so it always
+      wins. Alternative: terrain shader detects max-health cells and
+      colours them differently (cheaper but couples wall colour to "max
+      health" semantics).
+- [ ] Width: one column is enough to kill the ship but may be too thin to
+      read visually; consider 2–3 columns wide so the wall is unmistakable.
+- [ ] Confirm the wall reads correctly at native iPhone resolution after
+      the upscale (no aliasing into invisibility, no shimmer).
+- [ ] Optional: small particle/spark effect when the ship is destroyed by
+      hitting the wall, to reinforce the cause of death.
 
 ---
 

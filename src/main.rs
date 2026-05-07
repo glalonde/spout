@@ -286,6 +286,18 @@ impl Spout {
             self.state.dead = true;
             self.state.explosion_pending = true;
         }
+
+        // Kill the ship if it falls more than one viewport-height below the
+        // bottom of the visible window. At default gravity (40 game units/s²)
+        // and viewport_height 160, that is ~2.8 s of free-fall from rest from
+        // the viewport bottom — enough to recover from a stall, but not from
+        // a sustained fall.
+        let bottom = self.state.viewport_offset as f32;
+        let viewport_h = self.game_params.viewport_height as f32;
+        if self.state.ship_state.position[1] < bottom - viewport_h {
+            self.state.dead = true;
+            self.state.explosion_pending = true;
+        }
     }
 
     fn title_emitter_motion(&self) -> particles::EmitterMotion {
