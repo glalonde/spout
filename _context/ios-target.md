@@ -49,6 +49,13 @@ Full script embedded in `ios/Spout.xcodeproj/project.pbxproj`.
 - Debug config: ad-hoc signing (`Sign to Run Locally`) — no developer account needed for simulator.
 - Release config: Automatic signing with team `HNRULUX5AH` (Geoffrey Lalonde).
 - Provisioning profile: iOS Team Provisioning Profile wildcard, auto-managed.
+- The Run Script phase replaces Xcode's placeholder executable with the Rust
+  binary, then re-signs the final `.app`. On device builds,
+  `EXPANDED_CODE_SIGN_ENTITLEMENTS` can be empty even though Xcode generated
+  `Spout.app.xcent`; the script must fall back to
+  `$TARGET_TEMP_DIR/$PRODUCT_NAME.app.xcent` and pass
+  `--generate-entitlement-der`. Without this, installs fail with
+  "Application is missing the application-identifier entitlement."
 
 ## Known issues / fixes needed
 
