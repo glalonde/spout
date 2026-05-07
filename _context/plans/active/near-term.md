@@ -257,8 +257,9 @@ visible window. When that happens, declare game over rather than letting
 the player chase an offscreen ship.
 
 Tasks:
-- [ ] Define drop threshold (e.g. `ship.pos.y < viewport_offset - viewport_height`)
-- [ ] Trigger death + game over when crossed
+- [x] Define drop threshold (`ship.pos.y < viewport_offset - viewport_height`)
+- [x] Trigger death + game over when crossed (in `update_ship`, alongside the
+      existing horizontal-edge check)
 - [ ] Visual cue as the ship nears the threshold (the offscreen-ship
       indicator in `longterm-features.md` complements this)
 
