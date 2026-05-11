@@ -3,10 +3,10 @@ use spout::input::{InputFrame, PointerPress};
 use spout::text::TextRenderer;
 use spout::ui::{self, RectStyle, UiButton, UiRect, UiRenderer};
 
-const BUTTON_W: f32 = 78.0;
-const BUTTON_H: f32 = 34.0;
+const BUTTON_W: f32 = 96.0;
+const BUTTON_H: f32 = 44.0;
 const BUTTON_GAP: f32 = 12.0;
-const BUTTON_BOTTOM_MARGIN: f32 = 14.0;
+const BUTTON_BOTTOM_MARGIN: f32 = 10.0;
 const BUTTON_LABEL_H: f32 = 12.0;
 
 #[derive(Debug)]
@@ -103,10 +103,6 @@ impl TitleScreen {
 
         if input.menu_confirm_pressed() {
             return self.activate_button(self.focused_button);
-        }
-
-        if !self.instructions_open && (input.thrust_started() || input.rotate_started()) {
-            return Some(TitleAction::StartGame);
         }
 
         None
@@ -206,7 +202,7 @@ impl TitleScreen {
             } else {
                 "MUSIC OFF"
             };
-            let music_w = (text.text_width(music_label, 1.0) + 18.0).max(96.0);
+            let music_w = (text.text_width(music_label, 1.0) + 22.0).max(112.0);
             return vec![
                 UiButton {
                     action: ButtonAction::Music,
