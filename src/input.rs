@@ -227,11 +227,56 @@ mod tests {
     }
 
     #[test]
+    fn keyboard_arrow_thrust() {
+        let mut c = InputCollector::default();
+        c.held_arrow_thrust = true;
+        let state = c.current_state();
+        assert_eq!(state.thrust, 1.0);
+        assert_eq!(state.rotate, 0.0);
+    }
+
+    #[test]
+    fn keyboard_arrow_rotate_left() {
+        let mut c = InputCollector::default();
+        c.held_arrow_left = true;
+        let state = c.current_state();
+        assert_eq!(state.thrust, 0.0);
+        assert_eq!(state.rotate, 1.0);
+    }
+
+    #[test]
+    fn keyboard_arrow_rotate_right() {
+        let mut c = InputCollector::default();
+        c.held_arrow_right = true;
+        assert_eq!(c.current_state().rotate, -1.0);
+    }
+
+    #[test]
     fn keyboard_left_and_right_cancel() {
         let mut c = InputCollector::default();
         c.held_left = true;
         c.held_right = true;
         assert_eq!(c.current_state().rotate, 0.0);
+    }
+
+    #[test]
+    fn keyboard_alternate_thrust_bindings_are_independent() {
+        let mut c = InputCollector::default();
+        c.held_thrust = true;
+        c.held_arrow_thrust = true;
+
+        c.held_thrust = false;
+        assert_eq!(c.current_state().thrust, 1.0);
+    }
+
+    #[test]
+    fn keyboard_alternate_rotate_bindings_are_independent() {
+        let mut c = InputCollector::default();
+        c.held_left = true;
+        c.held_arrow_left = true;
+
+        c.held_left = false;
+        assert_eq!(c.current_state().rotate, 1.0);
     }
 
     #[test]
@@ -779,6 +824,9 @@ pub struct InputCollector {
     held_thrust: bool,
     held_left: bool,
     held_right: bool,
+    held_arrow_thrust: bool,
+    held_arrow_left: bool,
+    held_arrow_right: bool,
     held_pause: bool,
     held_fullscreen: bool,
     held_cam_in: bool,
@@ -821,6 +869,9 @@ impl Default for InputCollector {
             held_thrust: false,
             held_left: false,
             held_right: false,
+            held_arrow_thrust: false,
+            held_arrow_left: false,
+            held_arrow_right: false,
             held_pause: false,
             held_fullscreen: false,
             held_cam_in: false,
@@ -1014,10 +1065,19 @@ impl InputCollector {
                 KeyCode::KeyY if pressed => self.audio_toggle_requested = true,
 
                 // Menu navigation
-                KeyCode::ArrowUp => self.held_menu_up = pressed,
+                KeyCode::ArrowUp => {
+                    self.held_arrow_thrust = pressed;
+                    self.held_menu_up = pressed;
+                }
                 KeyCode::ArrowDown => self.held_menu_down = pressed,
-                KeyCode::ArrowLeft => self.held_menu_left = pressed,
-                KeyCode::ArrowRight => self.held_menu_right = pressed,
+                KeyCode::ArrowLeft => {
+                    self.held_arrow_left = pressed;
+                    self.held_menu_left = pressed;
+                }
+                KeyCode::ArrowRight => {
+                    self.held_arrow_right = pressed;
+                    self.held_menu_right = pressed;
+                }
                 KeyCode::Enter | KeyCode::Space => self.held_menu_confirm = pressed,
                 KeyCode::Escape => self.held_menu_cancel = pressed,
 
@@ -1082,8 +1142,14 @@ impl InputCollector {
         let mut pointer_pressed = self.pointer_press.take();
         let mut pointer_released = self.pointer_release.take();
 
-        let keyboard_thrust = if self.held_thrust { 1.0 } else { 0.0 };
-        let keyboard_rotate = match (self.held_left, self.held_right) {
+        let keyboard_thrust = if self.held_thrust || self.held_arrow_thrust {
+            1.0
+        } else {
+            0.0
+        };
+        let keyboard_left = self.held_left || self.held_arrow_left;
+        let keyboard_right = self.held_right || self.held_arrow_right;
+        let keyboard_rotate = match (keyboard_left, keyboard_right) {
             (true, false) => 1.0,
             (false, true) => -1.0,
             _ => 0.0,

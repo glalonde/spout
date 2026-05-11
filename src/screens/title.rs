@@ -206,8 +206,8 @@ impl TitleScreen {
                 vec![
                     ("OBJECTIVE", 24.0, accent_color),
                     ("BLAST AND CLIMB", 42.0, text_color),
-                    ("W -> GAS", 64.0, text_color),
-                    ("A/D -> STEER", 82.0, text_color),
+                    ("W/UP -> GAS", 64.0, text_color),
+                    ("A/D/ARROWS -> STEER", 82.0, text_color),
                 ]
             };
             texts.extend(lines.into_iter().map(|(line, y, color)| {
