@@ -88,6 +88,10 @@ fn default_density_scale() -> f32 {
     100.0
 }
 
+fn default_level_time_limit_seconds() -> f32 {
+    120.0
+}
+
 fn default_bloom_mip_levels() -> u32 {
     6
 }
@@ -153,12 +157,15 @@ impl Default for ShipParams {
 #[derive(Debug, Serialize, Deserialize, Clone, Copy)]
 pub struct LevelParams {
     pub starting_terrain_health: i32,
+    #[serde(default = "default_level_time_limit_seconds")]
+    pub level_time_limit_seconds: f32,
 }
 
 impl Default for LevelParams {
     fn default() -> Self {
         LevelParams {
             starting_terrain_health: 100000,
+            level_time_limit_seconds: default_level_time_limit_seconds(),
         }
     }
 }
@@ -276,6 +283,7 @@ mod tests {
         assert!(d.level_width >= d.viewport_width);
         assert!(d.level_height > d.viewport_height);
         assert!(d.fps > 0.0);
+        assert!(d.level_params.level_time_limit_seconds > 0.0);
     }
 
     #[test]
@@ -298,6 +306,10 @@ mod tests {
         assert_eq!(
             params.ship_params.acceleration,
             ShipParams::default().acceleration
+        );
+        assert_eq!(
+            params.level_params.level_time_limit_seconds,
+            default_level_time_limit_seconds()
         );
     }
 
