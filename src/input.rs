@@ -190,6 +190,18 @@ mod tests {
     }
 
     #[test]
+    fn css_touch_position_maps_to_backing_pixels() {
+        let point =
+            css_to_surface_point((110.0, 65.0), (10.0, 15.0), (200.0, 100.0), (400.0, 300.0))
+                .expect("inside canvas rect");
+
+        assert_eq!(point.x, 200.0);
+        assert_eq!(point.y, 150.0);
+        assert_eq!(point.surface_width, 400.0);
+        assert_eq!(point.surface_height, 300.0);
+    }
+
+    #[test]
     fn keyboard_thrust() {
         let mut c = InputCollector::default();
         c.held_thrust = true;
@@ -891,18 +903,16 @@ impl InputCollector {
             let canvas_ref = canvas.clone();
             let cb = Closure::<dyn FnMut(_)>::new(move |event: web_sys::TouchEvent| {
                 event.prevent_default();
-                let canvas_width = canvas_ref.client_width() as f32;
-                let canvas_height = canvas_ref.client_height() as f32;
                 let mut s = state.borrow_mut();
-                s.set_surface_width(canvas_width);
-                s.set_surface_height(canvas_height);
                 let changed = event.changed_touches();
                 for i in 0..changed.length() {
                     if let Some(touch) = changed.get(i) {
-                        let x = touch.client_x() as f32;
-                        let y = touch.client_y() as f32;
-                        let id = touch.identifier();
-                        s.started(i64::from(id), x, y);
+                        let Some(point) = canvas_touch_point(&canvas_ref, &touch) else {
+                            continue;
+                        };
+                        s.set_surface_width(point.surface_width);
+                        s.set_surface_height(point.surface_height);
+                        s.started(i64::from(touch.identifier()), point.x, point.y);
                     }
                 }
             });
@@ -916,17 +926,17 @@ impl InputCollector {
         // touchmove: update rotate_x if the rotate touch moved.
         {
             let state = std::rc::Rc::clone(&self.wasm_touch);
+            let canvas_ref = canvas.clone();
             let cb = Closure::<dyn FnMut(_)>::new(move |event: web_sys::TouchEvent| {
                 event.prevent_default();
                 let mut s = state.borrow_mut();
                 let changed = event.changed_touches();
                 for i in 0..changed.length() {
                     if let Some(touch) = changed.get(i) {
-                        s.moved(
-                            i64::from(touch.identifier()),
-                            touch.client_x() as f32,
-                            touch.client_y() as f32,
-                        );
+                        let Some(point) = canvas_touch_point(&canvas_ref, &touch) else {
+                            continue;
+                        };
+                        s.moved(i64::from(touch.identifier()), point.x, point.y);
                     }
                 }
             });
@@ -940,17 +950,17 @@ impl InputCollector {
         // touchend + touchcancel: release whichever zone(s) ended.
         {
             let state = std::rc::Rc::clone(&self.wasm_touch);
+            let canvas_ref = canvas.clone();
             let cb = Closure::<dyn FnMut(_)>::new(move |event: web_sys::TouchEvent| {
                 event.prevent_default();
                 let mut s = state.borrow_mut();
                 let changed = event.changed_touches();
                 for i in 0..changed.length() {
                     if let Some(touch) = changed.get(i) {
-                        s.ended(
-                            i64::from(touch.identifier()),
-                            touch.client_x() as f32,
-                            touch.client_y() as f32,
-                        );
+                        let Some(point) = canvas_touch_point(&canvas_ref, &touch) else {
+                            continue;
+                        };
+                        s.ended(i64::from(touch.identifier()), point.x, point.y);
                     }
                 }
             });
@@ -1152,4 +1162,56 @@ impl InputCollector {
             cam_reset: self.held_cam_reset,
         }
     }
+}
+
+#[cfg(any(test, target_arch = "wasm32"))]
+struct CanvasTouchPoint {
+    x: f32,
+    y: f32,
+    surface_width: f32,
+    surface_height: f32,
+}
+
+#[cfg(any(test, target_arch = "wasm32"))]
+fn css_to_surface_point(
+    client: (f64, f64),
+    rect_origin: (f64, f64),
+    css_size: (f64, f64),
+    surface_size: (f64, f64),
+) -> Option<CanvasTouchPoint> {
+    let (css_width, css_height) = css_size;
+    if css_width <= 0.0 || css_height <= 0.0 {
+        return None;
+    }
+
+    let (surface_width, surface_height) = surface_size;
+    let surface_width = surface_width.max(1.0);
+    let surface_height = surface_height.max(1.0);
+    let (client_x, client_y) = client;
+    let (rect_left, rect_top) = rect_origin;
+    let x = (client_x - rect_left) * surface_width / css_width;
+    let y = (client_y - rect_top) * surface_height / css_height;
+
+    Some(CanvasTouchPoint {
+        x: x as f32,
+        y: y as f32,
+        surface_width: surface_width as f32,
+        surface_height: surface_height as f32,
+    })
+}
+
+#[cfg(target_arch = "wasm32")]
+fn canvas_touch_point(
+    canvas: &web_sys::HtmlCanvasElement,
+    touch: &web_sys::Touch,
+) -> Option<CanvasTouchPoint> {
+    let rect = canvas.get_bounding_client_rect();
+    let css_width = rect.width();
+    let css_height = rect.height();
+    css_to_surface_point(
+        (f64::from(touch.client_x()), f64::from(touch.client_y())),
+        (rect.left(), rect.top()),
+        (css_width, css_height),
+        (f64::from(canvas.width()), f64::from(canvas.height())),
+    )
 }

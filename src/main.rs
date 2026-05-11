@@ -701,7 +701,11 @@ impl Spout {
     /// Pure-CPU update phase. Snapshots input, ticks time, drives simulation,
     /// applies non-GPU transitions inline (pause toggle, GameOver), and
     /// returns a GPU-bound transition intent (ToTitle / ToPlay) if any.
-    fn update_phase(&mut self, window: &winit::window::Window) -> Option<PendingTransition> {
+    fn update_phase(
+        &mut self,
+        window: &winit::window::Window,
+        surface_size: (u32, u32),
+    ) -> Option<PendingTransition> {
         self.audio.poll();
         self.resolve_pending_collision();
 
@@ -736,8 +740,7 @@ impl Spout {
             return Some(PendingTransition::ToTitle);
         }
 
-        let win_size = window.inner_size();
-        self.process_title_input(input, win_size.width, win_size.height)
+        self.process_title_input(input, surface_size.0, surface_size.1)
     }
 
     fn apply_transition(
@@ -866,9 +869,10 @@ impl Spout {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         window: &winit::window::Window,
+        surface_size: (u32, u32),
     ) {
         let cpu_start = Instant::now();
-        let pending = self.update_phase(window);
+        let pending = self.update_phase(window, surface_size);
         if let Some(t) = pending {
             self.apply_transition(t, device, queue);
         }
