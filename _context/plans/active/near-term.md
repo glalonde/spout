@@ -38,6 +38,13 @@ Tasks:
 - [ ] Test at different speeds: fast-moving ships may tunnel through 1-cell walls
   between frames; the per-point sweep handles moderate speeds but extreme
   velocities could still tunnel if the swept distance exceeds cell size.
+- [x] Exact collision-based progress: collision readback now reports impact
+  time along the tested movement segment, and score progress is only committed
+  once that segment is confirmed clear or resolved to its impact point. Camera
+  progress follows the live ship immediately, while one pending collision
+  segment extends to the latest live ship position during readback delay. The
+  collision shader checks the current 28 sampled hull points in a 32-lane
+  workgroup and reduces to the earliest impact in workgroup memory.
 
 ---
 

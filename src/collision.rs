@@ -2,7 +2,8 @@
 //!
 //! Runs a compute shader that Bresenham-walks each hull vertex from its
 //! previous to current position, checking the GPU terrain buffer. Returns
-//! a hit flag and the axis-aligned contact normal for bouncing.
+//! a hit flag, axis-aligned contact normal, and impact time along the swept
+//! movement segment.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -27,19 +28,32 @@ struct CollisionUniforms {
 }
 
 /// Collision result read back from the GPU.
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy)]
 pub struct CollisionResult {
     pub hit: bool,
     /// Axis-aligned contact normal: e.g. (1,0) = hit from the left,
     /// (0,-1) = hit from above.
     pub normal: [f32; 2],
+    /// Fraction along the swept movement segment where collision first occurs.
+    /// `0.0` is the previous ship state; `1.0` is the current ship state.
+    pub impact_t: f32,
+}
+
+impl Default for CollisionResult {
+    fn default() -> Self {
+        Self {
+            hit: false,
+            normal: [0.0, 0.0],
+            impact_t: 1.0,
+        }
+    }
 }
 
 pub struct CollisionDetector {
     pipeline: wgpu::ComputePipeline,
     bind_group_layout: wgpu::BindGroupLayout,
     uniform_buffer: SizedBuffer,
-    /// GPU-side result buffer (3 x u32). Written by the compute shader.
+    /// GPU-side result buffer (4 x u32). Written by the compute shader.
     result_buffer: wgpu::Buffer,
     /// CPU-readable staging buffer for async readback.
     staging_buffer: wgpu::Buffer,
@@ -126,16 +140,16 @@ impl CollisionDetector {
         let uniform_buffer =
             crate::buffer_util::make_uniform_buffer(device, "Collision Uniform Buffer", &uniforms);
 
-        // 3 x u32: [hit, normal_x_bits, normal_y_bits]
+        // 4 x u32: [hit, normal_x_bits, normal_y_bits, impact_t_bits]
         let result_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Collision Result"),
-            contents: bytemuck::cast_slice(&[0u32; 3]),
+            contents: bytemuck::cast_slice(&[0u32; 4]),
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
         });
 
         let staging_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Collision Staging"),
-            size: 12, // 3 x u32
+            size: 16, // 4 x u32
             usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -166,9 +180,9 @@ impl CollisionDetector {
         prev_ship: &crate::ship::ShipState,
         terrain: &crate::level_manager::TerrainTile,
         terrain_width: u32,
-    ) {
+    ) -> bool {
         if self.pending_readback {
-            return;
+            return false;
         }
         let uniforms = CollisionUniforms {
             ship_x: ship.position[0],
@@ -221,8 +235,9 @@ impl CollisionDetector {
             cpass.dispatch_workgroups(1, 1, 1);
         }
 
-        encoder.copy_buffer_to_buffer(&self.result_buffer, 0, &self.staging_buffer, 0, 12);
+        encoder.copy_buffer_to_buffer(&self.result_buffer, 0, &self.staging_buffer, 0, 16);
         self.pending_readback = true;
+        true
     }
 
     /// Initiate async mapping of the staging buffer. Call after `queue.submit()`
@@ -245,26 +260,29 @@ impl CollisionDetector {
     /// Returns immediately if the mapping hasn't completed yet (WASM-safe).
     /// Caller is responsible for driving wgpu callbacks (device.poll) before
     /// calling this — see render() in main.rs.
-    pub fn poll_result(&mut self) {
+    pub fn poll_result(&mut self) -> Option<CollisionResult> {
         if !self.pending_readback || !self.mapping_started {
-            return;
+            return None;
         }
 
         if !self.map_ready.load(Ordering::Acquire) {
-            return; // Not ready yet — will check again next frame.
+            return None; // Not ready yet — will check again next frame.
         }
 
         let data = self.staging_buffer.slice(..).get_mapped_range();
-        let values: &[u32] = bytemuck::cast_slice(&data[..12]);
+        let values: &[u32] = bytemuck::cast_slice(&data[..16]);
         self.result = CollisionResult {
             hit: values[0] != 0,
             normal: [f32::from_bits(values[1]), f32::from_bits(values[2])],
+            impact_t: f32::from_bits(values[3]).clamp(0.0, 1.0),
         };
+        let result = self.result;
         drop(data);
         self.staging_buffer.unmap();
 
         self.pending_readback = false;
         self.mapping_started = false;
+        Some(result)
     }
 }
 
@@ -272,6 +290,67 @@ impl CollisionDetector {
 mod tests {
     use super::*;
     use crate::gpu_test_utils as gpu;
+
+    fn make_terrain_tile(
+        device: &wgpu::Device,
+        terrain_width: u32,
+        terrain_height: u32,
+        solid_cells: &[(u32, u32)],
+    ) -> crate::level_manager::TerrainTile {
+        let mut terrain_data = vec![0i32; (terrain_width * terrain_height) as usize];
+        for &(x, y) in solid_cells {
+            if x < terrain_width && y < terrain_height {
+                terrain_data[(y * terrain_width + x) as usize] = 1000;
+            }
+        }
+        let terrain_buffer = crate::buffer_util::SizedBuffer {
+            buffer: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Test terrain"),
+                contents: bytemuck::cast_slice(&terrain_data),
+                usage: wgpu::BufferUsages::STORAGE,
+            }),
+            size: (terrain_data.len() * 4) as u64,
+        };
+        crate::level_manager::TerrainTile {
+            shape: crate::level_manager::Interval {
+                start: 0,
+                end: terrain_height as i32,
+            },
+            buffer: terrain_buffer,
+        }
+    }
+
+    fn run_collision(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        ship: &crate::ship::ShipState,
+        prev_ship: &crate::ship::ShipState,
+        terrain_tile: &crate::level_manager::TerrainTile,
+        terrain_width: u32,
+    ) -> CollisionResult {
+        let mut detector = CollisionDetector::init(device);
+        let mut belt = wgpu::util::StagingBelt::new(device.clone(), 256);
+        let mut encoder =
+            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+        assert!(detector.dispatch(
+            device,
+            &mut encoder,
+            &mut belt,
+            ship,
+            prev_ship,
+            terrain_tile,
+            terrain_width,
+        ));
+        belt.finish();
+        queue.submit(Some(encoder.finish()));
+        belt.recall();
+
+        detector.start_readback();
+        device.poll(wgpu::PollType::wait_indefinitely()).ok();
+        detector
+            .poll_result()
+            .expect("collision readback should complete after polling")
+    }
 
     /// Run the full dispatch → submit → start_readback → poll_result cycle.
     /// This catches the WASM bug where poll_result tried to read the staging
@@ -285,25 +364,9 @@ mod tests {
 
         let mut detector = CollisionDetector::init(&device);
 
-        // Create a minimal empty terrain buffer (ship in empty space = no collision).
         let terrain_width = 64u32;
         let terrain_height = 64u32;
-        let terrain_data = vec![0i32; (terrain_width * terrain_height) as usize];
-        let terrain_buffer = crate::buffer_util::SizedBuffer {
-            buffer: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("Test terrain"),
-                contents: bytemuck::cast_slice(&terrain_data),
-                usage: wgpu::BufferUsages::STORAGE,
-            }),
-            size: (terrain_data.len() * 4) as u64,
-        };
-        let terrain_tile = crate::level_manager::TerrainTile {
-            shape: crate::level_manager::Interval {
-                start: 0,
-                end: terrain_height as i32,
-            },
-            buffer: terrain_buffer,
-        };
+        let terrain_tile = make_terrain_tile(&device, terrain_width, terrain_height, &[]);
 
         let ship = crate::ship::ShipState {
             position: [32.0, 32.0],
@@ -314,7 +377,7 @@ mod tests {
         let mut belt = wgpu::util::StagingBelt::new(device.clone(), 256);
         let mut encoder =
             device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-        detector.dispatch(
+        let dispatched = detector.dispatch(
             &device,
             &mut encoder,
             &mut belt,
@@ -323,6 +386,7 @@ mod tests {
             &terrain_tile,
             terrain_width,
         );
+        assert!(dispatched);
 
         // Phase 2: submit GPU work.
         belt.finish();
@@ -338,13 +402,58 @@ mod tests {
         // Drive callbacks before polling — in production this happens via the
         // device.poll(Poll) call in the render loop after queue.submit().
         device.poll(wgpu::PollType::wait_indefinitely()).ok();
-        detector.poll_result();
+        let result = detector.poll_result();
         assert!(!detector.pending_readback, "Readback should have completed");
 
         // Ship in empty terrain → no collision.
+        assert!(result.is_some());
         assert!(
             !detector.result.hit,
             "No collision expected in empty terrain"
         );
+        assert_eq!(detector.result.impact_t, 1.0);
+    }
+
+    #[test]
+    fn collision_reports_impact_time_for_swept_point() {
+        let Some((device, queue)) = gpu::try_create_headless_device() else {
+            eprintln!(
+                "No GPU adapter available — skipping collision_reports_impact_time_for_swept_point"
+            );
+            return;
+        };
+
+        let terrain_width = 64u32;
+        let terrain_height = 64u32;
+        // With orientation 0, the nose sits at local (12, 0). Moving the ship
+        // center from y=20 to y=50 crosses solid cell y=35 at t=0.5.
+        let terrain_tile = make_terrain_tile(&device, terrain_width, terrain_height, &[(44, 35)]);
+        let prev_ship = crate::ship::ShipState {
+            position: [32.0, 20.0],
+            orientation: 0.0,
+            ..Default::default()
+        };
+        let ship = crate::ship::ShipState {
+            position: [32.0, 50.0],
+            orientation: 0.0,
+            ..Default::default()
+        };
+
+        let result = run_collision(
+            &device,
+            &queue,
+            &ship,
+            &prev_ship,
+            &terrain_tile,
+            terrain_width,
+        );
+
+        assert!(result.hit);
+        assert!(
+            (result.impact_t - 0.5).abs() < 0.001,
+            "expected impact_t near 0.5, got {:?}",
+            result
+        );
+        assert_eq!(result.normal, [0.0, -1.0]);
     }
 }
