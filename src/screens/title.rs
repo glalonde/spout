@@ -3,11 +3,12 @@ use spout::input::{InputFrame, PointerPress};
 use spout::text::TextRenderer;
 use spout::ui::{self, RectStyle, UiButton, UiRect, UiRenderer};
 
-const BUTTON_W: f32 = 96.0;
-const BUTTON_H: f32 = 44.0;
-const BUTTON_GAP: f32 = 12.0;
-const BUTTON_BOTTOM_MARGIN: f32 = 10.0;
+const BUTTON_PAD_X: f32 = 8.0;
+const BUTTON_PAD_Y: f32 = 6.0;
+const BUTTON_GAP: f32 = 8.0;
+const BUTTON_BOTTOM_MARGIN: f32 = 12.0;
 const BUTTON_LABEL_H: f32 = 12.0;
+const BUTTON_SIDE_MARGIN: f32 = 14.0;
 
 #[derive(Debug)]
 pub struct TitleScreen {
@@ -15,6 +16,7 @@ pub struct TitleScreen {
     focused_button: ButtonAction,
     pressed_button: Option<ButtonAction>,
     focus_visible: bool,
+    keyboard_focus_engaged: bool,
 }
 
 impl Default for TitleScreen {
@@ -24,6 +26,7 @@ impl Default for TitleScreen {
             focused_button: ButtonAction::Play,
             pressed_button: None,
             focus_visible: true,
+            keyboard_focus_engaged: false,
         }
     }
 }
@@ -68,6 +71,7 @@ impl TitleScreen {
     ) -> Option<TitleAction> {
         if input.help_pressed() {
             self.focus_visible = true;
+            self.keyboard_focus_engaged = true;
             self.pressed_button = None;
             self.toggle_menu();
             return None;
@@ -76,6 +80,7 @@ impl TitleScreen {
         let pointer_pressed = input.pointer_pressed();
         if let Some(point) = pointer_pressed {
             self.focus_visible = false;
+            self.keyboard_focus_engaged = false;
             self.pressed_button = self.button_at(
                 point,
                 params,
@@ -88,6 +93,7 @@ impl TitleScreen {
 
         if let Some(point) = input.pointer_released() {
             self.focus_visible = false;
+            self.keyboard_focus_engaged = false;
             let pressed_button = self.pressed_button.take();
             let released_button = self.button_at(
                 point,
@@ -114,6 +120,7 @@ impl TitleScreen {
 
         if input.menu_cancel_pressed() && self.instructions_open {
             self.focus_visible = true;
+            self.keyboard_focus_engaged = true;
             self.close_menu();
             return None;
         }
@@ -124,6 +131,7 @@ impl TitleScreen {
 
         if input.menu_confirm_pressed() {
             self.focus_visible = true;
+            self.keyboard_focus_engaged = true;
             return self.activate_button(self.focused_button);
         }
 
@@ -162,9 +170,10 @@ impl TitleScreen {
         let text_color = [0.82, 0.86, 0.82, 1.0];
         let accent_color = [0.9, 0.72, 0.48, 1.0];
         let buttons = self.buttons(ctx.params, ctx.text, ctx.flags.music_playing);
+        let focus_visible = self.render_focus_visible(ctx.flags.using_touch);
         let rects: Vec<(UiRect, RectStyle)> = buttons
             .iter()
-            .map(|button| (button.rect, self.button_style(button.action)))
+            .map(|button| (button.rect, self.button_style(button.action, focus_visible)))
             .collect();
         ctx.ui
             .draw_rects(ctx.device, ctx.encoder, ctx.title_ui_view, &rects);
@@ -175,7 +184,7 @@ impl TitleScreen {
             let label_x =
                 button.rect.x + (button.rect.w - ctx.text.text_width(button.label, scale)) / 2.0;
             let label_y = button.rect.y + (button.rect.h - BUTTON_LABEL_H) / 2.0;
-            let color = if self.button_highlighted(button.action) {
+            let color = if self.button_highlighted(button.action, focus_visible) {
                 accent_color
             } else {
                 button_color
@@ -217,39 +226,43 @@ impl TitleScreen {
         text: &TextRenderer,
         music_playing: bool,
     ) -> Vec<UiButton<ButtonAction>> {
-        let y = params.viewport_height as f32 - BUTTON_H - BUTTON_BOTTOM_MARGIN;
         if self.instructions_open {
             let music_label = if music_playing {
                 "MUSIC ON"
             } else {
                 "MUSIC OFF"
             };
-            let music_w = (text.text_width(music_label, 1.0) + 22.0).max(112.0);
+            let (music_w, button_h) = Self::button_size(music_label, text);
+            let (close_w, _) = Self::button_size("X", text);
+            let y = params.viewport_height as f32 - button_h - BUTTON_BOTTOM_MARGIN;
             return vec![
                 UiButton {
                     action: ButtonAction::Music,
                     label: music_label,
                     rect: UiRect {
-                        x: 18.0,
+                        x: BUTTON_SIDE_MARGIN,
                         y,
                         w: music_w,
-                        h: BUTTON_H,
+                        h: button_h,
                     },
                 },
                 UiButton {
                     action: ButtonAction::Menu,
                     label: "X",
                     rect: UiRect {
-                        x: params.viewport_width as f32 - 44.0 - BUTTON_BOTTOM_MARGIN,
+                        x: params.viewport_width as f32 - close_w - BUTTON_SIDE_MARGIN,
                         y,
-                        w: 44.0,
-                        h: BUTTON_H,
+                        w: close_w,
+                        h: button_h,
                     },
                 },
             ];
         }
 
-        let row_w = BUTTON_W * 2.0 + BUTTON_GAP;
+        let (play_w, button_h) = Self::button_size("PLAY", text);
+        let (menu_w, _) = Self::button_size("MENU", text);
+        let y = params.viewport_height as f32 - button_h - BUTTON_BOTTOM_MARGIN;
+        let row_w = play_w + menu_w + BUTTON_GAP;
         let start_x = (params.viewport_width as f32 - row_w) / 2.0;
         vec![
             UiButton {
@@ -258,18 +271,18 @@ impl TitleScreen {
                 rect: UiRect {
                     x: start_x,
                     y,
-                    w: BUTTON_W,
-                    h: BUTTON_H,
+                    w: play_w,
+                    h: button_h,
                 },
             },
             UiButton {
                 action: ButtonAction::Menu,
                 label: "MENU",
                 rect: UiRect {
-                    x: start_x + BUTTON_W + BUTTON_GAP,
+                    x: start_x + play_w + BUTTON_GAP,
                     y,
-                    w: BUTTON_W,
-                    h: BUTTON_H,
+                    w: menu_w,
+                    h: button_h,
                 },
             },
         ]
@@ -363,15 +376,16 @@ impl TitleScreen {
         } else {
             (current + 1) % buttons.len()
         };
+        self.keyboard_focus_engaged = true;
         self.focus_visible = true;
         self.pressed_button = None;
         self.focused_button = buttons[next].action;
         true
     }
 
-    fn button_style(&self, action: ButtonAction) -> RectStyle {
+    fn button_style(&self, action: ButtonAction, focus_visible: bool) -> RectStyle {
         let pressed = self.pressed_button == Some(action);
-        let focused = self.focus_visible && action == self.focused_button;
+        let focused = focus_visible && action == self.focused_button;
         RectStyle {
             fill_color: if pressed {
                 [0.12, 0.16, 0.16, 0.9]
@@ -389,7 +403,17 @@ impl TitleScreen {
         }
     }
 
-    fn button_highlighted(&self, action: ButtonAction) -> bool {
-        self.pressed_button == Some(action) || (self.focus_visible && action == self.focused_button)
+    fn button_highlighted(&self, action: ButtonAction, focus_visible: bool) -> bool {
+        self.pressed_button == Some(action) || (focus_visible && action == self.focused_button)
+    }
+
+    fn render_focus_visible(&self, using_touch: bool) -> bool {
+        self.focus_visible && (self.keyboard_focus_engaged || !using_touch)
+    }
+
+    fn button_size(label: &str, text: &TextRenderer) -> (f32, f32) {
+        let w = (text.text_width(label, 1.0) + BUTTON_PAD_X * 2.0).round();
+        let h = (BUTTON_LABEL_H + BUTTON_PAD_Y * 2.0).round();
+        (w, h)
     }
 }
