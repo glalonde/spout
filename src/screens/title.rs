@@ -9,6 +9,7 @@ const BUTTON_GAP: f32 = 32.0;
 const BUTTON_BOTTOM_MARGIN: f32 = 12.0;
 const BUTTON_LABEL_H: f32 = 12.0;
 const BUTTON_SIDE_MARGIN: f32 = 14.0;
+const INSTRUCTIONS_BACKDROP_COLOR: [f32; 4] = [0.0, 0.01, 0.015, 0.92];
 
 #[derive(Debug)]
 pub struct TitleScreen {
@@ -46,7 +47,7 @@ pub struct TitleRenderFlags {
 pub struct TitleUiRenderContext<'a> {
     pub device: &'a wgpu::Device,
     pub encoder: &'a mut wgpu::CommandEncoder,
-    pub title_ui_view: &'a wgpu::TextureView,
+    pub target_view: &'a wgpu::TextureView,
     pub ui: &'a UiRenderer,
     pub params: &'a GameParams,
     pub text: &'a TextRenderer,
@@ -141,10 +142,10 @@ impl TitleScreen {
     pub fn prepare_ui(&self, ctx: TitleUiRenderContext<'_>) {
         let clear_color = if self.instructions_open {
             wgpu::Color {
-                r: 0.02,
-                g: 0.05,
-                b: 0.07,
-                a: 0.76,
+                r: INSTRUCTIONS_BACKDROP_COLOR[0] as f64,
+                g: INSTRUCTIONS_BACKDROP_COLOR[1] as f64,
+                b: INSTRUCTIONS_BACKDROP_COLOR[2] as f64,
+                a: INSTRUCTIONS_BACKDROP_COLOR[3] as f64,
             }
         } else {
             wgpu::Color::TRANSPARENT
@@ -153,7 +154,7 @@ impl TitleScreen {
             let _pass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("title_ui_clear"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: ctx.title_ui_view,
+                    view: ctx.target_view,
                     resolve_target: None,
                     depth_slice: None,
                     ops: wgpu::Operations {
@@ -176,7 +177,7 @@ impl TitleScreen {
             .map(|button| (button.rect, self.button_style(button.action, focus_visible)))
             .collect();
         ctx.ui
-            .draw_rects(ctx.device, ctx.encoder, ctx.title_ui_view, &rects);
+            .draw_rects(ctx.device, ctx.encoder, ctx.target_view, &rects);
 
         let mut texts: Vec<(&str, f32, f32, f32, [f32; 4])> = Vec::new();
         for button in &buttons {
@@ -217,7 +218,7 @@ impl TitleScreen {
         }
 
         ctx.text
-            .draw(ctx.device, ctx.encoder, ctx.title_ui_view, &texts);
+            .draw(ctx.device, ctx.encoder, ctx.target_view, &texts);
     }
 
     fn buttons(

@@ -104,6 +104,7 @@ impl TitleOverlay {
             bind_group_layouts: &[Some(&bgl)],
             immediate_size: 0,
         });
+        let apply_srgb = if surface_format.is_srgb() { 0.0 } else { 1.0 };
 
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("title_overlay"),
@@ -122,7 +123,10 @@ impl TitleOverlay {
                     blend: Some(wgpu::BlendState::ALPHA_BLENDING),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
-                compilation_options: Default::default(),
+                compilation_options: wgpu::PipelineCompilationOptions {
+                    constants: &[("apply_srgb", apply_srgb)],
+                    ..Default::default()
+                },
             }),
             primitive: wgpu::PrimitiveState {
                 topology: wgpu::PrimitiveTopology::TriangleStrip,
@@ -134,7 +138,7 @@ impl TitleOverlay {
             multiview_mask: None,
         });
 
-        TitleOverlay {
+        Self {
             pipeline,
             bind_group,
             uniform_buf,

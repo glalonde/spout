@@ -158,10 +158,6 @@ impl AppState {
         }
     }
 
-    fn is_title(&self) -> bool {
-        matches!(self, AppState::Title(_))
-    }
-
     fn is_playing(&self) -> bool {
         matches!(self, AppState::Playing(_))
     }
@@ -962,21 +958,6 @@ impl Spout {
         self.particle_system
             .render(&self.graphics.game_view_texture, &mut encoder);
 
-        if let AppState::Title(title) = &self.state {
-            title.prepare_ui(TitleUiRenderContext {
-                device,
-                encoder: &mut encoder,
-                title_ui_view: &self.graphics.title_ui_view,
-                ui: &self.graphics.ui,
-                params: &self.game_params,
-                text: &self.graphics.game_text,
-                flags: TitleRenderFlags {
-                    music_playing: self.audio.is_playing(),
-                    using_touch: self.collector.has_been_touched() || tap_restart_prompt(),
-                },
-            });
-        }
-
         // Ship — only during active gameplay or pause.
         if self.game_params.render_ship {
             let active_play = match &self.state {
@@ -997,16 +978,31 @@ impl Spout {
 
         self.draw_hud(device, &mut encoder);
 
-        // Blit game view → upscaled HDR → bloom → composite onto surface.
+        // Blit the game scene, bloom it, then composite to the surface.
         self.graphics.renderer.blit(
             &self.graphics.upscaled_view,
             &mut encoder,
             &mut self.graphics.staging_belt,
         );
         self.graphics.bloom.render(&mut encoder);
-        self.graphics.renderer.render(view, &mut encoder);
 
-        if self.state.is_title() {
+        if let AppState::Title(title) = &self.state {
+            title.prepare_ui(TitleUiRenderContext {
+                device,
+                encoder: &mut encoder,
+                target_view: &self.graphics.title_ui_view,
+                ui: &self.graphics.ui,
+                params: &self.game_params,
+                text: &self.graphics.game_text,
+                flags: TitleRenderFlags {
+                    music_playing: self.audio.is_playing(),
+                    using_touch: self.collector.has_been_touched() || tap_restart_prompt(),
+                },
+            });
+        }
+
+        self.graphics.renderer.render(view, &mut encoder);
+        if matches!(self.state, AppState::Title(_)) {
             self.graphics.title_overlay.render(view, &mut encoder);
         }
 

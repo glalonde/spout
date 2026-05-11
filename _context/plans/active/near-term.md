@@ -230,9 +230,10 @@ Tasks:
 - [x] Overlay shows controls (touch zones + keyboard) and objective in a few lines
 - [x] Tap-to-dismiss returns to title with no game-state side effects
 - [x] Style consistent with existing `TextRenderer` + game palette
-- [x] Render help overlay into a game-resolution texture and composite it
-      post-bloom with nearest integer scaling, so the small pixel font stays
-      sharp and does not glow.
+- [x] Render title/help UI through a low-resolution texture so buttons and
+      text share the same pixel grid and scaling as gameplay.
+- [x] Generate title-screen bloom from the scene, then render the help/menu UI
+      as a low-resolution post-composite overlay so bloom stays behind it.
 - [x] Use a bottom-right `X` close button inside the overlay instead of a
       textual close instruction.
 - [x] Replace the title-screen `?` affordance with boxed `PLAY` / `MENU`
