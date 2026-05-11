@@ -4,14 +4,17 @@ use spout::game_params;
 use spout::render;
 use spout::ship;
 use spout::text;
+use spout::title_overlay;
 use spout::touch_zone_indicator;
 use spout::ui;
 
 pub(crate) struct Graphics {
     pub(crate) game_view_texture: wgpu::TextureView,
+    pub(crate) title_ui_view: wgpu::TextureView,
     pub(crate) upscaled_view: wgpu::TextureView,
     pub(crate) bloom: bloom::Bloom,
     pub(crate) renderer: render::Render,
+    pub(crate) title_overlay: title_overlay::TitleOverlay,
     pub(crate) ship_renderer: ship::ShipRenderer,
     pub(crate) background: background::BackgroundRenderer,
     /// Renders into the game view (240x135) — pixel-perfect with terrain/particles.
@@ -37,6 +40,11 @@ impl Graphics {
             game_params.viewport_width,
             game_params.viewport_height,
         );
+        let title_ui_view = make_texture(
+            device,
+            game_params.viewport_width,
+            game_params.viewport_height,
+        );
         let upscaled_view = make_texture(device, config.width, config.height);
 
         let bloom = bloom::Bloom::new(
@@ -55,6 +63,15 @@ impl Graphics {
             &game_view_texture,
             &upscaled_view,
             bloom.bloom_view(),
+        );
+        let title_overlay = title_overlay::TitleOverlay::new(
+            device,
+            config.format,
+            &title_ui_view,
+            config.width,
+            config.height,
+            game_params.viewport_width,
+            game_params.viewport_height,
         );
         let ship_renderer = ship::ShipRenderer::init(device);
         let background = background::BackgroundRenderer::init(device, queue);
@@ -100,9 +117,11 @@ impl Graphics {
 
         Self {
             game_view_texture,
+            title_ui_view,
             upscaled_view,
             bloom,
             renderer,
+            title_overlay,
             ship_renderer,
             background,
             game_text,
@@ -132,6 +151,13 @@ impl Graphics {
         self.renderer
             .resize(config, device, &new_upscaled, self.bloom.bloom_view());
         self.upscaled_view = new_upscaled;
+        self.title_overlay.resize_with_game(
+            queue,
+            config.width,
+            config.height,
+            game_params.viewport_width,
+            game_params.viewport_height,
+        );
         self.touch_zone_indicator
             .resize(queue, config.width, config.height);
         #[cfg(debug_assertions)]

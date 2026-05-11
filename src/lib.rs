@@ -18,5 +18,6 @@ pub mod shader_util;
 pub mod ship;
 pub mod text;
 pub mod textured_quad;
+pub mod title_overlay;
 pub mod touch_zone_indicator;
 pub mod ui;

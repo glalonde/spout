@@ -18,9 +18,7 @@ use spout::scoring;
 use spout::ship;
 
 use graphics::Graphics;
-use screens::title::{
-    TitleAction, TitleBackdropRenderContext, TitleRenderFlags, TitleScreen, TitleUiRenderContext,
-};
+use screens::title::{TitleAction, TitleRenderFlags, TitleScreen, TitleUiRenderContext};
 
 /// Shortest signed angular distance from `current` to `target`, in [-π, π].
 fn angle_diff(target: f32, current: f32) -> f32 {
@@ -960,16 +958,6 @@ impl Spout {
         self.particle_system
             .render(&self.graphics.game_view_texture, &mut encoder);
 
-        if let AppState::Title(title) = &self.state {
-            title.prepare_bloom_backdrop(TitleBackdropRenderContext {
-                device,
-                encoder: &mut encoder,
-                target_view: &self.graphics.game_view_texture,
-                ui: &self.graphics.ui,
-                params: &self.game_params,
-            });
-        }
-
         // Ship — only during active gameplay or pause.
         if self.game_params.render_ship {
             let active_play = match &self.state {
@@ -990,7 +978,7 @@ impl Spout {
 
         self.draw_hud(device, &mut encoder);
 
-        // Blit the scene before title UI so buttons/text stay out of the bloom source.
+        // Blit the game scene, bloom it, then composite to the surface.
         self.graphics.renderer.blit(
             &self.graphics.upscaled_view,
             &mut encoder,
@@ -1002,7 +990,7 @@ impl Spout {
             title.prepare_ui(TitleUiRenderContext {
                 device,
                 encoder: &mut encoder,
-                target_view: &self.graphics.game_view_texture,
+                target_view: &self.graphics.title_ui_view,
                 ui: &self.graphics.ui,
                 params: &self.game_params,
                 text: &self.graphics.game_text,
@@ -1011,15 +999,12 @@ impl Spout {
                     using_touch: self.collector.has_been_touched() || tap_restart_prompt(),
                 },
             });
-
-            self.graphics.renderer.blit(
-                &self.graphics.upscaled_view,
-                &mut encoder,
-                &mut self.graphics.staging_belt,
-            );
         }
 
         self.graphics.renderer.render(view, &mut encoder);
+        if matches!(self.state, AppState::Title(_)) {
+            self.graphics.title_overlay.render(view, &mut encoder);
+        }
 
         // Touch-zone diagonal hint only during active gameplay, on Triangle
         // scheme, after the player has actually used touch this session.

@@ -54,14 +54,6 @@ pub struct TitleUiRenderContext<'a> {
     pub flags: TitleRenderFlags,
 }
 
-pub struct TitleBackdropRenderContext<'a> {
-    pub device: &'a wgpu::Device,
-    pub encoder: &'a mut wgpu::CommandEncoder,
-    pub target_view: &'a wgpu::TextureView,
-    pub ui: &'a UiRenderer,
-    pub params: &'a GameParams,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ButtonAction {
     Play,
@@ -147,20 +139,34 @@ impl TitleScreen {
         None
     }
 
-    pub fn prepare_bloom_backdrop(&self, ctx: TitleBackdropRenderContext<'_>) {
-        if !self.instructions_open {
-            return;
+    pub fn prepare_ui(&self, ctx: TitleUiRenderContext<'_>) {
+        let clear_color = if self.instructions_open {
+            wgpu::Color {
+                r: INSTRUCTIONS_BACKDROP_COLOR[0] as f64,
+                g: INSTRUCTIONS_BACKDROP_COLOR[1] as f64,
+                b: INSTRUCTIONS_BACKDROP_COLOR[2] as f64,
+                a: INSTRUCTIONS_BACKDROP_COLOR[3] as f64,
+            }
+        } else {
+            wgpu::Color::TRANSPARENT
+        };
+        {
+            let _pass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("title_ui_clear"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: ctx.target_view,
+                    resolve_target: None,
+                    depth_slice: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(clear_color),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                ..Default::default()
+            });
         }
 
-        ctx.ui.draw_rects(
-            ctx.device,
-            ctx.encoder,
-            ctx.target_view,
-            &[Self::instructions_backdrop(ctx.params)],
-        );
-    }
-
-    pub fn prepare_ui(&self, ctx: TitleUiRenderContext<'_>) {
         let button_color = [0.7, 0.78, 0.78, 1.0];
         let text_color = [0.82, 0.86, 0.82, 1.0];
         let accent_color = [0.9, 0.72, 0.48, 1.0];
@@ -213,22 +219,6 @@ impl TitleScreen {
 
         ctx.text
             .draw(ctx.device, ctx.encoder, ctx.target_view, &texts);
-    }
-
-    fn instructions_backdrop(params: &GameParams) -> (UiRect, RectStyle) {
-        (
-            UiRect {
-                x: 0.0,
-                y: 0.0,
-                w: params.viewport_width as f32,
-                h: params.viewport_height as f32,
-            },
-            RectStyle {
-                fill_color: INSTRUCTIONS_BACKDROP_COLOR,
-                outline_color: [0.0, 0.0, 0.0, 0.0],
-                outline_px: 0.0,
-            },
-        )
     }
 
     fn buttons(
