@@ -154,7 +154,7 @@ impl TitleScreen {
                     h: ctx.params.viewport_height as f32,
                 },
                 RectStyle {
-                    fill_color: [0.02, 0.05, 0.07, 0.76],
+                    fill_color: [0.01, 0.03, 0.04, 0.86],
                     outline_color: [0.0, 0.0, 0.0, 0.0],
                     outline_px: 0.0,
                 },
