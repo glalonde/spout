@@ -291,11 +291,11 @@ points; running out triggers game over. Adds pressure and gives each level
 a clear arc.
 
 Tasks:
-- [ ] Add `level_time_limit_seconds` to `LevelParams` (per-level override
+- [x] Add `level_time_limit_seconds` to `LevelParams` (per-level override
       possible later)
-- [ ] HUD countdown timer; visual emphasis as time runs low
-- [ ] On level transition: compute remaining time → bonus points
-- [ ] On expiry: game over (consider an "OUT OF TIME" overlay variant)
+- [x] HUD countdown timer; visual emphasis as time runs low
+- [x] On level transition: compute remaining time → bonus points
+- [x] On expiry: game over with a `TIME UP` overlay variant
 - [ ] Tune so early levels feel generous, later ones tighten
 
 ---

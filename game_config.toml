@@ -26,6 +26,9 @@ max_speed = 400.0
 
 [level_params]
 starting_terrain_health = 500
+# Per-level time-attack limit. Crossing into the next level awards 10 bonus
+# score points for each remaining whole/partial second and resets the countdown.
+level_time_limit_seconds = 60.0
 
 [visual_params]
 # Index into the particle color map palette (0–3).
