@@ -13,6 +13,8 @@ const BUTTON_LABEL_H: f32 = 12.0;
 pub struct TitleScreen {
     instructions_open: bool,
     focused_button: ButtonAction,
+    pressed_button: Option<ButtonAction>,
+    focus_visible: bool,
 }
 
 impl Default for TitleScreen {
@@ -20,6 +22,8 @@ impl Default for TitleScreen {
         Self {
             instructions_open: false,
             focused_button: ButtonAction::Play,
+            pressed_button: None,
+            focus_visible: true,
         }
     }
 }
@@ -62,30 +66,46 @@ impl TitleScreen {
         music_playing: bool,
         surface_size: (u32, u32),
     ) -> Option<TitleAction> {
+        if input.help_pressed() {
+            self.focus_visible = true;
+            self.pressed_button = None;
+            self.toggle_menu();
+            return None;
+        }
+
         let pointer_pressed = input.pointer_pressed();
-        let clicked_button = pointer_pressed.and_then(|point| {
-            self.button_at(
+        if let Some(point) = pointer_pressed {
+            self.focus_visible = false;
+            self.pressed_button = self.button_at(
                 point,
                 params,
                 text,
                 music_playing,
                 surface_size.0,
                 surface_size.1,
-            )
-        });
+            );
+        }
 
-        if input.help_pressed() {
-            self.toggle_menu();
+        if let Some(point) = input.pointer_released() {
+            self.focus_visible = false;
+            let pressed_button = self.pressed_button.take();
+            let released_button = self.button_at(
+                point,
+                params,
+                text,
+                music_playing,
+                surface_size.0,
+                surface_size.1,
+            );
+            if let (Some(pressed), Some(released)) = (pressed_button, released_button) {
+                if pressed == released {
+                    return self.activate_button(released);
+                }
+            }
             return None;
         }
 
-        if let Some(action) = clicked_button {
-            self.focused_button = action;
-            return self.activate_button(action);
-        } else if pointer_pressed.is_some() {
-            if self.instructions_open {
-                self.close_menu();
-            }
+        if pointer_pressed.is_some() {
             return None;
         }
 
@@ -93,6 +113,7 @@ impl TitleScreen {
         self.ensure_focus_visible(&buttons);
 
         if input.menu_cancel_pressed() && self.instructions_open {
+            self.focus_visible = true;
             self.close_menu();
             return None;
         }
@@ -102,6 +123,7 @@ impl TitleScreen {
         }
 
         if input.menu_confirm_pressed() {
+            self.focus_visible = true;
             return self.activate_button(self.focused_button);
         }
 
@@ -153,7 +175,7 @@ impl TitleScreen {
             let label_x =
                 button.rect.x + (button.rect.w - ctx.text.text_width(button.label, scale)) / 2.0;
             let label_y = button.rect.y + (button.rect.h - BUTTON_LABEL_H) / 2.0;
-            let color = if button.action == self.focused_button {
+            let color = if self.button_highlighted(button.action) {
                 accent_color
             } else {
                 button_color
@@ -287,6 +309,7 @@ impl TitleScreen {
     }
 
     fn toggle_menu(&mut self) {
+        self.pressed_button = None;
         if self.instructions_open {
             self.close_menu();
         } else {
@@ -296,6 +319,7 @@ impl TitleScreen {
     }
 
     fn close_menu(&mut self) {
+        self.pressed_button = None;
         self.instructions_open = false;
         self.focused_button = ButtonAction::Menu;
     }
@@ -339,24 +363,33 @@ impl TitleScreen {
         } else {
             (current + 1) % buttons.len()
         };
+        self.focus_visible = true;
+        self.pressed_button = None;
         self.focused_button = buttons[next].action;
         true
     }
 
     fn button_style(&self, action: ButtonAction) -> RectStyle {
-        let focused = action == self.focused_button;
+        let pressed = self.pressed_button == Some(action);
+        let focused = self.focus_visible && action == self.focused_button;
         RectStyle {
-            fill_color: if focused {
+            fill_color: if pressed {
+                [0.12, 0.16, 0.16, 0.9]
+            } else if focused {
                 [0.08, 0.12, 0.13, 0.78]
             } else {
                 [0.02, 0.05, 0.07, 0.68]
             },
-            outline_color: if focused {
+            outline_color: if pressed || focused {
                 [0.9, 0.72, 0.48, 1.0]
             } else {
                 [0.45, 0.57, 0.58, 0.92]
             },
-            outline_px: if focused { 2.0 } else { 1.0 },
+            outline_px: if pressed || focused { 2.0 } else { 1.0 },
         }
+    }
+
+    fn button_highlighted(&self, action: ButtonAction) -> bool {
+        self.pressed_button == Some(action) || (self.focus_visible && action == self.focused_button)
     }
 }

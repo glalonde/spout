@@ -78,6 +78,8 @@ mod tests {
         assert!(!state.menu_confirm);
         assert!(!state.menu_cancel);
         assert!(!state.touch_started);
+        assert!(state.pointer_pressed.is_none());
+        assert!(state.pointer_released.is_none());
     }
 
     #[test]
@@ -87,6 +89,8 @@ mod tests {
             rotate: -1.0,
             restart: true,
             touch_started: true,
+            pointer_pressed: Some(PointerPress { x: 12.0, y: 34.0 }),
+            pointer_released: Some(PointerPress { x: 56.0, y: 78.0 }),
             help: true,
             audio_next_track: true,
             audio_toggle: true,
@@ -115,6 +119,8 @@ mod tests {
         assert!(frame.menu_confirm_pressed());
         assert!(frame.menu_cancel_pressed());
         assert!(frame.touch_started());
+        assert!(frame.pointer_pressed().is_some());
+        assert!(frame.pointer_released().is_some());
         assert!(frame.thrust_started());
         assert!(frame.rotate_started());
     }
@@ -166,6 +172,21 @@ mod tests {
         let second = c.current_state();
         assert!(!second.audio_next_track);
         assert!(!second.audio_toggle);
+    }
+
+    #[test]
+    fn pointer_press_and_release_are_one_shot() {
+        let mut c = InputCollector::default();
+        c.pointer_press = Some(PointerPress { x: 12.0, y: 34.0 });
+        c.pointer_release = Some(PointerPress { x: 56.0, y: 78.0 });
+
+        let first = c.current_state();
+        assert_eq!(first.pointer_pressed.map(|point| point.x), Some(12.0));
+        assert_eq!(first.pointer_released.map(|point| point.y), Some(78.0));
+
+        let second = c.current_state();
+        assert!(second.pointer_pressed.is_none());
+        assert!(second.pointer_released.is_none());
     }
 
     #[test]
@@ -234,6 +255,20 @@ mod tests {
             let state = c.current_state();
             assert_eq!(state.thrust, 1.0);
             assert_eq!(state.rotate, 0.0);
+        }
+
+        #[test]
+        fn touch_end_reports_pointer_release_once() {
+            let mut c = touch_collector(200.0, 100.0);
+            c.touch.started(1, 10.0, 50.0);
+            let _ = c.current_state();
+            c.touch.ended(1, 12.0, 52.0);
+
+            let first = c.current_state();
+            assert_eq!(first.pointer_released.map(|point| point.x), Some(12.0));
+
+            let second = c.current_state();
+            assert!(second.pointer_released.is_none());
         }
 
         #[test]
@@ -440,6 +475,7 @@ pub struct InputState {
     pub restart: bool,
     pub touch_started: bool,
     pub pointer_pressed: Option<PointerPress>,
+    pub pointer_released: Option<PointerPress>,
     pub help: bool,
     pub audio_next_track: bool,
     pub audio_toggle: bool,
@@ -538,6 +574,10 @@ impl InputFrame {
         self.current.pointer_pressed
     }
 
+    pub fn pointer_released(&self) -> Option<PointerPress> {
+        self.current.pointer_released
+    }
+
     pub fn thrust_started(&self) -> bool {
         self.current.thrust > 0.0 && self.previous.thrust == 0.0
     }
@@ -591,6 +631,9 @@ struct TouchTracker {
     touch_started: bool,
     touch_started_x: f32,
     touch_started_y: f32,
+    touch_ended: bool,
+    touch_ended_x: f32,
+    touch_ended_y: f32,
     /// Sticky "any touch event has occurred this session" flag — used to
     /// detect that the player is on a touch device so we can show the
     /// touch-zone hint. Never resets after the first touch.
@@ -636,7 +679,10 @@ impl TouchTracker {
         }
     }
 
-    fn ended(&mut self, id: TouchId) {
+    fn ended(&mut self, id: TouchId, x: f32, y: f32) {
+        self.touch_ended = true;
+        self.touch_ended_x = x;
+        self.touch_ended_y = y;
         if Some(id) == self.thrust_id {
             self.thrust_id = None;
         }
@@ -646,6 +692,19 @@ impl TouchTracker {
             self.rotate_anchor_y = 0.0;
             self.rotate_x = 0.0;
             self.rotate_y = 0.0;
+        }
+    }
+
+    fn consume_touch_ended(&mut self) -> Option<PointerPress> {
+        let ended = self.touch_ended;
+        self.touch_ended = false;
+        if ended {
+            Some(PointerPress {
+                x: self.touch_ended_x,
+                y: self.touch_ended_y,
+            })
+        } else {
+            None
         }
     }
 
@@ -729,6 +788,7 @@ pub struct InputCollector {
     held_menu_confirm: bool,
     held_menu_cancel: bool,
     pointer_press: Option<PointerPress>,
+    pointer_release: Option<PointerPress>,
     cursor_x: f32,
     cursor_y: f32,
 
@@ -770,6 +830,7 @@ impl Default for InputCollector {
             held_menu_confirm: false,
             held_menu_cancel: false,
             pointer_press: None,
+            pointer_release: None,
             cursor_x: 0.0,
             cursor_y: 0.0,
             touch_scheme: TouchControlScheme::Drag,
@@ -885,7 +946,11 @@ impl InputCollector {
                 let changed = event.changed_touches();
                 for i in 0..changed.length() {
                     if let Some(touch) = changed.get(i) {
-                        s.ended(i64::from(touch.identifier()));
+                        s.ended(
+                            i64::from(touch.identifier()),
+                            touch.client_x() as f32,
+                            touch.client_y() as f32,
+                        );
                     }
                 }
             });
@@ -964,6 +1029,15 @@ impl InputCollector {
                     y: self.cursor_y,
                 });
             }
+            winit::event::WindowEvent::MouseInput { state, button, .. }
+                if *state == winit::event::ElementState::Released
+                    && *button == winit::event::MouseButton::Left =>
+            {
+                self.pointer_release = Some(PointerPress {
+                    x: self.cursor_x,
+                    y: self.cursor_y,
+                });
+            }
             _ => {}
         }
 
@@ -978,11 +1052,10 @@ impl InputCollector {
             let id = touch.id as i64;
             match touch.phase {
                 TouchPhase::Started => {
-                    self.pointer_press = Some(PointerPress { x, y });
                     self.touch.started(id, x, y);
                 }
                 TouchPhase::Moved => self.touch.moved(id, x, y),
-                TouchPhase::Ended | TouchPhase::Cancelled => self.touch.ended(id),
+                TouchPhase::Ended | TouchPhase::Cancelled => self.touch.ended(id, x, y),
             }
         }
     }
@@ -997,6 +1070,7 @@ impl InputCollector {
         let audio_toggle = self.audio_toggle_requested;
         self.audio_toggle_requested = false;
         let mut pointer_pressed = self.pointer_press.take();
+        let mut pointer_released = self.pointer_release.take();
 
         let keyboard_thrust = if self.held_thrust { 1.0 } else { 0.0 };
         let keyboard_rotate = match (self.held_left, self.held_right) {
@@ -1011,6 +1085,10 @@ impl InputCollector {
             if pointer_pressed.is_none() {
                 pointer_pressed = touch_press;
             }
+            let touch_release = self.touch.consume_touch_ended();
+            if pointer_released.is_none() {
+                pointer_released = touch_release;
+            }
             let touch_started = touch_press.is_some();
             let touch_input = self.touch.current_input(self.touch_scheme);
             (touch_started, touch_input)
@@ -1022,6 +1100,10 @@ impl InputCollector {
             let touch_press = touch.consume_touch_started();
             if pointer_pressed.is_none() {
                 pointer_pressed = touch_press;
+            }
+            let touch_release = touch.consume_touch_ended();
+            if pointer_released.is_none() {
+                pointer_released = touch_release;
             }
             let touch_started = touch_press.is_some();
             let touch_input = touch.current_input(self.touch_scheme);
@@ -1048,6 +1130,7 @@ impl InputCollector {
             restart,
             touch_started,
             pointer_pressed,
+            pointer_released,
             help,
             audio_next_track,
             audio_toggle,
