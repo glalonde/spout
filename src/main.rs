@@ -15,6 +15,7 @@ use spout::input::{InputCollector, InputState, PointerPress};
 use spout::level_manager;
 use spout::particles;
 use spout::render;
+use spout::scoring;
 use spout::ship;
 use spout::text;
 use spout::title_overlay;
@@ -32,46 +33,6 @@ const LEVEL_BUDGET: Duration = Duration::from_nanos(3_333_333);
 /// Maximum physics step. Caps dt so that GPU stalls or level-loading pauses
 /// don't cause the ship and particles to simulate a huge time jump.
 const MAX_FRAME_DT: Duration = Duration::from_millis(50);
-const TIME_BONUS_SCORE_PER_SECOND: i32 = 10;
-
-fn level_time_limit_duration(params: &game_params::GameParams) -> Duration {
-    let seconds = params.level_params.level_time_limit_seconds;
-    if seconds.is_finite() && seconds > 0.0 {
-        Duration::from_secs_f32(seconds)
-    } else {
-        Duration::from_secs_f32(game_params::LevelParams::default().level_time_limit_seconds)
-    }
-}
-
-fn ceil_duration_seconds(duration: Duration) -> u64 {
-    duration
-        .as_secs()
-        .saturating_add(u64::from(duration.subsec_nanos() > 0))
-}
-
-fn format_level_timer(remaining: Duration) -> String {
-    let total_seconds = ceil_duration_seconds(remaining);
-    let minutes = total_seconds / 60;
-    let seconds = total_seconds % 60;
-    format!("{minutes}:{seconds:02}")
-}
-
-fn time_bonus_score(remaining: Duration) -> i32 {
-    let seconds = ceil_duration_seconds(remaining).min(i32::MAX as u64) as i32;
-    seconds.saturating_mul(TIME_BONUS_SCORE_PER_SECOND)
-}
-
-fn level_index_for_progress(progress_height: i32, level_height: u32) -> i32 {
-    if level_height == 0 {
-        0
-    } else {
-        progress_height.max(0) / level_height as i32
-    }
-}
-
-fn combined_score(progress_height: i32, time_bonus_score: i32) -> i32 {
-    progress_height.saturating_add(time_bonus_score)
-}
 
 fn restart_prompt() -> &'static str {
     if tap_restart_prompt() {
@@ -682,19 +643,22 @@ impl Spout {
     }
 
     fn level_timer_remaining(&self) -> Duration {
-        level_time_limit_duration(&self.game_params).saturating_sub(self.state.level_elapsed)
+        scoring::level_time_limit_duration(&self.game_params)
+            .saturating_sub(self.state.level_elapsed)
     }
 
     fn commit_progress_height(&mut self, height: f32) {
         let confirmed_height = height.floor() as i32;
         self.state.progress_height = std::cmp::max(confirmed_height, self.state.progress_height);
 
-        let next_level_index =
-            level_index_for_progress(self.state.progress_height, self.game_params.level_height);
+        let next_level_index = scoring::level_index_for_progress(
+            self.state.progress_height,
+            self.game_params.level_height,
+        );
         if next_level_index > self.state.current_level_index {
             let levels_crossed = next_level_index - self.state.current_level_index;
-            let bonus =
-                time_bonus_score(self.level_timer_remaining()).saturating_mul(levels_crossed);
+            let bonus = scoring::time_bonus_score(self.level_timer_remaining())
+                .saturating_mul(levels_crossed);
             self.state.time_bonus_score = self.state.time_bonus_score.saturating_add(bonus);
             self.state.current_level_index = next_level_index;
             self.state.level_elapsed = Duration::ZERO;
@@ -705,7 +669,8 @@ impl Spout {
             );
         }
 
-        self.state.score = combined_score(self.state.progress_height, self.state.time_bonus_score);
+        self.state.score =
+            scoring::combined_score(self.state.progress_height, self.state.time_bonus_score);
     }
 
     fn update_camera_from_live_ship(&mut self) {
@@ -725,7 +690,7 @@ impl Spout {
             return;
         }
 
-        if self.state.level_elapsed >= level_time_limit_duration(&self.game_params) {
+        if self.state.level_elapsed >= scoring::level_time_limit_duration(&self.game_params) {
             self.state.dead = true;
             self.state.time_expired = true;
             self.state.explosion_pending = true;
@@ -1232,7 +1197,7 @@ impl Spout {
         if self.state.mode == GameMode::Playing {
             let score_text = format!("{}", self.state.score);
             let level_text = format!("LV{}", self.state.current_level_index + 1);
-            let timer_text = format_level_timer(self.level_timer_remaining());
+            let timer_text = scoring::format_level_timer(self.level_timer_remaining());
             // Held below 1.0 so bloom contribution stays well under what the
             // particle/ship neon hits when stacked. With bloom_threshold=0.4
             // and soft-knee, value v → bloom contribution v*(v-0.4)/v = v-0.4.
@@ -1415,13 +1380,8 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        angle_diff, ceil_duration_seconds, combined_score, format_level_timer,
-        level_index_for_progress, level_time_limit_duration, record_collision_motion,
-        time_bonus_score, PendingCollisionSegment,
-    };
+    use super::{angle_diff, record_collision_motion, PendingCollisionSegment};
     use std::f32::consts::PI;
-    use std::time::Duration;
 
     fn approx(a: f32, b: f32) -> bool {
         (a - b).abs() < 1e-5
@@ -1481,40 +1441,6 @@ mod tests {
                 diff
             );
         }
-    }
-
-    #[test]
-    fn level_timer_display_rounds_up() {
-        assert_eq!(format_level_timer(Duration::from_secs(120)), "2:00");
-        assert_eq!(format_level_timer(Duration::from_millis(61_001)), "1:02");
-        assert_eq!(format_level_timer(Duration::from_millis(1)), "0:01");
-        assert_eq!(format_level_timer(Duration::ZERO), "0:00");
-    }
-
-    #[test]
-    fn time_bonus_uses_remaining_seconds_ceiling() {
-        assert_eq!(ceil_duration_seconds(Duration::from_millis(1)), 1);
-        assert_eq!(time_bonus_score(Duration::from_millis(1)), 10);
-        assert_eq!(time_bonus_score(Duration::from_secs(42)), 420);
-    }
-
-    #[test]
-    fn invalid_level_time_limit_falls_back_to_default() {
-        let mut params = super::game_params::GameParams::default();
-        params.level_params.level_time_limit_seconds = f32::NAN;
-        assert_eq!(level_time_limit_duration(&params), Duration::from_secs(120));
-
-        params.level_params.level_time_limit_seconds = -5.0;
-        assert_eq!(level_time_limit_duration(&params), Duration::from_secs(120));
-    }
-
-    #[test]
-    fn level_index_uses_progress_height_not_bonus_score() {
-        assert_eq!(level_index_for_progress(-10, 100), 0);
-        assert_eq!(level_index_for_progress(99, 100), 0);
-        assert_eq!(level_index_for_progress(100, 100), 1);
-        assert_eq!(level_index_for_progress(250, 100), 2);
-        assert_eq!(combined_score(105, 900), 1005);
     }
 
     #[test]
