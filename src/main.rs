@@ -165,6 +165,22 @@ impl AppState {
     fn is_playing(&self) -> bool {
         matches!(self, AppState::Playing(_))
     }
+
+    fn resolve_collision_result(
+        &mut self,
+        params: &game_params::GameParams,
+        result: collision::CollisionResult,
+    ) -> Option<DeathCause> {
+        match self {
+            AppState::Playing(play) | AppState::Paused(play) => {
+                play.resolve_collision_result(params, result)
+            }
+            AppState::Title(_)
+            | AppState::Settings
+            | AppState::Leaderboard
+            | AppState::GameOver { .. } => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -501,14 +517,14 @@ impl Spout {
         log::info!("Game started");
     }
 
-    /// Take the current `Play` out of `AppState::Playing` and move it into
-    /// `AppState::GameOver`, queueing the explosion burst for the next frame.
+    /// Take the current `Play` session and move it into `AppState::GameOver`,
+    /// queueing the explosion burst for the next frame.
     fn transition_to_game_over(&mut self, cause: DeathCause) {
         let prev = std::mem::take(&mut self.state);
         let mut play = match prev {
-            AppState::Playing(p) => p,
+            AppState::Playing(p) | AppState::Paused(p) => p,
             other => {
-                // Shouldn't happen — only call this from a Playing context.
+                // Shouldn't happen — only call this from an active play session.
                 self.state = other;
                 return;
             }
@@ -561,19 +577,17 @@ impl Spout {
         }
     }
 
-    /// Poll last frame's GPU collision readback. If it returned a hit, the
-    /// `Play` records the impact and we transition to `GameOver` here so the
-    /// rest of `update_phase` sees the new state.
+    /// Poll last frame's GPU collision readback. Results still resolve while
+    /// paused so in-flight collision segments do not block future dispatches
+    /// after unpausing.
     fn resolve_pending_collision(&mut self) {
-        let collision_death = if let Some(result) = self.collision_detector.poll_result() {
-            if let AppState::Playing(play) = &mut self.state {
-                play.resolve_collision_result(&self.game_params, result)
-            } else {
-                None
-            }
-        } else {
-            None
+        let Some(result) = self.collision_detector.poll_result() else {
+            return;
         };
+
+        let collision_death = self
+            .state
+            .resolve_collision_result(&self.game_params, result);
         if let Some(cause) = collision_death {
             self.transition_to_game_over(cause);
         }
@@ -1166,7 +1180,7 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::{angle_diff, record_collision_motion, PendingCollisionSegment};
+    use super::{angle_diff, record_collision_motion, AppState, PendingCollisionSegment, Play};
     use std::f32::consts::PI;
 
     fn approx(a: f32, b: f32) -> bool {
@@ -1284,5 +1298,40 @@ mod tests {
         assert!(approx(segment.prev_ship.position[1], 0.0));
         assert!(approx(segment.next_ship.position[0], 4.0));
         assert!(approx(segment.next_ship.position[1], 8.0));
+    }
+
+    #[test]
+    fn paused_state_resolves_in_flight_collision_result() {
+        let params = spout::game_params::GameParams::default();
+        let mut prev_ship = spout::ship::ShipState::default();
+        prev_ship.position = [10.0, 20.0];
+        let mut next_ship = prev_ship;
+        next_ship.position = [10.0, 42.0];
+
+        let mut state = AppState::Paused(Play {
+            ship_state: next_ship,
+            prev_ship_state: prev_ship,
+            in_flight_collision_segment: Some(PendingCollisionSegment {
+                prev_ship,
+                next_ship,
+            }),
+            ..Default::default()
+        });
+
+        let death = state.resolve_collision_result(
+            &params,
+            spout::collision::CollisionResult {
+                hit: false,
+                normal: [0.0, 0.0],
+                impact_t: 1.0,
+            },
+        );
+
+        assert_eq!(death, None);
+        let AppState::Paused(play) = state else {
+            panic!("state should remain paused after a clean collision result");
+        };
+        assert!(play.in_flight_collision_segment.is_none());
+        assert_eq!(play.progress_height, 42);
     }
 }
