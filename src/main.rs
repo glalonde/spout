@@ -1,8 +1,7 @@
 //! Spout entry point: game loop, state machine, and winit event handling.
 
+mod app;
 mod audio;
-#[path = "../examples/framework.rs"]
-mod framework;
 
 use std::time::Duration;
 
@@ -835,18 +834,7 @@ impl Spout {
     }
 }
 
-impl framework::Example for Spout {
-    fn required_limits() -> wgpu::Limits {
-        wgpu::Limits::downlevel_defaults()
-    }
-
-    fn required_downlevel_capabilities() -> wgpu::DownlevelCapabilities {
-        wgpu::DownlevelCapabilities {
-            flags: wgpu::DownlevelFlags::COMPUTE_SHADERS,
-            ..Default::default()
-        }
-    }
-
+impl Spout {
     fn init(
         config: &wgpu::SurfaceConfiguration,
         adapter: &wgpu::Adapter,
@@ -1082,7 +1070,6 @@ impl framework::Example for Spout {
         view: &wgpu::TextureView,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        _spawner: &framework::Spawner,
         window: &winit::window::Window,
     ) {
         let cpu_start = Instant::now();
@@ -1423,7 +1410,7 @@ fn make_texture(device: &wgpu::Device, width: u32, height: u32) -> wgpu::Texture
 }
 
 fn main() {
-    framework::run::<Spout>("Spout");
+    app::run("Spout");
 }
 
 #[cfg(test)]
