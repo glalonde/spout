@@ -71,7 +71,15 @@ mod tests {
         assert!(!state.restart);
         assert!(!state.audio_next_track);
         assert!(!state.audio_toggle);
+        assert!(!state.menu_up);
+        assert!(!state.menu_down);
+        assert!(!state.menu_left);
+        assert!(!state.menu_right);
+        assert!(!state.menu_confirm);
+        assert!(!state.menu_cancel);
         assert!(!state.touch_started);
+        assert!(state.pointer_pressed.is_none());
+        assert!(state.pointer_released.is_none());
     }
 
     #[test]
@@ -81,9 +89,17 @@ mod tests {
             rotate: -1.0,
             restart: true,
             touch_started: true,
+            pointer_pressed: Some(PointerPress { x: 12.0, y: 34.0 }),
+            pointer_released: Some(PointerPress { x: 56.0, y: 78.0 }),
             help: true,
             audio_next_track: true,
             audio_toggle: true,
+            menu_up: true,
+            menu_down: true,
+            menu_left: true,
+            menu_right: true,
+            menu_confirm: true,
+            menu_cancel: true,
             pause: true,
             fullscreen: true,
             ..Default::default()
@@ -96,7 +112,15 @@ mod tests {
         assert!(frame.help_pressed());
         assert!(frame.audio_next_track_pressed());
         assert!(frame.audio_toggle_pressed());
+        assert!(frame.menu_up_pressed());
+        assert!(frame.menu_down_pressed());
+        assert!(frame.menu_left_pressed());
+        assert!(frame.menu_right_pressed());
+        assert!(frame.menu_confirm_pressed());
+        assert!(frame.menu_cancel_pressed());
         assert!(frame.touch_started());
+        assert!(frame.pointer_pressed().is_some());
+        assert!(frame.pointer_released().is_some());
         assert!(frame.thrust_started());
         assert!(frame.rotate_started());
     }
@@ -110,6 +134,12 @@ mod tests {
             fullscreen: true,
             audio_next_track: true,
             audio_toggle: true,
+            menu_up: true,
+            menu_down: true,
+            menu_left: true,
+            menu_right: true,
+            menu_confirm: true,
+            menu_cancel: true,
             ..Default::default()
         };
         let previous = current;
@@ -119,6 +149,12 @@ mod tests {
         assert!(!frame.fullscreen_pressed());
         assert!(!frame.audio_next_track_pressed());
         assert!(!frame.audio_toggle_pressed());
+        assert!(!frame.menu_up_pressed());
+        assert!(!frame.menu_down_pressed());
+        assert!(!frame.menu_left_pressed());
+        assert!(!frame.menu_right_pressed());
+        assert!(!frame.menu_confirm_pressed());
+        assert!(!frame.menu_cancel_pressed());
         assert!(!frame.thrust_started());
         assert!(!frame.rotate_started());
     }
@@ -136,6 +172,33 @@ mod tests {
         let second = c.current_state();
         assert!(!second.audio_next_track);
         assert!(!second.audio_toggle);
+    }
+
+    #[test]
+    fn pointer_press_and_release_are_one_shot() {
+        let mut c = InputCollector::default();
+        c.pointer_press = Some(PointerPress { x: 12.0, y: 34.0 });
+        c.pointer_release = Some(PointerPress { x: 56.0, y: 78.0 });
+
+        let first = c.current_state();
+        assert_eq!(first.pointer_pressed.map(|point| point.x), Some(12.0));
+        assert_eq!(first.pointer_released.map(|point| point.y), Some(78.0));
+
+        let second = c.current_state();
+        assert!(second.pointer_pressed.is_none());
+        assert!(second.pointer_released.is_none());
+    }
+
+    #[test]
+    fn css_touch_position_maps_to_backing_pixels() {
+        let point =
+            css_to_surface_point((110.0, 65.0), (10.0, 15.0), (200.0, 100.0), (400.0, 300.0))
+                .expect("inside canvas rect");
+
+        assert_eq!(point.x, 200.0);
+        assert_eq!(point.y, 150.0);
+        assert_eq!(point.surface_width, 400.0);
+        assert_eq!(point.surface_height, 300.0);
     }
 
     #[test]
@@ -164,11 +227,56 @@ mod tests {
     }
 
     #[test]
+    fn keyboard_arrow_thrust() {
+        let mut c = InputCollector::default();
+        c.held_arrow_thrust = true;
+        let state = c.current_state();
+        assert_eq!(state.thrust, 1.0);
+        assert_eq!(state.rotate, 0.0);
+    }
+
+    #[test]
+    fn keyboard_arrow_rotate_left() {
+        let mut c = InputCollector::default();
+        c.held_arrow_left = true;
+        let state = c.current_state();
+        assert_eq!(state.thrust, 0.0);
+        assert_eq!(state.rotate, 1.0);
+    }
+
+    #[test]
+    fn keyboard_arrow_rotate_right() {
+        let mut c = InputCollector::default();
+        c.held_arrow_right = true;
+        assert_eq!(c.current_state().rotate, -1.0);
+    }
+
+    #[test]
     fn keyboard_left_and_right_cancel() {
         let mut c = InputCollector::default();
         c.held_left = true;
         c.held_right = true;
         assert_eq!(c.current_state().rotate, 0.0);
+    }
+
+    #[test]
+    fn keyboard_alternate_thrust_bindings_are_independent() {
+        let mut c = InputCollector::default();
+        c.held_thrust = true;
+        c.held_arrow_thrust = true;
+
+        c.held_thrust = false;
+        assert_eq!(c.current_state().thrust, 1.0);
+    }
+
+    #[test]
+    fn keyboard_alternate_rotate_bindings_are_independent() {
+        let mut c = InputCollector::default();
+        c.held_left = true;
+        c.held_arrow_left = true;
+
+        c.held_left = false;
+        assert_eq!(c.current_state().rotate, 1.0);
     }
 
     #[test]
@@ -204,6 +312,20 @@ mod tests {
             let state = c.current_state();
             assert_eq!(state.thrust, 1.0);
             assert_eq!(state.rotate, 0.0);
+        }
+
+        #[test]
+        fn touch_end_reports_pointer_release_once() {
+            let mut c = touch_collector(200.0, 100.0);
+            c.touch.started(1, 10.0, 50.0);
+            let _ = c.current_state();
+            c.touch.ended(1, 12.0, 52.0);
+
+            let first = c.current_state();
+            assert_eq!(first.pointer_released.map(|point| point.x), Some(12.0));
+
+            let second = c.current_state();
+            assert!(second.pointer_released.is_none());
         }
 
         #[test]
@@ -410,12 +532,21 @@ pub struct InputState {
     pub restart: bool,
     pub touch_started: bool,
     pub pointer_pressed: Option<PointerPress>,
+    pub pointer_released: Option<PointerPress>,
     pub help: bool,
     pub audio_next_track: bool,
     pub audio_toggle: bool,
 
     pub pause: bool,
     pub fullscreen: bool,
+
+    // Menu controls (keyboard/gamepad-style, edge-triggered by InputFrame):
+    pub menu_up: bool,
+    pub menu_down: bool,
+    pub menu_left: bool,
+    pub menu_right: bool,
+    pub menu_confirm: bool,
+    pub menu_cancel: bool,
 
     // Camera controls (debug, keyboard-only):
     pub cam_in: bool,
@@ -468,12 +599,40 @@ impl InputFrame {
         self.current.audio_toggle && !self.previous.audio_toggle
     }
 
+    pub fn menu_up_pressed(&self) -> bool {
+        self.current.menu_up && !self.previous.menu_up
+    }
+
+    pub fn menu_down_pressed(&self) -> bool {
+        self.current.menu_down && !self.previous.menu_down
+    }
+
+    pub fn menu_left_pressed(&self) -> bool {
+        self.current.menu_left && !self.previous.menu_left
+    }
+
+    pub fn menu_right_pressed(&self) -> bool {
+        self.current.menu_right && !self.previous.menu_right
+    }
+
+    pub fn menu_confirm_pressed(&self) -> bool {
+        self.current.menu_confirm && !self.previous.menu_confirm
+    }
+
+    pub fn menu_cancel_pressed(&self) -> bool {
+        self.current.menu_cancel && !self.previous.menu_cancel
+    }
+
     pub fn touch_started(&self) -> bool {
         self.current.touch_started
     }
 
     pub fn pointer_pressed(&self) -> Option<PointerPress> {
         self.current.pointer_pressed
+    }
+
+    pub fn pointer_released(&self) -> Option<PointerPress> {
+        self.current.pointer_released
     }
 
     pub fn thrust_started(&self) -> bool {
@@ -529,6 +688,9 @@ struct TouchTracker {
     touch_started: bool,
     touch_started_x: f32,
     touch_started_y: f32,
+    touch_ended: bool,
+    touch_ended_x: f32,
+    touch_ended_y: f32,
     /// Sticky "any touch event has occurred this session" flag — used to
     /// detect that the player is on a touch device so we can show the
     /// touch-zone hint. Never resets after the first touch.
@@ -574,7 +736,10 @@ impl TouchTracker {
         }
     }
 
-    fn ended(&mut self, id: TouchId) {
+    fn ended(&mut self, id: TouchId, x: f32, y: f32) {
+        self.touch_ended = true;
+        self.touch_ended_x = x;
+        self.touch_ended_y = y;
         if Some(id) == self.thrust_id {
             self.thrust_id = None;
         }
@@ -584,6 +749,19 @@ impl TouchTracker {
             self.rotate_anchor_y = 0.0;
             self.rotate_x = 0.0;
             self.rotate_y = 0.0;
+        }
+    }
+
+    fn consume_touch_ended(&mut self) -> Option<PointerPress> {
+        let ended = self.touch_ended;
+        self.touch_ended = false;
+        if ended {
+            Some(PointerPress {
+                x: self.touch_ended_x,
+                y: self.touch_ended_y,
+            })
+        } else {
+            None
         }
     }
 
@@ -646,6 +824,9 @@ pub struct InputCollector {
     held_thrust: bool,
     held_left: bool,
     held_right: bool,
+    held_arrow_thrust: bool,
+    held_arrow_left: bool,
+    held_arrow_right: bool,
     held_pause: bool,
     held_fullscreen: bool,
     held_cam_in: bool,
@@ -660,7 +841,14 @@ pub struct InputCollector {
     help_requested: bool,
     audio_next_track_requested: bool,
     audio_toggle_requested: bool,
+    held_menu_up: bool,
+    held_menu_down: bool,
+    held_menu_left: bool,
+    held_menu_right: bool,
+    held_menu_confirm: bool,
+    held_menu_cancel: bool,
     pointer_press: Option<PointerPress>,
+    pointer_release: Option<PointerPress>,
     cursor_x: f32,
     cursor_y: f32,
 
@@ -681,6 +869,9 @@ impl Default for InputCollector {
             held_thrust: false,
             held_left: false,
             held_right: false,
+            held_arrow_thrust: false,
+            held_arrow_left: false,
+            held_arrow_right: false,
             held_pause: false,
             held_fullscreen: false,
             held_cam_in: false,
@@ -695,7 +886,14 @@ impl Default for InputCollector {
             help_requested: false,
             audio_next_track_requested: false,
             audio_toggle_requested: false,
+            held_menu_up: false,
+            held_menu_down: false,
+            held_menu_left: false,
+            held_menu_right: false,
+            held_menu_confirm: false,
+            held_menu_cancel: false,
             pointer_press: None,
+            pointer_release: None,
             cursor_x: 0.0,
             cursor_y: 0.0,
             touch_scheme: TouchControlScheme::Drag,
@@ -756,18 +954,16 @@ impl InputCollector {
             let canvas_ref = canvas.clone();
             let cb = Closure::<dyn FnMut(_)>::new(move |event: web_sys::TouchEvent| {
                 event.prevent_default();
-                let canvas_width = canvas_ref.client_width() as f32;
-                let canvas_height = canvas_ref.client_height() as f32;
                 let mut s = state.borrow_mut();
-                s.set_surface_width(canvas_width);
-                s.set_surface_height(canvas_height);
                 let changed = event.changed_touches();
                 for i in 0..changed.length() {
                     if let Some(touch) = changed.get(i) {
-                        let x = touch.client_x() as f32;
-                        let y = touch.client_y() as f32;
-                        let id = touch.identifier();
-                        s.started(i64::from(id), x, y);
+                        let Some(point) = canvas_touch_point(&canvas_ref, &touch) else {
+                            continue;
+                        };
+                        s.set_surface_width(point.surface_width);
+                        s.set_surface_height(point.surface_height);
+                        s.started(i64::from(touch.identifier()), point.x, point.y);
                     }
                 }
             });
@@ -781,17 +977,17 @@ impl InputCollector {
         // touchmove: update rotate_x if the rotate touch moved.
         {
             let state = std::rc::Rc::clone(&self.wasm_touch);
+            let canvas_ref = canvas.clone();
             let cb = Closure::<dyn FnMut(_)>::new(move |event: web_sys::TouchEvent| {
                 event.prevent_default();
                 let mut s = state.borrow_mut();
                 let changed = event.changed_touches();
                 for i in 0..changed.length() {
                     if let Some(touch) = changed.get(i) {
-                        s.moved(
-                            i64::from(touch.identifier()),
-                            touch.client_x() as f32,
-                            touch.client_y() as f32,
-                        );
+                        let Some(point) = canvas_touch_point(&canvas_ref, &touch) else {
+                            continue;
+                        };
+                        s.moved(i64::from(touch.identifier()), point.x, point.y);
                     }
                 }
             });
@@ -805,13 +1001,17 @@ impl InputCollector {
         // touchend + touchcancel: release whichever zone(s) ended.
         {
             let state = std::rc::Rc::clone(&self.wasm_touch);
+            let canvas_ref = canvas.clone();
             let cb = Closure::<dyn FnMut(_)>::new(move |event: web_sys::TouchEvent| {
                 event.prevent_default();
                 let mut s = state.borrow_mut();
                 let changed = event.changed_touches();
                 for i in 0..changed.length() {
                     if let Some(touch) = changed.get(i) {
-                        s.ended(i64::from(touch.identifier()));
+                        let Some(point) = canvas_touch_point(&canvas_ref, &touch) else {
+                            continue;
+                        };
+                        s.ended(i64::from(touch.identifier()), point.x, point.y);
                     }
                 }
             });
@@ -864,6 +1064,23 @@ impl InputCollector {
                 KeyCode::KeyT if pressed => self.audio_next_track_requested = true,
                 KeyCode::KeyY if pressed => self.audio_toggle_requested = true,
 
+                // Menu navigation
+                KeyCode::ArrowUp => {
+                    self.held_arrow_thrust = pressed;
+                    self.held_menu_up = pressed;
+                }
+                KeyCode::ArrowDown => self.held_menu_down = pressed,
+                KeyCode::ArrowLeft => {
+                    self.held_arrow_left = pressed;
+                    self.held_menu_left = pressed;
+                }
+                KeyCode::ArrowRight => {
+                    self.held_arrow_right = pressed;
+                    self.held_menu_right = pressed;
+                }
+                KeyCode::Enter | KeyCode::Space => self.held_menu_confirm = pressed,
+                KeyCode::Escape => self.held_menu_cancel = pressed,
+
                 _ => {}
             }
         }
@@ -882,6 +1099,15 @@ impl InputCollector {
                     y: self.cursor_y,
                 });
             }
+            winit::event::WindowEvent::MouseInput { state, button, .. }
+                if *state == winit::event::ElementState::Released
+                    && *button == winit::event::MouseButton::Left =>
+            {
+                self.pointer_release = Some(PointerPress {
+                    x: self.cursor_x,
+                    y: self.cursor_y,
+                });
+            }
             _ => {}
         }
 
@@ -896,11 +1122,10 @@ impl InputCollector {
             let id = touch.id as i64;
             match touch.phase {
                 TouchPhase::Started => {
-                    self.pointer_press = Some(PointerPress { x, y });
                     self.touch.started(id, x, y);
                 }
                 TouchPhase::Moved => self.touch.moved(id, x, y),
-                TouchPhase::Ended | TouchPhase::Cancelled => self.touch.ended(id),
+                TouchPhase::Ended | TouchPhase::Cancelled => self.touch.ended(id, x, y),
             }
         }
     }
@@ -915,9 +1140,16 @@ impl InputCollector {
         let audio_toggle = self.audio_toggle_requested;
         self.audio_toggle_requested = false;
         let mut pointer_pressed = self.pointer_press.take();
+        let mut pointer_released = self.pointer_release.take();
 
-        let keyboard_thrust = if self.held_thrust { 1.0 } else { 0.0 };
-        let keyboard_rotate = match (self.held_left, self.held_right) {
+        let keyboard_thrust = if self.held_thrust || self.held_arrow_thrust {
+            1.0
+        } else {
+            0.0
+        };
+        let keyboard_left = self.held_left || self.held_arrow_left;
+        let keyboard_right = self.held_right || self.held_arrow_right;
+        let keyboard_rotate = match (keyboard_left, keyboard_right) {
             (true, false) => 1.0,
             (false, true) => -1.0,
             _ => 0.0,
@@ -928,6 +1160,10 @@ impl InputCollector {
             let touch_press = self.touch.consume_touch_started();
             if pointer_pressed.is_none() {
                 pointer_pressed = touch_press;
+            }
+            let touch_release = self.touch.consume_touch_ended();
+            if pointer_released.is_none() {
+                pointer_released = touch_release;
             }
             let touch_started = touch_press.is_some();
             let touch_input = self.touch.current_input(self.touch_scheme);
@@ -940,6 +1176,10 @@ impl InputCollector {
             let touch_press = touch.consume_touch_started();
             if pointer_pressed.is_none() {
                 pointer_pressed = touch_press;
+            }
+            let touch_release = touch.consume_touch_ended();
+            if pointer_released.is_none() {
+                pointer_released = touch_release;
             }
             let touch_started = touch_press.is_some();
             let touch_input = touch.current_input(self.touch_scheme);
@@ -966,11 +1206,18 @@ impl InputCollector {
             restart,
             touch_started,
             pointer_pressed,
+            pointer_released,
             help,
             audio_next_track,
             audio_toggle,
             pause: self.held_pause,
             fullscreen: self.held_fullscreen,
+            menu_up: self.held_menu_up,
+            menu_down: self.held_menu_down,
+            menu_left: self.held_menu_left,
+            menu_right: self.held_menu_right,
+            menu_confirm: self.held_menu_confirm,
+            menu_cancel: self.held_menu_cancel,
             cam_in: self.held_cam_in,
             cam_out: self.held_cam_out,
             cam_up: self.held_cam_up,
@@ -981,4 +1228,56 @@ impl InputCollector {
             cam_reset: self.held_cam_reset,
         }
     }
+}
+
+#[cfg(any(test, target_arch = "wasm32"))]
+struct CanvasTouchPoint {
+    x: f32,
+    y: f32,
+    surface_width: f32,
+    surface_height: f32,
+}
+
+#[cfg(any(test, target_arch = "wasm32"))]
+fn css_to_surface_point(
+    client: (f64, f64),
+    rect_origin: (f64, f64),
+    css_size: (f64, f64),
+    surface_size: (f64, f64),
+) -> Option<CanvasTouchPoint> {
+    let (css_width, css_height) = css_size;
+    if css_width <= 0.0 || css_height <= 0.0 {
+        return None;
+    }
+
+    let (surface_width, surface_height) = surface_size;
+    let surface_width = surface_width.max(1.0);
+    let surface_height = surface_height.max(1.0);
+    let (client_x, client_y) = client;
+    let (rect_left, rect_top) = rect_origin;
+    let x = (client_x - rect_left) * surface_width / css_width;
+    let y = (client_y - rect_top) * surface_height / css_height;
+
+    Some(CanvasTouchPoint {
+        x: x as f32,
+        y: y as f32,
+        surface_width: surface_width as f32,
+        surface_height: surface_height as f32,
+    })
+}
+
+#[cfg(target_arch = "wasm32")]
+fn canvas_touch_point(
+    canvas: &web_sys::HtmlCanvasElement,
+    touch: &web_sys::Touch,
+) -> Option<CanvasTouchPoint> {
+    let rect = canvas.get_bounding_client_rect();
+    let css_width = rect.width();
+    let css_height = rect.height();
+    css_to_surface_point(
+        (f64::from(touch.client_x()), f64::from(touch.client_y())),
+        (rect.left(), rect.top()),
+        (css_width, css_height),
+        (f64::from(canvas.width()), f64::from(canvas.height())),
+    )
 }

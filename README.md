@@ -32,8 +32,8 @@ Or try the live demo: [https://glalonde.github.io/spout/](https://glalonde.githu
 
 | Key | Action |
 |-----|--------|
-| W | Thrust |
-| A / D | Rotate |
+| W / Arrow Up | Thrust |
+| A / D / Arrow Left / Arrow Right | Rotate |
 | T | Next track |
 | Y | Toggle music |
 | F | Fullscreen |

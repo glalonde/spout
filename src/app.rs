@@ -278,7 +278,13 @@ impl ApplicationHandler for App {
                     .texture
                     .create_view(&wgpu::TextureViewDescriptor::default());
 
-                gpu.spout.render(&view, &gpu.device, &gpu.queue, window);
+                gpu.spout.render(
+                    &view,
+                    &gpu.device,
+                    &gpu.queue,
+                    window,
+                    (gpu.config.width, gpu.config.height),
+                );
                 frame.present();
             }
             event => {

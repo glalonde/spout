@@ -18,7 +18,7 @@ use spout::scoring;
 use spout::ship;
 
 use graphics::Graphics;
-use screens::title::{TitleAction, TitleRenderFlags, TitleScreen};
+use screens::title::{TitleAction, TitleRenderFlags, TitleScreen, TitleUiRenderContext};
 
 /// Shortest signed angular distance from `current` to `target`, in [-π, π].
 fn angle_diff(target: f32, current: f32) -> f32 {
@@ -701,7 +701,11 @@ impl Spout {
     /// Pure-CPU update phase. Snapshots input, ticks time, drives simulation,
     /// applies non-GPU transitions inline (pause toggle, GameOver), and
     /// returns a GPU-bound transition intent (ToTitle / ToPlay) if any.
-    fn update_phase(&mut self, window: &winit::window::Window) -> Option<PendingTransition> {
+    fn update_phase(
+        &mut self,
+        window: &winit::window::Window,
+        surface_size: (u32, u32),
+    ) -> Option<PendingTransition> {
         self.audio.poll();
         self.resolve_pending_collision();
 
@@ -736,8 +740,7 @@ impl Spout {
             return Some(PendingTransition::ToTitle);
         }
 
-        let win_size = window.inner_size();
-        self.process_title_input(input, win_size.width, win_size.height)
+        self.process_title_input(input, surface_size.0, surface_size.1)
     }
 
     fn apply_transition(
@@ -866,9 +869,10 @@ impl Spout {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         window: &winit::window::Window,
+        surface_size: (u32, u32),
     ) {
         let cpu_start = Instant::now();
-        let pending = self.update_phase(window);
+        let pending = self.update_phase(window, surface_size);
         if let Some(t) = pending {
             self.apply_transition(t, device, queue);
         }
@@ -959,24 +963,18 @@ impl Spout {
             .render(&self.graphics.game_view_texture, &mut encoder);
 
         if let AppState::Title(title) = &self.state {
-            title.draw_help_button(
+            title.prepare_ui(TitleUiRenderContext {
                 device,
-                &mut encoder,
-                &self.graphics.game_view_texture,
-                &self.game_params,
-                &self.graphics.game_text,
-            );
-            title.prepare_ui(
-                device,
-                &mut encoder,
-                &self.graphics.title_ui_view,
-                &self.game_params,
-                &self.graphics.game_text,
-                TitleRenderFlags {
+                encoder: &mut encoder,
+                title_ui_view: &self.graphics.title_ui_view,
+                ui: &self.graphics.ui,
+                params: &self.game_params,
+                text: &self.graphics.game_text,
+                flags: TitleRenderFlags {
                     music_playing: self.audio.is_playing(),
                     using_touch: self.collector.has_been_touched() || tap_restart_prompt(),
                 },
-            );
+            });
         }
 
         // Ship — only during active gameplay or pause.
