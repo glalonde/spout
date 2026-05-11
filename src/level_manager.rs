@@ -998,6 +998,18 @@ mod tests {
     const TEST_W: u32 = 64;
     const TEST_H: u32 = 32;
 
+    #[test]
+    fn terrain_fragment_uniforms_match_wgsl_layout() {
+        assert_eq!(std::mem::size_of::<FragmentUniforms>(), 16);
+        assert_eq!(std::mem::offset_of!(FragmentUniforms, viewport_width), 0);
+        assert_eq!(std::mem::offset_of!(FragmentUniforms, viewport_height), 4);
+        assert_eq!(std::mem::offset_of!(FragmentUniforms, viewport_offset), 8);
+        assert_eq!(
+            std::mem::offset_of!(FragmentUniforms, terrain_buffer_offset),
+            12
+        );
+    }
+
     /// Render a TerrainRenderer with deterministic stripe data into an offscreen texture,
     /// copy it to the CPU, save a PNG, and optionally compare against a golden image.
     #[test]
