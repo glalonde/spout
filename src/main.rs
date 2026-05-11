@@ -107,6 +107,41 @@ struct GameState {
     explosion_pending: bool,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct PendingCollisionSegment {
+    prev_ship: ship::ShipState,
+    next_ship: ship::ShipState,
+}
+
+impl PendingCollisionSegment {
+    fn ship_at(&self, t: f32) -> ship::ShipState {
+        let t = t.clamp(0.0, 1.0);
+        let mut ship = self.next_ship;
+        ship.position = [
+            self.prev_ship.position[0]
+                + (self.next_ship.position[0] - self.prev_ship.position[0]) * t,
+            self.prev_ship.position[1]
+                + (self.next_ship.position[1] - self.prev_ship.position[1]) * t,
+        ];
+        ship
+    }
+}
+
+fn record_collision_motion(
+    pending_segment: &mut Option<PendingCollisionSegment>,
+    prev_ship: ship::ShipState,
+    next_ship: ship::ShipState,
+) {
+    if let Some(segment) = pending_segment {
+        segment.next_ship = next_ship;
+    } else {
+        *pending_segment = Some(PendingCollisionSegment {
+            prev_ship,
+            next_ship,
+        });
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum TitleButtonAction {
     Music,
@@ -149,6 +184,8 @@ struct Spout {
     particle_system: particles::ParticleSystem,
     ship_renderer: ship::ShipRenderer,
     collision_detector: collision::CollisionDetector,
+    pending_collision_segment: Option<PendingCollisionSegment>,
+    in_flight_collision_segment: Option<PendingCollisionSegment>,
     background: background::BackgroundRenderer,
     /// Renders into the game view (240x135) — pixel-perfect with terrain/particles.
     game_text: text::TextRenderer,
@@ -405,6 +442,7 @@ impl Spout {
         );
 
         self.collision_detector.result = collision::CollisionResult::default();
+        self.clear_collision_segments();
 
         self.particle_system.set_nozzle_speed(75.0, 75.0);
 
@@ -418,17 +456,19 @@ impl Spout {
     fn start_game(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
         let prev_input = self.state.prev_input_state;
         let cur_input = self.state.input_state;
+        let ship_state = ship::ShipState::init(
+            &self.game_params.ship_params,
+            [
+                (self.game_params.viewport_width / 2) as f32 + 0.5,
+                (self.game_params.viewport_height / 2) as f32 + 0.5,
+            ],
+        );
         self.state = GameState {
             mode: GameMode::Playing,
             prev_input_state: prev_input,
             input_state: cur_input,
-            ship_state: ship::ShipState::init(
-                &self.game_params.ship_params,
-                [
-                    (self.game_params.viewport_width / 2) as f32 + 0.5,
-                    (self.game_params.viewport_height / 2) as f32 + 0.5,
-                ],
-            ),
+            ship_state,
+            prev_ship_state: ship_state,
             ..Default::default()
         };
         self.game_time = std::time::Duration::default();
@@ -453,6 +493,7 @@ impl Spout {
         );
 
         self.collision_detector.result = collision::CollisionResult::default();
+        self.clear_collision_segments();
 
         // Restore normal emission speed for gameplay.
         let base_speed = self.game_params.particle_system_params.emission_speed;
@@ -589,11 +630,49 @@ impl Spout {
             .update_state(dt, self.state.viewport_offset, maybe_motion);
     }
 
-    fn update_viewport_height(&mut self) {
-        let ship_height = self.state.ship_state.position[1] as i32;
+    fn clear_collision_segments(&mut self) {
+        self.pending_collision_segment = None;
+        self.in_flight_collision_segment = None;
+    }
+
+    fn commit_score_height(&mut self, height: f32) {
+        let ship_height = height.floor() as i32;
         self.state.score = std::cmp::max(ship_height, self.state.score);
-        self.state.viewport_offset =
-            self.state.score - (self.game_params.viewport_height / 2) as i32;
+    }
+
+    fn update_camera_from_live_ship(&mut self) {
+        let live_height = self.state.ship_state.position[1].floor() as i32;
+        let camera_height = std::cmp::max(live_height, self.state.score);
+        self.state.viewport_offset = camera_height - (self.game_params.viewport_height / 2) as i32;
+    }
+
+    fn resolve_collision_result(&mut self, result: collision::CollisionResult) {
+        let Some(segment) = self.in_flight_collision_segment.take() else {
+            return;
+        };
+
+        if self.state.dead {
+            self.pending_collision_segment = None;
+            return;
+        }
+
+        if result.hit {
+            let impact_ship = segment.ship_at(result.impact_t);
+            self.commit_score_height(impact_ship.position[1]);
+            self.state.prev_ship_state = segment.prev_ship;
+            self.state.ship_state = impact_ship;
+            self.state.dead = true;
+            self.state.explosion_pending = true;
+            self.pending_collision_segment = None;
+            log::info!(
+                "Ship collided with terrain at ({:.0}, {:.0}) t={:.3}",
+                impact_ship.position[0],
+                impact_ship.position[1],
+                result.impact_t
+            );
+        } else {
+            self.commit_score_height(segment.next_ship.position[1]);
+        }
     }
 
     /// Mostly responsible for updating superficial state based on new inputs.
@@ -626,24 +705,23 @@ impl Spout {
                 self.update_particle_system(game_dt, &prev_ship);
             }
             GameMode::Playing => {
-                // Process input state integrated over passage of time.
-                self.state.prev_ship_state = self.state.ship_state;
                 let prev_ship = self.state.ship_state;
-                self.update_ship(game_dt);
 
-                // Poll GPU collision result from last frame (1-frame latency).
-                if !self.state.dead && self.collision_detector.result.hit {
-                    self.state.dead = true;
-                    self.state.explosion_pending = true;
-                    log::info!(
-                        "Ship collided with terrain at ({:.0}, {:.0})",
-                        self.state.ship_state.position[0],
-                        self.state.ship_state.position[1]
-                    );
-                }
-
-                if !self.state.dead {
-                    self.update_viewport_height();
+                // Keep ship and camera motion responsive. Collision readback
+                // confirms score later, or rewinds death to the exact impact.
+                if !self.state.dead && game_dt > 0.0 {
+                    self.state.prev_ship_state = prev_ship;
+                    self.update_ship(game_dt);
+                    if !self.state.dead {
+                        self.update_camera_from_live_ship();
+                        record_collision_motion(
+                            &mut self.pending_collision_segment,
+                            prev_ship,
+                            self.state.ship_state,
+                        );
+                    } else {
+                        self.pending_collision_segment = None;
+                    }
                 }
 
                 self.update_particle_system(game_dt, &prev_ship);
@@ -821,6 +899,8 @@ impl framework::Example for Spout {
             particle_system,
             ship_renderer,
             collision_detector,
+            pending_collision_segment: None,
+            in_flight_collision_segment: None,
             background,
             game_text,
             audio,
@@ -909,9 +989,13 @@ impl framework::Example for Spout {
     ) {
         let cpu_start = Instant::now();
 
-        // Read back GPU collision result from previous frame.
-        if self.state.mode == GameMode::Playing {
-            self.collision_detector.poll_result();
+        // Read back GPU collision result from previous frame. Poll even outside
+        // gameplay so a reset/title transition cannot leave the detector stuck
+        // with a stale in-flight readback.
+        if let Some(result) = self.collision_detector.poll_result() {
+            if self.state.mode == GameMode::Playing {
+                self.resolve_collision_result(result);
+            }
         }
 
         let mut encoder =
@@ -1000,16 +1084,26 @@ impl framework::Example for Spout {
             .run_compute(&self.level_manager, &mut encoder, &mut self.staging_belt);
 
         // Collision detection — only during gameplay.
-        if self.state.mode == GameMode::Playing {
-            self.collision_detector.dispatch(
-                device,
-                &mut encoder,
-                &mut self.staging_belt,
-                &self.state.ship_state,
-                &self.state.prev_ship_state,
-                self.level_manager.terrain_buffer(),
-                self.game_params.level_width,
-            );
+        if self.state.mode == GameMode::Playing
+            && !self.state.dead
+            && self.in_flight_collision_segment.is_none()
+        {
+            if let Some(segment) = self.pending_collision_segment.take() {
+                let dispatched = self.collision_detector.dispatch(
+                    device,
+                    &mut encoder,
+                    &mut self.staging_belt,
+                    &segment.next_ship,
+                    &segment.prev_ship,
+                    self.level_manager.terrain_buffer(),
+                    self.game_params.level_width,
+                );
+                if dispatched {
+                    self.in_flight_collision_segment = Some(segment);
+                } else {
+                    self.pending_collision_segment = Some(segment);
+                }
+            }
         }
 
         // Render background (clears and draws tiled background).
@@ -1224,7 +1318,7 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::angle_diff;
+    use super::{angle_diff, record_collision_motion, PendingCollisionSegment};
     use std::f32::consts::PI;
 
     fn approx(a: f32, b: f32) -> bool {
@@ -1285,5 +1379,62 @@ mod tests {
                 diff
             );
         }
+    }
+
+    #[test]
+    fn collision_segment_interpolates_position() {
+        let mut prev_ship = spout::ship::ShipState::default();
+        prev_ship.position = [10.0, 20.0];
+        let mut next_ship = prev_ship;
+        next_ship.position = [18.0, 36.0];
+
+        let segment = PendingCollisionSegment {
+            prev_ship,
+            next_ship,
+        };
+        let ship = segment.ship_at(0.25);
+
+        assert!(approx(ship.position[0], 12.0));
+        assert!(approx(ship.position[1], 24.0));
+    }
+
+    #[test]
+    fn collision_segment_clamps_impact_time() {
+        let mut prev_ship = spout::ship::ShipState::default();
+        prev_ship.position = [1.0, 2.0];
+        let mut next_ship = prev_ship;
+        next_ship.position = [3.0, 4.0];
+
+        let segment = PendingCollisionSegment {
+            prev_ship,
+            next_ship,
+        };
+
+        assert!(approx(segment.ship_at(-1.0).position[0], 1.0));
+        assert!(approx(segment.ship_at(2.0).position[1], 4.0));
+    }
+
+    #[test]
+    fn pending_collision_segment_extends_to_latest_motion() {
+        let mut a = spout::ship::ShipState::default();
+        a.position = [0.0, 0.0];
+        let mut b = a;
+        b.position = [1.0, 1.0];
+        let mut c = b;
+        c.position = [2.0, 3.0];
+        let mut d = c;
+        d.position = [4.0, 8.0];
+
+        let mut pending = None;
+        record_collision_motion(&mut pending, a, b);
+        record_collision_motion(&mut pending, b, c);
+        record_collision_motion(&mut pending, c, d);
+
+        let segment = pending.expect("segment");
+
+        assert!(approx(segment.prev_ship.position[0], 0.0));
+        assert!(approx(segment.prev_ship.position[1], 0.0));
+        assert!(approx(segment.next_ship.position[0], 4.0));
+        assert!(approx(segment.next_ship.position[1], 8.0));
     }
 }
