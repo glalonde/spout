@@ -1692,7 +1692,7 @@ function __wbg_get_imports() {
             return ret;
         },
         __wbindgen_cast_000000000000000d: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { dtor_idx: 486, function: Function { arguments: [NamedExternref("TouchEvent")], shim_idx: 487, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { dtor_idx: 522, function: Function { arguments: [NamedExternref("TouchEvent")], shim_idx: 523, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm.wasm_bindgen__closure__destroy__ha5ae33a03d7ea89c, wasm_bindgen__convert__closures_____invoke__had9802450bfa31d8);
             return ret;
         },
