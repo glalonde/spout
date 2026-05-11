@@ -18,7 +18,9 @@ use spout::scoring;
 use spout::ship;
 
 use graphics::Graphics;
-use screens::title::{TitleAction, TitleRenderFlags, TitleScreen, TitleUiRenderContext};
+use screens::title::{
+    TitleAction, TitleBackdropRenderContext, TitleRenderFlags, TitleScreen, TitleUiRenderContext,
+};
 
 /// Shortest signed angular distance from `current` to `target`, in [-π, π].
 fn angle_diff(target: f32, current: f32) -> f32 {
@@ -957,6 +959,16 @@ impl Spout {
             .render(&self.graphics.game_view_texture, &mut encoder);
         self.particle_system
             .render(&self.graphics.game_view_texture, &mut encoder);
+
+        if let AppState::Title(title) = &self.state {
+            title.prepare_bloom_backdrop(TitleBackdropRenderContext {
+                device,
+                encoder: &mut encoder,
+                target_view: &self.graphics.game_view_texture,
+                ui: &self.graphics.ui,
+                params: &self.game_params,
+            });
+        }
 
         // Ship — only during active gameplay or pause.
         if self.game_params.render_ship {

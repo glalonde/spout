@@ -9,6 +9,7 @@ const BUTTON_GAP: f32 = 32.0;
 const BUTTON_BOTTOM_MARGIN: f32 = 12.0;
 const BUTTON_LABEL_H: f32 = 12.0;
 const BUTTON_SIDE_MARGIN: f32 = 14.0;
+const INSTRUCTIONS_BACKDROP_COLOR: [f32; 4] = [0.0, 0.01, 0.015, 0.92];
 
 #[derive(Debug)]
 pub struct TitleScreen {
@@ -51,6 +52,14 @@ pub struct TitleUiRenderContext<'a> {
     pub params: &'a GameParams,
     pub text: &'a TextRenderer,
     pub flags: TitleRenderFlags,
+}
+
+pub struct TitleBackdropRenderContext<'a> {
+    pub device: &'a wgpu::Device,
+    pub encoder: &'a mut wgpu::CommandEncoder,
+    pub target_view: &'a wgpu::TextureView,
+    pub ui: &'a UiRenderer,
+    pub params: &'a GameParams,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -138,33 +147,29 @@ impl TitleScreen {
         None
     }
 
+    pub fn prepare_bloom_backdrop(&self, ctx: TitleBackdropRenderContext<'_>) {
+        if !self.instructions_open {
+            return;
+        }
+
+        ctx.ui.draw_rects(
+            ctx.device,
+            ctx.encoder,
+            ctx.target_view,
+            &[Self::instructions_backdrop(ctx.params)],
+        );
+    }
+
     pub fn prepare_ui(&self, ctx: TitleUiRenderContext<'_>) {
         let button_color = [0.7, 0.78, 0.78, 1.0];
         let text_color = [0.82, 0.86, 0.82, 1.0];
         let accent_color = [0.9, 0.72, 0.48, 1.0];
         let buttons = self.buttons(ctx.params, ctx.text, ctx.flags.music_playing);
         let focus_visible = self.render_focus_visible(ctx.flags.using_touch);
-        let mut rects: Vec<(UiRect, RectStyle)> = Vec::new();
-        if self.instructions_open {
-            rects.push((
-                UiRect {
-                    x: 0.0,
-                    y: 0.0,
-                    w: ctx.params.viewport_width as f32,
-                    h: ctx.params.viewport_height as f32,
-                },
-                RectStyle {
-                    fill_color: [0.01, 0.03, 0.04, 0.86],
-                    outline_color: [0.0, 0.0, 0.0, 0.0],
-                    outline_px: 0.0,
-                },
-            ));
-        }
-        rects.extend(
-            buttons
-                .iter()
-                .map(|button| (button.rect, self.button_style(button.action, focus_visible))),
-        );
+        let rects: Vec<(UiRect, RectStyle)> = buttons
+            .iter()
+            .map(|button| (button.rect, self.button_style(button.action, focus_visible)))
+            .collect();
         ctx.ui
             .draw_rects(ctx.device, ctx.encoder, ctx.target_view, &rects);
 
@@ -208,6 +213,22 @@ impl TitleScreen {
 
         ctx.text
             .draw(ctx.device, ctx.encoder, ctx.target_view, &texts);
+    }
+
+    fn instructions_backdrop(params: &GameParams) -> (UiRect, RectStyle) {
+        (
+            UiRect {
+                x: 0.0,
+                y: 0.0,
+                w: params.viewport_width as f32,
+                h: params.viewport_height as f32,
+            },
+            RectStyle {
+                fill_color: INSTRUCTIONS_BACKDROP_COLOR,
+                outline_color: [0.0, 0.0, 0.0, 0.0],
+                outline_px: 0.0,
+            },
+        )
     }
 
     fn buttons(
