@@ -46,7 +46,7 @@ pub struct TitleRenderFlags {
 pub struct TitleUiRenderContext<'a> {
     pub device: &'a wgpu::Device,
     pub encoder: &'a mut wgpu::CommandEncoder,
-    pub title_ui_view: &'a wgpu::TextureView,
+    pub target_view: &'a wgpu::TextureView,
     pub ui: &'a UiRenderer,
     pub params: &'a GameParams,
     pub text: &'a TextRenderer,
@@ -139,44 +139,34 @@ impl TitleScreen {
     }
 
     pub fn prepare_ui(&self, ctx: TitleUiRenderContext<'_>) {
-        let clear_color = if self.instructions_open {
-            wgpu::Color {
-                r: 0.02,
-                g: 0.05,
-                b: 0.07,
-                a: 0.76,
-            }
-        } else {
-            wgpu::Color::TRANSPARENT
-        };
-        {
-            let _pass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("title_ui_clear"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: ctx.title_ui_view,
-                    resolve_target: None,
-                    depth_slice: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(clear_color),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: None,
-                ..Default::default()
-            });
-        }
-
         let button_color = [0.7, 0.78, 0.78, 1.0];
         let text_color = [0.82, 0.86, 0.82, 1.0];
         let accent_color = [0.9, 0.72, 0.48, 1.0];
         let buttons = self.buttons(ctx.params, ctx.text, ctx.flags.music_playing);
         let focus_visible = self.render_focus_visible(ctx.flags.using_touch);
-        let rects: Vec<(UiRect, RectStyle)> = buttons
-            .iter()
-            .map(|button| (button.rect, self.button_style(button.action, focus_visible)))
-            .collect();
+        let mut rects: Vec<(UiRect, RectStyle)> = Vec::new();
+        if self.instructions_open {
+            rects.push((
+                UiRect {
+                    x: 0.0,
+                    y: 0.0,
+                    w: ctx.params.viewport_width as f32,
+                    h: ctx.params.viewport_height as f32,
+                },
+                RectStyle {
+                    fill_color: [0.02, 0.05, 0.07, 0.76],
+                    outline_color: [0.0, 0.0, 0.0, 0.0],
+                    outline_px: 0.0,
+                },
+            ));
+        }
+        rects.extend(
+            buttons
+                .iter()
+                .map(|button| (button.rect, self.button_style(button.action, focus_visible))),
+        );
         ctx.ui
-            .draw_rects(ctx.device, ctx.encoder, ctx.title_ui_view, &rects);
+            .draw_rects(ctx.device, ctx.encoder, ctx.target_view, &rects);
 
         let mut texts: Vec<(&str, f32, f32, f32, [f32; 4])> = Vec::new();
         for button in &buttons {
@@ -217,7 +207,7 @@ impl TitleScreen {
         }
 
         ctx.text
-            .draw(ctx.device, ctx.encoder, ctx.title_ui_view, &texts);
+            .draw(ctx.device, ctx.encoder, ctx.target_view, &texts);
     }
 
     fn buttons(

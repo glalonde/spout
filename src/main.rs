@@ -158,10 +158,6 @@ impl AppState {
         }
     }
 
-    fn is_title(&self) -> bool {
-        matches!(self, AppState::Title(_))
-    }
-
     fn is_playing(&self) -> bool {
         matches!(self, AppState::Playing(_))
     }
@@ -966,7 +962,7 @@ impl Spout {
             title.prepare_ui(TitleUiRenderContext {
                 device,
                 encoder: &mut encoder,
-                title_ui_view: &self.graphics.title_ui_view,
+                target_view: &self.graphics.game_view_texture,
                 ui: &self.graphics.ui,
                 params: &self.game_params,
                 text: &self.graphics.game_text,
@@ -1005,10 +1001,6 @@ impl Spout {
         );
         self.graphics.bloom.render(&mut encoder);
         self.graphics.renderer.render(view, &mut encoder);
-
-        if self.state.is_title() {
-            self.graphics.title_overlay.render(view, &mut encoder);
-        }
 
         // Touch-zone diagonal hint only during active gameplay, on Triangle
         // scheme, after the player has actually used touch this session.
