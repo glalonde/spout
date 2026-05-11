@@ -13,6 +13,7 @@ pub mod input;
 pub mod level_manager;
 pub mod particles;
 pub mod render;
+pub mod scoring;
 pub mod shader_util;
 pub mod ship;
 pub mod text;
