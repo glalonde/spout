@@ -38,14 +38,6 @@ function __wbg_get_imports() {
             getDataViewMemory0().setFloat64(arg0 + 8 * 1, isLikeNone(ret) ? 0 : ret, true);
             getDataViewMemory0().setInt32(arg0 + 4 * 0, !isLikeNone(ret), true);
         },
-        __wbg___wbindgen_string_get_395e606bd0ee4427: function(arg0, arg1) {
-            const obj = arg1;
-            const ret = typeof(obj) === 'string' ? obj : undefined;
-            var ptr1 = isLikeNone(ret) ? 0 : passStringToWasm0(ret, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-            var len1 = WASM_VECTOR_LEN;
-            getDataViewMemory0().setInt32(arg0 + 4 * 1, len1, true);
-            getDataViewMemory0().setInt32(arg0 + 4 * 0, ptr1, true);
-        },
         __wbg___wbindgen_throw_6ddd609b62940d55: function(arg0, arg1) {
             throw new Error(getStringFromWasm0(arg0, arg1));
         },
@@ -339,10 +331,6 @@ function __wbg_get_imports() {
         __wbg_exitFullscreen_446223b7026ea4a9: function(arg0) {
             arg0.exitFullscreen();
         },
-        __wbg_features_4dc73441b3fa4cca: function(arg0) {
-            const ret = arg0.features;
-            return ret;
-        },
         __wbg_finish_0d19d3fe39e7b92a: function(arg0, arg1) {
             const ret = arg0.finish(arg1);
             return ret;
@@ -423,10 +411,6 @@ function __wbg_get_imports() {
         },
         __wbg_gpu_e85436d24e893506: function(arg0) {
             const ret = arg0.gpu;
-            return ret;
-        },
-        __wbg_has_527fd39c3cb42189: function(arg0, arg1, arg2) {
-            const ret = arg0.has(getStringFromWasm0(arg1, arg2));
             return ret;
         },
         __wbg_has_926ef2ff40b308cf: function() { return handleError(function (arg0, arg1) {
@@ -1708,7 +1692,7 @@ function __wbg_get_imports() {
             return ret;
         },
         __wbindgen_cast_000000000000000d: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { dtor_idx: 472, function: Function { arguments: [NamedExternref("TouchEvent")], shim_idx: 473, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { dtor_idx: 486, function: Function { arguments: [NamedExternref("TouchEvent")], shim_idx: 487, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm.wasm_bindgen__closure__destroy__ha5ae33a03d7ea89c, wasm_bindgen__convert__closures_____invoke__had9802450bfa31d8);
             return ret;
         },
