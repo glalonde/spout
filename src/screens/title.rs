@@ -5,7 +5,7 @@ use spout::ui::{self, RectStyle, UiButton, UiRect, UiRenderer};
 
 const BUTTON_PAD_X: f32 = 8.0;
 const BUTTON_PAD_Y: f32 = 6.0;
-const BUTTON_GAP: f32 = 8.0;
+const BUTTON_GAP: f32 = 32.0;
 const BUTTON_BOTTOM_MARGIN: f32 = 12.0;
 const BUTTON_LABEL_H: f32 = 12.0;
 const BUTTON_SIDE_MARGIN: f32 = 14.0;
