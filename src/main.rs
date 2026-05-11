@@ -2,6 +2,7 @@
 
 mod app;
 mod audio;
+mod screens;
 
 use std::time::Duration;
 
@@ -11,7 +12,7 @@ use spout::background;
 use spout::bloom;
 use spout::collision;
 use spout::game_params;
-use spout::input::{InputCollector, InputState, PointerPress};
+use spout::input::{InputCollector, InputState};
 use spout::level_manager;
 use spout::particles;
 use spout::render;
@@ -20,6 +21,8 @@ use spout::ship;
 use spout::text;
 use spout::title_overlay;
 use spout::touch_zone_indicator;
+
+use screens::title::{TitleAction, TitleRenderFlags, TitleScreen};
 
 /// Shortest signed angular distance from `current` to `target`, in [-π, π].
 fn angle_diff(target: f32, current: f32) -> f32 {
@@ -127,9 +130,7 @@ struct Play {
 /// and impossible combinations (e.g. dead-on-title) cannot be represented.
 #[derive(Debug)]
 enum AppState {
-    Title {
-        instructions_open: bool,
-    },
+    Title(TitleScreen),
     /// Placeholder for the upcoming settings screen. Not yet constructed.
     #[allow(dead_code)]
     Settings,
@@ -146,9 +147,7 @@ enum AppState {
 
 impl Default for AppState {
     fn default() -> Self {
-        AppState::Title {
-            instructions_open: false,
-        }
+        AppState::Title(TitleScreen::default())
     }
 }
 
@@ -159,12 +158,12 @@ impl AppState {
         match self {
             AppState::Playing(p) | AppState::Paused(p) => p.viewport_offset,
             AppState::GameOver { play, .. } => play.viewport_offset,
-            AppState::Title { .. } | AppState::Settings | AppState::Leaderboard => 0,
+            AppState::Title(_) | AppState::Settings | AppState::Leaderboard => 0,
         }
     }
 
     fn is_title(&self) -> bool {
-        matches!(self, AppState::Title { .. })
+        matches!(self, AppState::Title(_))
     }
 
     fn is_playing(&self) -> bool {
@@ -205,32 +204,6 @@ fn record_collision_motion(
             next_ship,
         });
     }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum TitleButtonAction {
-    Music,
-    Help,
-}
-
-#[derive(Debug, Clone, Copy)]
-struct UiRect {
-    x: f32,
-    y: f32,
-    w: f32,
-    h: f32,
-}
-
-impl UiRect {
-    fn contains(&self, x: f32, y: f32) -> bool {
-        x >= self.x && x <= self.x + self.w && y >= self.y && y <= self.y + self.h
-    }
-}
-
-struct TitleButton {
-    action: TitleButtonAction,
-    label: &'static str,
-    rect: UiRect,
 }
 
 /// Position + velocity captured at the moment of death, used to spawn the
@@ -482,226 +455,9 @@ struct Spout {
 }
 
 impl Spout {
-    fn surface_to_game_point(
-        &self,
-        point: PointerPress,
-        surface_width: u32,
-        surface_height: u32,
-    ) -> Option<(f32, f32)> {
-        if surface_width == 0 || surface_height == 0 {
-            return None;
-        }
-
-        let game_w = self.game_params.viewport_width as f32;
-        let game_h = self.game_params.viewport_height as f32;
-        let surface_w = surface_width as f32;
-        let surface_h = surface_height as f32;
-        let scale = (surface_w / game_w)
-            .min(surface_h / game_h)
-            .floor()
-            .max(1.0);
-        let draw_w = game_w * scale;
-        let draw_h = game_h * scale;
-        let offset_x = ((surface_w - draw_w) * 0.5).floor();
-        let offset_y = ((surface_h - draw_h) * 0.5).floor();
-
-        if point.x < offset_x
-            || point.x > offset_x + draw_w
-            || point.y < offset_y
-            || point.y > offset_y + draw_h
-        {
-            return None;
-        }
-
-        let game_x = (point.x - offset_x) / draw_w * game_w;
-        // The game-view blit flips texture Y (see `textured_quad` UVs), so
-        // visual top on the surface corresponds to low Y in the game texture.
-        let game_y = (point.y - offset_y) / draw_h * game_h;
-        Some((game_x, game_y))
-    }
-
-    fn title_buttons(&self, instructions_open: bool) -> Vec<TitleButton> {
-        let pad_x = 4.0;
-        let button_h = 32.0;
-        let help_y = self.game_params.viewport_height as f32 - button_h - 6.0;
-        let help_label = if instructions_open { "X" } else { "?" };
-        let mut buttons = vec![TitleButton {
-            action: TitleButtonAction::Help,
-            label: help_label,
-            rect: UiRect {
-                x: self.game_params.viewport_width as f32 - 56.0 - 6.0,
-                y: help_y,
-                w: 56.0,
-                h: button_h,
-            },
-        }];
-
-        if instructions_open {
-            let music_label = if self.audio.is_playing() {
-                "[MUSIC ON]"
-            } else {
-                "[MUSIC OFF]"
-            };
-            let music_w = self.game_text.text_width(music_label, 1.0) + pad_x * 2.0;
-            buttons.push(TitleButton {
-                action: TitleButtonAction::Music,
-                label: music_label,
-                rect: UiRect {
-                    x: 18.0,
-                    y: 100.0,
-                    w: music_w,
-                    h: button_h,
-                },
-            });
-        }
-
-        buttons
-    }
-
-    fn title_button_at(
-        &self,
-        instructions_open: bool,
-        point: PointerPress,
-        surface_width: u32,
-        surface_height: u32,
-    ) -> Option<TitleButtonAction> {
-        if self.title_help_surface_hit(point, surface_width, surface_height) {
-            return Some(TitleButtonAction::Help);
-        }
-
-        let (game_x, game_y) = self.surface_to_game_point(point, surface_width, surface_height)?;
-        self.title_buttons(instructions_open)
-            .iter()
-            .find(|button| button.rect.contains(game_x, game_y))
-            .map(|button| button.action)
-    }
-
-    fn title_help_surface_hit(
-        &self,
-        point: PointerPress,
-        surface_width: u32,
-        surface_height: u32,
-    ) -> bool {
-        let w = surface_width as f32;
-        let h = surface_height as f32;
-        point.x >= w * 0.72 && point.y >= h * 0.62
-    }
-
-    fn draw_title_help_button(
-        &self,
-        instructions_open: bool,
-        device: &wgpu::Device,
-        encoder: &mut wgpu::CommandEncoder,
-    ) {
-        if instructions_open {
-            return;
-        }
-
-        let Some(button) = self
-            .title_buttons(instructions_open)
-            .into_iter()
-            .find(|button| button.action == TitleButtonAction::Help)
-        else {
-            return;
-        };
-
-        let color = [0.55, 0.55, 0.55, 1.0];
-        let label_x =
-            button.rect.x + (button.rect.w - self.game_text.text_width(button.label, 1.0)) / 2.0;
-        let label_y = button.rect.y + (button.rect.h - 12.0) / 2.0;
-
-        self.game_text.draw(
-            device,
-            encoder,
-            &self.game_view_texture,
-            &[(button.label, label_x, label_y, 1.0, color)],
-        );
-    }
-
-    fn prepare_title_ui(
-        &self,
-        instructions_open: bool,
-        device: &wgpu::Device,
-        encoder: &mut wgpu::CommandEncoder,
-    ) {
-        let clear_color = if instructions_open {
-            wgpu::Color {
-                r: 0.02,
-                g: 0.05,
-                b: 0.07,
-                a: 0.76,
-            }
-        } else {
-            wgpu::Color::TRANSPARENT
-        };
-        {
-            let _pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("title_ui_clear"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &self.title_ui_view,
-                    resolve_target: None,
-                    depth_slice: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(clear_color),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: None,
-                ..Default::default()
-            });
-        }
-
-        let button_color = [0.7, 0.78, 0.78, 1.0];
-        let text_color = [0.82, 0.86, 0.82, 1.0];
-        let accent_color = [0.9, 0.72, 0.48, 1.0];
-        let buttons = self.title_buttons(instructions_open);
-
-        let mut texts: Vec<(&str, f32, f32, f32, [f32; 4])> = Vec::new();
-        for button in buttons
-            .iter()
-            .filter(|button| button.action != TitleButtonAction::Help || instructions_open)
-        {
-            let scale = 1.0;
-            let label_x = button.rect.x
-                + (button.rect.w - self.game_text.text_width(button.label, scale)) / 2.0;
-            let label_y = button.rect.y + (button.rect.h - 12.0) / 2.0;
-            texts.push((button.label, label_x, label_y, scale, button_color));
-        }
-
-        if instructions_open {
-            let w = self.game_text.surface_width;
-            let scale = 1.0;
-            let using_touch = self.collector.has_been_touched() || tap_restart_prompt();
-            let lines: Vec<(&str, f32, [f32; 4])> = if using_touch {
-                vec![
-                    ("OBJECTIVE", 24.0, accent_color),
-                    ("BLAST AND CLIMB", 42.0, text_color),
-                    ("LEFT SIDE -> GAS", 64.0, text_color),
-                    ("RIGHT SIDE -> STEER", 82.0, text_color),
-                ]
-            } else {
-                vec![
-                    ("OBJECTIVE", 24.0, accent_color),
-                    ("BLAST AND CLIMB", 42.0, text_color),
-                    ("W -> GAS", 64.0, text_color),
-                    ("A/D -> STEER", 82.0, text_color),
-                ]
-            };
-            texts.extend(lines.into_iter().map(|(line, y, color)| {
-                let x = (w - self.game_text.text_width(line, scale)) / 2.0;
-                (line, x, y, scale, color)
-            }));
-        }
-
-        self.game_text
-            .draw(device, encoder, &self.title_ui_view, &texts);
-    }
-
     /// Reset to the title screen. Used at startup and after death/restart.
     fn transition_to_title(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
-        self.state = AppState::Title {
-            instructions_open: false,
-        };
+        self.state = AppState::Title(TitleScreen::default());
         self.game_time = Duration::default();
         self.iteration_start = Instant::now();
 
@@ -868,7 +624,7 @@ impl Spout {
         game_dt_duration: Duration,
     ) -> Option<DeathCause> {
         match &mut self.state {
-            AppState::Title { .. } => {
+            AppState::Title(_) => {
                 self.particle_system.update_state(
                     game_dt,
                     0,
@@ -906,54 +662,28 @@ impl Spout {
         }
     }
 
-    /// Title-screen input. Toggles `instructions_open` and the music button
-    /// inline; returns `PendingTransition::ToPlay` if the player just started
-    /// a game. Caller should not invoke this outside `AppState::Title`.
+    /// Title-screen input. The screen owns its UI sub-state and reports
+    /// high-level actions back to `Spout`.
     fn process_title_input(&mut self, surface_w: u32, surface_h: u32) -> Option<PendingTransition> {
-        let AppState::Title { instructions_open } = self.state else {
+        let AppState::Title(title) = &mut self.state else {
             return None;
         };
 
-        let input = self.input_state;
-        let clicked_button = input
-            .pointer_pressed
-            .and_then(|point| self.title_button_at(instructions_open, point, surface_w, surface_h));
-        let mut title_action_handled = false;
-        let mut next_instructions_open = instructions_open;
-
-        if input.help {
-            next_instructions_open = !next_instructions_open;
-            title_action_handled = true;
-        }
-
-        if let Some(action) = clicked_button {
-            match action {
-                TitleButtonAction::Music => self.audio.toggle(),
-                TitleButtonAction::Help => {
-                    next_instructions_open = !next_instructions_open;
-                }
+        match title.update(
+            self.input_state,
+            self.prev_input_state,
+            &self.game_params,
+            &self.game_text,
+            self.audio.is_playing(),
+            (surface_w, surface_h),
+        ) {
+            Some(TitleAction::StartGame) => Some(PendingTransition::ToPlay),
+            Some(TitleAction::ToggleMusic) => {
+                self.audio.toggle();
+                None
             }
-            title_action_handled = true;
-        } else if next_instructions_open && input.pointer_pressed.is_some() {
-            next_instructions_open = false;
-            title_action_handled = true;
+            None => None,
         }
-
-        // Start game on a NEW press of thrust or rotate (edge, not held).
-        let prev = self.prev_input_state;
-        let new_thrust = input.thrust > 0.0 && prev.thrust == 0.0;
-        let new_rotate = input.rotate.abs() > 0.0 && prev.rotate.abs() == 0.0;
-        if !title_action_handled && !next_instructions_open && (new_thrust || new_rotate) {
-            return Some(PendingTransition::ToPlay);
-        }
-
-        if next_instructions_open != instructions_open {
-            self.state = AppState::Title {
-                instructions_open: next_instructions_open,
-            };
-        }
-
-        None
     }
 
     /// Pure-CPU update phase. Snapshots input, ticks time, drives simulation,
@@ -1339,9 +1069,25 @@ impl Spout {
         self.particle_system
             .render(&self.game_view_texture, &mut encoder);
 
-        if let AppState::Title { instructions_open } = self.state {
-            self.draw_title_help_button(instructions_open, device, &mut encoder);
-            self.prepare_title_ui(instructions_open, device, &mut encoder);
+        if let AppState::Title(title) = &self.state {
+            title.draw_help_button(
+                device,
+                &mut encoder,
+                &self.game_view_texture,
+                &self.game_params,
+                &self.game_text,
+            );
+            title.prepare_ui(
+                device,
+                &mut encoder,
+                &self.title_ui_view,
+                &self.game_params,
+                &self.game_text,
+                TitleRenderFlags {
+                    music_playing: self.audio.is_playing(),
+                    using_touch: self.collector.has_been_touched() || tap_restart_prompt(),
+                },
+            );
         }
 
         // Ship — only during active gameplay or pause.
