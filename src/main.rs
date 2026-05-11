@@ -958,21 +958,6 @@ impl Spout {
         self.particle_system
             .render(&self.graphics.game_view_texture, &mut encoder);
 
-        if let AppState::Title(title) = &self.state {
-            title.prepare_ui(TitleUiRenderContext {
-                device,
-                encoder: &mut encoder,
-                target_view: &self.graphics.game_view_texture,
-                ui: &self.graphics.ui,
-                params: &self.game_params,
-                text: &self.graphics.game_text,
-                flags: TitleRenderFlags {
-                    music_playing: self.audio.is_playing(),
-                    using_touch: self.collector.has_been_touched() || tap_restart_prompt(),
-                },
-            });
-        }
-
         // Ship — only during active gameplay or pause.
         if self.game_params.render_ship {
             let active_play = match &self.state {
@@ -993,13 +978,35 @@ impl Spout {
 
         self.draw_hud(device, &mut encoder);
 
-        // Blit game view → upscaled HDR → bloom → composite onto surface.
+        // Blit the scene before title UI so buttons/text stay out of the bloom source.
         self.graphics.renderer.blit(
             &self.graphics.upscaled_view,
             &mut encoder,
             &mut self.graphics.staging_belt,
         );
         self.graphics.bloom.render(&mut encoder);
+
+        if let AppState::Title(title) = &self.state {
+            title.prepare_ui(TitleUiRenderContext {
+                device,
+                encoder: &mut encoder,
+                target_view: &self.graphics.game_view_texture,
+                ui: &self.graphics.ui,
+                params: &self.game_params,
+                text: &self.graphics.game_text,
+                flags: TitleRenderFlags {
+                    music_playing: self.audio.is_playing(),
+                    using_touch: self.collector.has_been_touched() || tap_restart_prompt(),
+                },
+            });
+
+            self.graphics.renderer.blit(
+                &self.graphics.upscaled_view,
+                &mut encoder,
+                &mut self.graphics.staging_belt,
+            );
+        }
+
         self.graphics.renderer.render(view, &mut encoder);
 
         // Touch-zone diagonal hint only during active gameplay, on Triangle

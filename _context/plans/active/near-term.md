@@ -232,6 +232,8 @@ Tasks:
 - [x] Style consistent with existing `TextRenderer` + game palette
 - [x] Render title/help UI directly into the low-resolution game texture so
       buttons and text share the same pixel grid and scaling as gameplay.
+- [x] Generate title-screen bloom from the scene before stamping UI into the
+      low-resolution game texture, so title/help buttons do not feed bloom.
 - [x] Use a bottom-right `X` close button inside the overlay instead of a
       textual close instruction.
 - [x] Replace the title-screen `?` affordance with boxed `PLAY` / `MENU`
