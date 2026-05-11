@@ -2,26 +2,22 @@
 
 mod app;
 mod audio;
+mod graphics;
 mod screens;
 
 use std::time::Duration;
 
 use web_time::Instant;
 
-use spout::background;
-use spout::bloom;
 use spout::collision;
 use spout::game_params;
 use spout::input::{InputCollector, InputFrame, InputState};
 use spout::level_manager;
 use spout::particles;
-use spout::render;
 use spout::scoring;
 use spout::ship;
-use spout::text;
-use spout::title_overlay;
-use spout::touch_zone_indicator;
 
+use graphics::Graphics;
 use screens::title::{TitleAction, TitleRenderFlags, TitleScreen};
 
 /// Shortest signed angular distance from `current` to `target`, in [-π, π].
@@ -428,26 +424,12 @@ struct Spout {
     pending_explosion: Option<ExplosionRequest>,
     collector: InputCollector,
     level_manager: level_manager::LevelManager,
+    particle_system: particles::ParticleSystem,
+    collision_detector: collision::CollisionDetector,
+    audio: audio::AudioPlayer,
     game_time: Duration,
     iteration_start: Instant,
-    game_view_texture: wgpu::TextureView,
-    title_ui_view: wgpu::TextureView,
-    upscaled_view: wgpu::TextureView,
-    bloom: bloom::Bloom,
-    renderer: render::Render,
-    title_overlay: title_overlay::TitleOverlay,
-    particle_system: particles::ParticleSystem,
-    ship_renderer: ship::ShipRenderer,
-    collision_detector: collision::CollisionDetector,
-    background: background::BackgroundRenderer,
-    /// Renders into the game view (240x135) — pixel-perfect with terrain/particles.
-    game_text: text::TextRenderer,
-    audio: audio::AudioPlayer,
-    staging_belt: wgpu::util::StagingBelt,
-    touch_zone_indicator: touch_zone_indicator::TouchZoneIndicator,
-    /// Debug overlay: FPS counter rendered at display resolution. Debug builds only.
-    #[cfg(debug_assertions)]
-    overlay_text: text::TextRenderer,
+    graphics: Graphics,
     frame_times: Vec<f32>,
     cpu_times: Vec<f32>,
     tick_wall_dt: f32,
@@ -468,7 +450,7 @@ impl Spout {
             &self.game_params,
             0,
             &mut init_encoder,
-            &mut self.staging_belt,
+            &mut self.graphics.staging_belt,
         );
         self.particle_system = particles::ParticleSystem::new(
             device,
@@ -479,9 +461,9 @@ impl Spout {
         self.collision_detector.result = collision::CollisionResult::default();
         self.particle_system.set_nozzle_speed(75.0, 75.0);
 
-        self.staging_belt.finish();
+        self.graphics.staging_belt.finish();
         queue.submit(Some(init_encoder.finish()));
-        self.staging_belt.recall();
+        self.graphics.staging_belt.recall();
 
         log::info!("Entered title screen");
     }
@@ -499,7 +481,7 @@ impl Spout {
             &self.game_params,
             0,
             &mut init_encoder,
-            &mut self.staging_belt,
+            &mut self.graphics.staging_belt,
         );
         self.particle_system = particles::ParticleSystem::new(
             device,
@@ -512,9 +494,9 @@ impl Spout {
         self.particle_system
             .set_nozzle_speed(base_speed, base_speed);
 
-        self.staging_belt.finish();
+        self.graphics.staging_belt.finish();
         queue.submit(Some(init_encoder.finish()));
-        self.staging_belt.recall();
+        self.graphics.staging_belt.recall();
 
         log::info!("Game started");
     }
@@ -677,7 +659,7 @@ impl Spout {
         match title.update(
             input,
             &self.game_params,
-            &self.game_text,
+            &self.graphics.game_text,
             self.audio.is_playing(),
             (surface_w, surface_h),
         ) {
@@ -716,7 +698,8 @@ impl Spout {
             self.transition_to_game_over(cause);
         }
 
-        self.renderer
+        self.graphics
+            .renderer
             .update_state(wall_dt, &input.current, &input.previous);
 
         // Restart from game-over: explicit restart key, or any tap.
@@ -753,36 +736,10 @@ impl Spout {
     ) -> Self {
         window.set_cursor_visible(false);
         let game_params = game_params::get_game_config_from_default_file();
-
-        let game_view_texture = make_texture(
-            device,
-            game_params.viewport_width,
-            game_params.viewport_height,
-        );
-        let title_ui_view = make_texture(
-            device,
-            game_params.viewport_width,
-            game_params.viewport_height,
-        );
-
-        let upscaled_view = make_texture(device, config.width, config.height);
-
-        let bloom = bloom::Bloom::new(
-            device,
-            config.width,
-            config.height,
-            &upscaled_view,
-            &game_params.visual_params,
-        );
+        let mut graphics = Graphics::new(config, adapter, device, queue, &game_params);
 
         let mut init_encoder =
             device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-
-        // Chunk size covers one terrain tile upload; the belt grows as needed.
-        let mut staging_belt = wgpu::util::StagingBelt::new(
-            device.clone(),
-            (game_params.level_width * game_params.level_height * 4) as u64,
-        );
 
         // Use a placeholder level manager for construction; transition_to_title()
         // below will replace it immediately after.
@@ -791,73 +748,23 @@ impl Spout {
             &game_params,
             0,
             &mut init_encoder,
-            &mut staging_belt,
-        );
-
-        let renderer = render::Render::init(
-            config,
-            &game_params,
-            adapter,
-            device,
-            queue,
-            &game_view_texture,
-            &upscaled_view,
-            bloom.bloom_view(),
-        );
-        let title_overlay = title_overlay::TitleOverlay::new(
-            device,
-            config.format,
-            &title_ui_view,
-            config.width,
-            config.height,
-            game_params.viewport_width,
-            game_params.viewport_height,
+            &mut graphics.staging_belt,
         );
 
         let particle_system =
             particles::ParticleSystem::new(device, &game_params, &mut init_encoder, &level_manager);
 
-        let ship_renderer = ship::ShipRenderer::init(device);
         let collision_detector = collision::CollisionDetector::init(device);
-        let background = background::BackgroundRenderer::init(device, queue);
 
-        let game_text = text::TextRenderer::init(
-            device,
-            queue,
-            bloom::GAME_VIEW_FORMAT,
-            game_params.viewport_width,
-            game_params.viewport_height,
-            text::YDirection::Up,
-            text::Font::O4b11,
-        );
-        #[cfg(debug_assertions)]
-        let overlay_text = text::TextRenderer::init(
-            device,
-            queue,
-            config.format,
-            config.width,
-            config.height,
-            text::YDirection::Down,
-            text::Font::O4b11,
-        );
-
-        staging_belt.finish();
+        graphics.staging_belt.finish();
         queue.submit(Some(init_encoder.finish()));
-        staging_belt.recall();
+        graphics.staging_belt.recall();
 
         let audio = if game_params.music_starts_on {
             audio::AudioPlayer::new()
         } else {
             audio::AudioPlayer::disabled()
         };
-
-        let touch_zone_indicator = touch_zone_indicator::TouchZoneIndicator::new(
-            device,
-            queue,
-            config.format,
-            config.width,
-            config.height,
-        );
 
         let mut collector = InputCollector::default();
         collector.set_touch_scheme(game_params.touch_control_scheme);
@@ -886,22 +793,10 @@ impl Spout {
             level_manager,
             game_time: Duration::default(),
             iteration_start: Instant::now(),
-            game_view_texture,
-            title_ui_view,
-            upscaled_view,
-            bloom,
-            renderer,
-            title_overlay,
             particle_system,
-            ship_renderer,
             collision_detector,
-            background,
-            game_text,
             audio,
-            staging_belt,
-            touch_zone_indicator,
-            #[cfg(debug_assertions)]
-            overlay_text,
+            graphics,
             frame_times: Vec::with_capacity(60),
             cpu_times: Vec::with_capacity(60),
             tick_wall_dt: 0.0,
@@ -949,28 +844,8 @@ impl Spout {
             self.collector.set_surface_height(config.height as f32);
         }
 
-        let new_upscaled = make_texture(device, config.width, config.height);
-        self.bloom = bloom::Bloom::new(
-            device,
-            config.width,
-            config.height,
-            &new_upscaled,
-            &self.game_params.visual_params,
-        );
-        self.renderer
-            .resize(config, device, &new_upscaled, self.bloom.bloom_view());
-        self.upscaled_view = new_upscaled;
-        self.title_overlay.resize_with_game(
-            queue,
-            config.width,
-            config.height,
-            self.game_params.viewport_width,
-            self.game_params.viewport_height,
-        );
-        self.touch_zone_indicator
-            .resize(queue, config.width, config.height);
-        #[cfg(debug_assertions)]
-        self.overlay_text.resize(queue, config.width, config.height);
+        self.graphics
+            .resize(config, device, queue, &self.game_params);
     }
 
     /// Top-level frame entry point. Splits into four phases:
@@ -1016,14 +891,14 @@ impl Spout {
             viewport_offset,
             &mut encoder,
             &self.game_params,
-            &mut self.staging_belt,
+            &mut self.graphics.staging_belt,
         );
 
         // Ship explosion burst — write particles before compute runs.
         if let Some(explosion) = self.pending_explosion.take() {
             self.particle_system.emit_burst(
                 &mut encoder,
-                &mut self.staging_belt,
+                &mut self.graphics.staging_belt,
                 explosion.position,
                 explosion.velocity,
                 50000, // burst count
@@ -1034,8 +909,11 @@ impl Spout {
 
         // Compute pipelines.
         self.level_manager.compose_tiles(&mut encoder);
-        self.particle_system
-            .run_compute(&self.level_manager, &mut encoder, &mut self.staging_belt);
+        self.particle_system.run_compute(
+            &self.level_manager,
+            &mut encoder,
+            &mut self.graphics.staging_belt,
+        );
 
         // Collision detection — only during active gameplay.
         if let AppState::Playing(play) = &mut self.state {
@@ -1044,7 +922,7 @@ impl Spout {
                     let dispatched = self.collision_detector.dispatch(
                         device,
                         &mut encoder,
-                        &mut self.staging_belt,
+                        &mut self.graphics.staging_belt,
                         &segment.next_ship,
                         &segment.prev_ship,
                         self.level_manager.terrain_buffer(),
@@ -1060,34 +938,35 @@ impl Spout {
         }
 
         // Background → terrain → particles into the game view.
-        self.background.update_state(
+        self.graphics.background.update_state(
             &self.game_params,
             viewport_offset,
             &mut encoder,
-            &mut self.staging_belt,
+            &mut self.graphics.staging_belt,
         );
-        self.background
-            .render(&self.game_view_texture, &mut encoder);
+        self.graphics
+            .background
+            .render(&self.graphics.game_view_texture, &mut encoder);
         self.level_manager
             .terrain_renderer
-            .render(&self.game_view_texture, &mut encoder);
+            .render(&self.graphics.game_view_texture, &mut encoder);
         self.particle_system
-            .render(&self.game_view_texture, &mut encoder);
+            .render(&self.graphics.game_view_texture, &mut encoder);
 
         if let AppState::Title(title) = &self.state {
             title.draw_help_button(
                 device,
                 &mut encoder,
-                &self.game_view_texture,
+                &self.graphics.game_view_texture,
                 &self.game_params,
-                &self.game_text,
+                &self.graphics.game_text,
             );
             title.prepare_ui(
                 device,
                 &mut encoder,
-                &self.title_ui_view,
+                &self.graphics.title_ui_view,
                 &self.game_params,
-                &self.game_text,
+                &self.graphics.game_text,
                 TitleRenderFlags {
                     music_playing: self.audio.is_playing(),
                     using_touch: self.collector.has_been_touched() || tap_restart_prompt(),
@@ -1102,13 +981,13 @@ impl Spout {
                 _ => None,
             };
             if let Some(play) = active_play {
-                self.ship_renderer.render(
+                self.graphics.ship_renderer.render(
                     &play.ship_state,
                     &self.game_params,
                     play.viewport_offset,
-                    &self.game_view_texture,
+                    &self.graphics.game_view_texture,
                     &mut encoder,
-                    &mut self.staging_belt,
+                    &mut self.graphics.staging_belt,
                 );
             }
         }
@@ -1116,13 +995,16 @@ impl Spout {
         self.draw_hud(device, &mut encoder);
 
         // Blit game view → upscaled HDR → bloom → composite onto surface.
-        self.renderer
-            .blit(&self.upscaled_view, &mut encoder, &mut self.staging_belt);
-        self.bloom.render(&mut encoder);
-        self.renderer.render(view, &mut encoder);
+        self.graphics.renderer.blit(
+            &self.graphics.upscaled_view,
+            &mut encoder,
+            &mut self.graphics.staging_belt,
+        );
+        self.graphics.bloom.render(&mut encoder);
+        self.graphics.renderer.render(view, &mut encoder);
 
         if self.state.is_title() {
-            self.title_overlay.render(view, &mut encoder);
+            self.graphics.title_overlay.render(view, &mut encoder);
         }
 
         // Touch-zone diagonal hint only during active gameplay, on Triangle
@@ -1133,7 +1015,9 @@ impl Spout {
         ) && self.collector.has_been_touched()
             && self.state.is_playing()
         {
-            self.touch_zone_indicator.render(view, &mut encoder);
+            self.graphics
+                .touch_zone_indicator
+                .render(view, &mut encoder);
         }
 
         self.level_manager.decompose_tiles(&mut encoder);
@@ -1154,7 +1038,7 @@ impl Spout {
             let win_size = window.inner_size();
             let fps_text = format!("FPS:{:.0} {}x{}", fps, win_size.width, win_size.height);
             let white = [1.0, 1.0, 1.0, 1.0];
-            self.overlay_text.draw(
+            self.graphics.overlay_text.draw(
                 device,
                 &mut encoder,
                 view,
@@ -1164,7 +1048,7 @@ impl Spout {
         #[cfg(not(debug_assertions))]
         let _ = window;
 
-        self.staging_belt.finish();
+        self.graphics.staging_belt.finish();
         queue.submit(Some(encoder.finish()));
         // Drain wgpu callbacks from the previous frame's completed GPU work
         // (non-blocking). Fires the map_async callback set by start_readback()
@@ -1172,7 +1056,7 @@ impl Spout {
         // map_ready == true without stalling.
         #[cfg(not(target_arch = "wasm32"))]
         device.poll(wgpu::PollType::Poll).ok();
-        self.staging_belt.recall();
+        self.graphics.staging_belt.recall();
 
         // Initiate async readback of collision result now that GPU work is
         // submitted. On native the callback fires during the next poll(); on
@@ -1205,14 +1089,16 @@ impl Spout {
             } else {
                 text_color
             };
-        let timer_x =
-            (self.game_text.surface_width - self.game_text.text_width(&timer_text, 1.0)) / 2.0;
-        let level_x =
-            self.game_text.surface_width - self.game_text.text_width(&level_text, 1.0) - 2.0;
-        self.game_text.draw(
+        let timer_x = (self.graphics.game_text.surface_width
+            - self.graphics.game_text.text_width(&timer_text, 1.0))
+            / 2.0;
+        let level_x = self.graphics.game_text.surface_width
+            - self.graphics.game_text.text_width(&level_text, 1.0)
+            - 2.0;
+        self.graphics.game_text.draw(
             device,
             encoder,
-            &self.game_view_texture,
+            &self.graphics.game_view_texture,
             &[
                 (&score_text, 2.0, 2.0, 1.0, text_color),
                 (&timer_text, timer_x, 2.0, 1.0, timer_color),
@@ -1221,27 +1107,27 @@ impl Spout {
         );
 
         if let Some(cause) = cause {
-            let w = self.game_text.surface_width;
-            let h = self.game_text.surface_height;
+            let w = self.graphics.game_text.surface_width;
+            let h = self.graphics.game_text.surface_height;
             let status = match cause {
                 DeathCause::TimeExpired => "TIMES UP",
                 DeathCause::Collided | DeathCause::FellOff => "GAME OVER",
             };
-            let status_x = (w - self.game_text.text_width(status, 1.0)) / 2.0;
+            let status_x = (w - self.graphics.game_text.text_width(status, 1.0)) / 2.0;
             let status_y = h * 0.28;
 
             let score = format!("SCORE: {}", play.score);
-            let score_x = (w - self.game_text.text_width(&score, 1.0)) / 2.0;
+            let score_x = (w - self.graphics.game_text.text_width(&score, 1.0)) / 2.0;
             let score_y = h * 0.5;
 
             let restart = restart_prompt();
-            let restart_x = (w - self.game_text.text_width(restart, 1.0)) / 2.0;
+            let restart_x = (w - self.graphics.game_text.text_width(restart, 1.0)) / 2.0;
             let restart_y = h * 0.68;
 
-            self.game_text.draw(
+            self.graphics.game_text.draw(
                 device,
                 encoder,
-                &self.game_view_texture,
+                &self.graphics.game_view_texture,
                 &[
                     (status, status_x, status_y, 1.0, text_color),
                     (&score, score_x, score_y, 1.0, text_color),
@@ -1281,25 +1167,6 @@ impl Spout {
         let deadline = self.iteration_start + LEVEL_BUDGET;
         self.level_manager.level_maker.work_until(deadline);
     }
-}
-
-fn make_texture(device: &wgpu::Device, width: u32, height: u32) -> wgpu::TextureView {
-    device
-        .create_texture(&wgpu::TextureDescriptor {
-            size: wgpu::Extent3d {
-                width,
-                height,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: bloom::GAME_VIEW_FORMAT,
-            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::RENDER_ATTACHMENT,
-            label: None,
-            view_formats: &[],
-        })
-        .create_view(&wgpu::TextureViewDescriptor::default())
 }
 
 fn main() {
