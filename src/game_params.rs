@@ -1,5 +1,7 @@
 //! Game configuration structs deserialized from `game_config.toml`.
 
+use std::fmt;
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Default)]
@@ -17,7 +19,37 @@ pub enum TouchControlScheme {
 }
 
 // Parameters that define the game. These don't change at runtime.
+#[derive(Debug)]
+pub enum GameParamsError {
+    Parse(toml::de::Error),
+    Invalid(String),
+}
+
+impl fmt::Display for GameParamsError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            GameParamsError::Parse(err) => write!(f, "{err}"),
+            GameParamsError::Invalid(message) => write!(f, "{message}"),
+        }
+    }
+}
+
+impl std::error::Error for GameParamsError {}
+
+impl From<toml::de::Error> for GameParamsError {
+    fn from(value: toml::de::Error) -> Self {
+        GameParamsError::Parse(value)
+    }
+}
+
+// Particle counts are calculated in f32 before being cast to u32 for buffer
+// allocation. Keep validation inside f32's exact integer range so the limit
+// does not depend on rounded large values.
+const MAX_EXACT_PARTICLE_COUNT_F32: f32 = (1_u32 << 24) as f32;
+
+// Parameters that define the game. These don't change at runtime.
 #[derive(Debug, Serialize, Deserialize, Clone, Copy)]
+#[serde(deny_unknown_fields)]
 pub struct GameParams {
     pub viewport_width: u32,
     pub viewport_height: u32,
@@ -45,6 +77,7 @@ pub struct GameParams {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy)]
+#[serde(deny_unknown_fields)]
 pub struct VisualParams {
     /// Index into the particle color map palette (see color_maps.rs).
     pub color_map: i32,
@@ -115,6 +148,7 @@ impl Default for VisualParams {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy)]
+#[serde(deny_unknown_fields)]
 pub struct ParticleSystemParams {
     pub emission_rate: f32,
     pub emission_speed: f32,
@@ -138,6 +172,7 @@ impl Default for ParticleSystemParams {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy)]
+#[serde(deny_unknown_fields)]
 pub struct ShipParams {
     pub acceleration: f32,
     pub rotation_rate: f32,
@@ -155,6 +190,7 @@ impl Default for ShipParams {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy)]
+#[serde(deny_unknown_fields)]
 pub struct LevelParams {
     pub starting_terrain_health: i32,
     #[serde(default = "default_level_time_limit_seconds")]
@@ -171,11 +207,167 @@ impl Default for LevelParams {
 }
 
 impl std::str::FromStr for GameParams {
-    type Err = toml::de::Error;
+    type Err = GameParamsError;
     fn from_str(serialized: &str) -> Result<Self, Self::Err> {
-        let params = toml::from_str(serialized)?;
+        let params: GameParams = toml::from_str(serialized)?;
+        params.validate()?;
         Ok(params)
     }
+}
+
+impl GameParams {
+    pub fn validate(&self) -> Result<(), GameParamsError> {
+        ensure_positive_u32("viewport_width", self.viewport_width)?;
+        ensure_positive_u32("viewport_height", self.viewport_height)?;
+        ensure_positive_u32("level_width", self.level_width)?;
+        ensure_positive_u32("level_height", self.level_height)?;
+        // Width is currently fixed to the viewport because particle/terrain
+        // shaders still conflate terrain stride, view width, and density width.
+        // Height may exceed the viewport because levels scroll vertically.
+        ensure(
+            self.level_width == self.viewport_width,
+            "level_width must equal viewport_width until terrain/view/density widths are split",
+        )?;
+        ensure(
+            self.level_height >= self.viewport_height,
+            "level_height must be at least viewport_height",
+        )?;
+        ensure_positive_f64("fps", self.fps)?;
+
+        let particle_count = self.particle_system_params.emission_rate
+            * self.particle_system_params.max_particle_life;
+        ensure(
+            particle_count.is_finite()
+                && particle_count > 0.0
+                && particle_count <= MAX_EXACT_PARTICLE_COUNT_F32,
+            "particle_system_params.emission_rate * max_particle_life must be finite, positive, and no more than 16,777,216",
+        )?;
+        ensure_positive_f32(
+            "particle_system_params.emission_rate",
+            self.particle_system_params.emission_rate,
+        )?;
+        ensure_positive_f32(
+            "particle_system_params.emission_speed",
+            self.particle_system_params.emission_speed,
+        )?;
+        ensure_positive_f32(
+            "particle_system_params.max_particle_life",
+            self.particle_system_params.max_particle_life,
+        )?;
+        ensure_non_negative_f32(
+            "particle_system_params.damage_rate",
+            self.particle_system_params.damage_rate,
+        )?;
+        ensure_finite_f32(
+            "particle_system_params.gravity",
+            self.particle_system_params.gravity,
+        )?;
+        ensure_non_negative_f32(
+            "particle_system_params.elasticity",
+            self.particle_system_params.elasticity,
+        )?;
+
+        ensure_non_negative_f32("ship_params.acceleration", self.ship_params.acceleration)?;
+        ensure_non_negative_f32("ship_params.rotation_rate", self.ship_params.rotation_rate)?;
+        ensure_positive_f32("ship_params.max_speed", self.ship_params.max_speed)?;
+
+        ensure(
+            self.level_params.starting_terrain_health > 0,
+            "level_params.starting_terrain_health must be positive",
+        )?;
+        ensure_positive_f32(
+            "level_params.level_time_limit_seconds",
+            self.level_params.level_time_limit_seconds,
+        )?;
+
+        ensure(
+            self.visual_params.color_map >= 0
+                && crate::color_maps::has_color_map_index(self.visual_params.color_map as usize),
+            "visual_params.color_map must name an existing color map",
+        )?;
+        ensure_non_negative_f32(
+            "visual_params.bloom_threshold",
+            self.visual_params.bloom_threshold,
+        )?;
+        ensure_non_negative_f32(
+            "visual_params.bloom_strength",
+            self.visual_params.bloom_strength,
+        )?;
+        ensure_positive_u32(
+            "visual_params.bloom_mip_levels",
+            self.visual_params.bloom_mip_levels,
+        )?;
+        ensure_non_negative_f32(
+            "visual_params.crt_strength",
+            self.visual_params.crt_strength,
+        )?;
+        ensure_positive_f32(
+            "visual_params.density_scale",
+            self.visual_params.density_scale,
+        )?;
+        ensure_positive_f32(
+            "visual_params.density_exponent",
+            self.visual_params.density_exponent,
+        )?;
+
+        Ok(())
+    }
+}
+
+fn ensure(condition: bool, message: &'static str) -> Result<(), GameParamsError> {
+    if condition {
+        Ok(())
+    } else {
+        Err(GameParamsError::Invalid(message.to_owned()))
+    }
+}
+
+fn ensure_positive_u32(name: &'static str, value: u32) -> Result<(), GameParamsError> {
+    if value == 0 {
+        return Err(GameParamsError::Invalid(format!(
+            "{name} must be greater than zero"
+        )));
+    }
+
+    Ok(())
+}
+
+fn ensure_finite_f32(name: &'static str, value: f32) -> Result<(), GameParamsError> {
+    if !value.is_finite() {
+        return Err(GameParamsError::Invalid(format!("{name} must be finite")));
+    }
+
+    Ok(())
+}
+
+fn ensure_positive_f32(name: &'static str, value: f32) -> Result<(), GameParamsError> {
+    if !value.is_finite() || value <= 0.0 {
+        return Err(GameParamsError::Invalid(format!(
+            "{name} must be finite and greater than zero"
+        )));
+    }
+
+    Ok(())
+}
+
+fn ensure_non_negative_f32(name: &'static str, value: f32) -> Result<(), GameParamsError> {
+    if !value.is_finite() || value < 0.0 {
+        return Err(GameParamsError::Invalid(format!(
+            "{name} must be finite and non-negative"
+        )));
+    }
+
+    Ok(())
+}
+
+fn ensure_positive_f64(name: &'static str, value: f64) -> Result<(), GameParamsError> {
+    if !value.is_finite() || value <= 0.0 {
+        return Err(GameParamsError::Invalid(format!(
+            "{name} must be finite and greater than zero"
+        )));
+    }
+
+    Ok(())
 }
 
 impl Default for GameParams {
@@ -204,7 +396,12 @@ const EMBEDDED_CONFIG: &str = include_str!("../game_config.toml");
 /// (for development / user overrides), then falls back to the embedded default.
 /// This way packaged .app bundles work without an external config file.
 pub fn get_game_config_from_default_file() -> GameParams {
-    let params = load_params_from_file();
+    let params = match load_params_from_file() {
+        Ok(params) => params,
+        Err(err) => {
+            panic!("embedded game_config.toml is invalid: {err}");
+        }
+    };
     // iOS has no keyboard, so music must default to on (no M-key to toggle).
     #[cfg(target_os = "ios")]
     let params = GameParams {
@@ -214,13 +411,13 @@ pub fn get_game_config_from_default_file() -> GameParams {
     params
 }
 
-fn load_params_from_file() -> GameParams {
+fn load_params_from_file() -> Result<GameParams, GameParamsError> {
     #[cfg(not(target_arch = "wasm32"))]
     if let Ok(disk_config) = std::fs::read_to_string("game_config.toml") {
         match disk_config.parse() {
             Ok(params) => {
                 log::info!("Loaded config from disk: game_config.toml");
-                return params;
+                return Ok(params);
             }
             Err(e) => {
                 log::warn!(
@@ -230,13 +427,11 @@ fn load_params_from_file() -> GameParams {
         }
     }
 
-    match EMBEDDED_CONFIG.parse() {
-        Ok(params) => params,
-        Err(e) => {
-            log::error!("Failed to parse embedded config: {:?}", e);
-            GameParams::default()
-        }
-    }
+    parse_embedded_config()
+}
+
+pub fn parse_embedded_config() -> Result<GameParams, GameParamsError> {
+    EMBEDDED_CONFIG.parse()
 }
 
 #[cfg(test)]
@@ -269,7 +464,10 @@ mod tests {
 
     #[test]
     fn embedded_config_parses() {
-        let params = get_game_config_from_default_file();
+        let params = match parse_embedded_config() {
+            Ok(params) => params,
+            Err(err) => panic!("embedded game_config.toml should parse and validate: {err}"),
+        };
         assert!(params.viewport_width > 0);
         assert!(params.viewport_height > 0);
         assert!(params.fps > 0.0);
@@ -284,6 +482,7 @@ mod tests {
         assert!(d.level_height > d.viewport_height);
         assert!(d.fps > 0.0);
         assert!(d.level_params.level_time_limit_seconds > 0.0);
+        assert!(d.validate().is_ok());
     }
 
     #[test]
@@ -317,5 +516,58 @@ mod tests {
     fn from_str_invalid_toml_returns_error() {
         let bad = "this is not valid toml {{{{";
         assert!(bad.parse::<GameParams>().is_err());
+    }
+
+    #[test]
+    fn from_str_unknown_field_returns_error() {
+        let bad = r#"
+            viewport_width = 100
+            viewport_height = 50
+            level_width = 100
+            level_height = 200
+            fps = 30.0
+            music_starts_on = true
+            render_ship = false
+            typo_that_should_not_be_ignored = true
+        "#;
+        assert!(bad.parse::<GameParams>().is_err());
+    }
+
+    #[test]
+    fn width_mismatch_is_invalid_until_wider_levels_are_split() {
+        let mut params = GameParams::default();
+        params.level_width = params.viewport_width + 1;
+        assert!(params.validate().is_err());
+    }
+
+    #[test]
+    fn invalid_visual_params_are_rejected() {
+        let mut params = GameParams::default();
+        params.visual_params.color_map = i32::MAX;
+        assert!(params.validate().is_err());
+
+        params = GameParams::default();
+        params.visual_params.density_scale = 0.0;
+        assert!(params.validate().is_err());
+
+        params = GameParams::default();
+        params.visual_params.density_exponent = f32::NAN;
+        assert!(params.validate().is_err());
+    }
+
+    #[test]
+    fn invalid_particle_counts_are_rejected() {
+        let mut params = GameParams::default();
+        params.particle_system_params.emission_rate = 0.0;
+        assert!(params.validate().is_err());
+
+        params = GameParams::default();
+        params.particle_system_params.max_particle_life = f32::INFINITY;
+        assert!(params.validate().is_err());
+
+        params = GameParams::default();
+        params.particle_system_params.emission_rate = MAX_EXACT_PARTICLE_COUNT_F32 * 2.0;
+        params.particle_system_params.max_particle_life = 1.0;
+        assert!(params.validate().is_err());
     }
 }

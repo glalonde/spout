@@ -59,11 +59,11 @@ fn parula() -> scarlet::colormap::ListedColorMap {
     scarlet::colormap::ListedColorMap::new(PARULA_DATA.iter().copied())
 }
 
-static COLOR_MAPS: OnceLock<[scarlet::colormap::ListedColorMap; 5]> = OnceLock::new();
+static COLOR_MAPS: OnceLock<Vec<scarlet::colormap::ListedColorMap>> = OnceLock::new();
 
-fn color_maps() -> &'static [scarlet::colormap::ListedColorMap; 5] {
+fn color_maps() -> &'static [scarlet::colormap::ListedColorMap] {
     COLOR_MAPS.get_or_init(|| {
-        [
+        vec![
             scarlet::colormap::ListedColorMap::viridis(),
             scarlet::colormap::ListedColorMap::magma(),
             scarlet::colormap::ListedColorMap::inferno(),
@@ -71,6 +71,10 @@ fn color_maps() -> &'static [scarlet::colormap::ListedColorMap; 5] {
             parula(),
         ]
     })
+}
+
+pub fn has_color_map_index(i: usize) -> bool {
+    color_maps().get(i).is_some()
 }
 
 pub fn get_color_map_from_index(i: usize) -> &'static scarlet::colormap::ListedColorMap {
@@ -146,7 +150,7 @@ mod tests {
 
     #[test]
     fn all_color_maps_accessible() {
-        for i in 0..5 {
+        for i in 0..color_maps().len() {
             let _cm = get_color_map_from_index(i);
         }
     }
@@ -154,6 +158,6 @@ mod tests {
     #[test]
     #[should_panic]
     fn out_of_bounds_panics() {
-        let _cm = get_color_map_from_index(5);
+        let _cm = get_color_map_from_index(color_maps().len());
     }
 }

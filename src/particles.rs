@@ -15,7 +15,8 @@ pub struct Particle {
     position: [f32; 2],
     velocity: [f32; 2],
     ttl: f32,
-    _padding: i32,
+    // One-frame offset from the uniform particle update dt. 0.0 is neutral.
+    subframe_dt_offset: f32,
 }
 
 struct EmitterParams {
@@ -363,7 +364,7 @@ impl Emitter {
                     base_velocity[1] + speed_vary * angle.sin(),
                 ],
                 ttl,
-                _padding: 0,
+                subframe_dt_offset: 0.0,
             });
         }
 
@@ -1319,6 +1320,10 @@ mod tests {
                 "Burst particle ttl={} expected {}",
                 p.ttl,
                 ttl
+            );
+            assert_eq!(
+                p.subframe_dt_offset, 0.0,
+                "Burst particles should use the neutral subframe_dt_offset"
             );
             // Velocity should include base_vel + radial component.
             let radial_vx = p.velocity[0] - base_vel[0];

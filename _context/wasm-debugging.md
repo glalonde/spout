@@ -68,7 +68,7 @@ panicked at .../std/sys/pal/wasm/../unsupported/time.rs: time not implemented on
 `request_adapter` / `request_device` are JS Promises. `block_on` spins waiting
 for them but never yields control to the JS event loop, so they never resolve.
 **Fix:** use `wasm_bindgen_futures::spawn_local` and share results via
-`Rc<RefCell<Option<T>>>`. See `examples/framework.rs` for the pattern.
+`Rc<RefCell<Option<T>>>`. See `src/app.rs` for the pattern.
 
 ### `getrandom` on WASM
 wgpu 29 transitively requires `getrandom 0.3`, which needs the `wasm_js` feature

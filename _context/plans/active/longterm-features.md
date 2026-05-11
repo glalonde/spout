@@ -67,11 +67,13 @@ Visuals are considered high-priority — the game lives or dies on how stimulati
 ## Audio
 
 - **Procedural sound effects** — thruster pitch tied to speed/throttle
-- ✦ **WASM audio** — Web Audio playback (Phase 2 of music plan)
+- ✦ **WASM audio worker** — Web Audio playback exists; move tracker rendering
+  off the browser main thread after the audio executor/sink seam lands.
 
 ## Platform / Infrastructure
 
-- **WASM revival** — get the web target building and running again
+- **WASM hardening** — web target builds in CI; keep improving browser runtime,
+  audio unlock behavior, and visual verification.
 - ✦ **Gamepad input** — controller support via gilrs or winit gamepad events
 
 - **Configurable keybindings** — runtime remapping beyond game_config.toml

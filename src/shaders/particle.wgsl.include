@@ -3,5 +3,6 @@ struct Particle {
   position: vec2<f32>,
   velocity: vec2<f32>,
   ttl: f32,
-  local_dt: f32,
+  // One-frame offset from the uniform particle update dt. 0.0 is neutral.
+  subframe_dt_offset: f32,
 };
