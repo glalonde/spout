@@ -93,6 +93,17 @@ enum DeathCause {
     TimeExpired,
 }
 
+/// GPU-bound state transitions queued up by `update_phase` to be applied
+/// after the simulation step (they need to rebuild `level_manager` and
+/// `particle_system`, which submit their own initialization encoder).
+/// Lightweight transitions (`ToGameOver`, pause toggle, title-instructions)
+/// are applied inline during `update_phase` instead.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PendingTransition {
+    ToTitle,
+    ToPlay,
+}
+
 /// In-game session data, shared across Playing / Paused / GameOver.
 ///
 /// Lives inside the relevant `AppState` variants. Methods on `Play` are pure
@@ -796,7 +807,9 @@ impl Spout {
         };
     }
 
-    fn tick(&mut self) -> (Duration, Duration) {
+    /// Compute the per-frame game / wall delta times. Wall time always
+    /// advances; game time freezes while paused.
+    fn tick_time(&mut self) -> (Duration, Duration) {
         let now = Instant::now();
         let delta_t = (now - self.iteration_start).min(MAX_FRAME_DT);
         self.iteration_start = now;
@@ -810,34 +823,51 @@ impl Spout {
         }
     }
 
-    /// Advance per-frame state: input snapshot, time tick, simulation step.
-    /// Returns a death cause if the simulation killed the ship this frame
-    /// (timer expiry, out-of-bounds). The caller is responsible for triggering
-    /// the GameOver transition with that cause.
-    fn update_state(&mut self) -> Option<DeathCause> {
-        self.audio.poll();
+    /// Poll last frame's GPU collision readback. If it returned a hit, the
+    /// `Play` records the impact and we transition to `GameOver` here so the
+    /// rest of `update_phase` sees the new state.
+    fn resolve_pending_collision(&mut self) {
+        let collision_death = if let Some(result) = self.collision_detector.poll_result() {
+            if let AppState::Playing(play) = &mut self.state {
+                play.resolve_collision_result(&self.game_params, result)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        if let Some(cause) = collision_death {
+            self.transition_to_game_over(cause);
+        }
+    }
 
-        // Snapshot input.
-        self.prev_input_state = self.input_state;
-        self.input_state = self.collector.current_state();
-
-        // Pause toggle (only meaningful in Playing/Paused; toggle_pause is
-        // a no-op elsewhere).
+    /// Window-level / state-agnostic input edges: pause toggle, fullscreen.
+    /// Neither needs GPU access.
+    fn handle_global_input(&mut self, window: &winit::window::Window) {
         if self.input_state.pause && !self.prev_input_state.pause {
             self.toggle_pause();
         }
 
-        self.level_manager
-            .level_maker
-            .work_until(Instant::now() + LEVEL_BUDGET);
+        if !self.prev_input_state.fullscreen && self.input_state.fullscreen {
+            if window.fullscreen().is_some() {
+                log::info!("Setting windowed mode.");
+                window.set_fullscreen(None);
+            } else {
+                log::info!("Setting borderless fullscreen.");
+                window.set_fullscreen(Some(winit::window::Fullscreen::Borderless(None)));
+            }
+        }
+    }
 
-        let (game_dt_duration, wall_dt_duration) = self.tick();
-        let game_dt = game_dt_duration.as_secs_f32();
-        let wall_dt = wall_dt_duration.as_secs_f32();
-        self.tick_wall_dt = wall_dt;
-
-        // Drive simulation + particle emitter for the active state.
-        let death = match &mut self.state {
+    /// Drive the simulation for the active state. Returns a death cause if
+    /// the sim killed the ship this frame (timer expiry, fell off the
+    /// playfield).
+    fn update_simulation(
+        &mut self,
+        game_dt: f32,
+        game_dt_duration: Duration,
+    ) -> Option<DeathCause> {
+        match &mut self.state {
             AppState::Title { .. } => {
                 self.particle_system.update_state(
                     game_dt,
@@ -867,18 +897,114 @@ impl Spout {
             | AppState::GameOver { .. }
             | AppState::Settings
             | AppState::Leaderboard => {
-                // No simulation step. Particles continue to animate without a
-                // new emitter motion (drifting from previous frame's state).
+                // No simulation step. Particles continue to animate without
+                // a new emitter motion (drifting from previous frame's state).
                 let offset = self.state.viewport_offset();
                 self.particle_system.update_state(game_dt, offset, None);
                 None
             }
+        }
+    }
+
+    /// Title-screen input. Toggles `instructions_open` and the music button
+    /// inline; returns `PendingTransition::ToPlay` if the player just started
+    /// a game. Caller should not invoke this outside `AppState::Title`.
+    fn process_title_input(&mut self, surface_w: u32, surface_h: u32) -> Option<PendingTransition> {
+        let AppState::Title { instructions_open } = self.state else {
+            return None;
         };
+
+        let input = self.input_state;
+        let clicked_button = input
+            .pointer_pressed
+            .and_then(|point| self.title_button_at(instructions_open, point, surface_w, surface_h));
+        let mut title_action_handled = false;
+        let mut next_instructions_open = instructions_open;
+
+        if input.help {
+            next_instructions_open = !next_instructions_open;
+            title_action_handled = true;
+        }
+
+        if let Some(action) = clicked_button {
+            match action {
+                TitleButtonAction::Music => self.audio.toggle(),
+                TitleButtonAction::Help => {
+                    next_instructions_open = !next_instructions_open;
+                }
+            }
+            title_action_handled = true;
+        } else if next_instructions_open && input.pointer_pressed.is_some() {
+            next_instructions_open = false;
+            title_action_handled = true;
+        }
+
+        // Start game on a NEW press of thrust or rotate (edge, not held).
+        let prev = self.prev_input_state;
+        let new_thrust = input.thrust > 0.0 && prev.thrust == 0.0;
+        let new_rotate = input.rotate.abs() > 0.0 && prev.rotate.abs() == 0.0;
+        if !title_action_handled && !next_instructions_open && (new_thrust || new_rotate) {
+            return Some(PendingTransition::ToPlay);
+        }
+
+        if next_instructions_open != instructions_open {
+            self.state = AppState::Title {
+                instructions_open: next_instructions_open,
+            };
+        }
+
+        None
+    }
+
+    /// Pure-CPU update phase. Snapshots input, ticks time, drives simulation,
+    /// applies non-GPU transitions inline (pause toggle, GameOver), and
+    /// returns a GPU-bound transition intent (ToTitle / ToPlay) if any.
+    fn update_phase(&mut self, window: &winit::window::Window) -> Option<PendingTransition> {
+        self.audio.poll();
+        self.resolve_pending_collision();
+
+        self.prev_input_state = self.input_state;
+        self.input_state = self.collector.current_state();
+
+        self.handle_global_input(window);
+
+        self.level_manager
+            .level_maker
+            .work_until(Instant::now() + LEVEL_BUDGET);
+
+        let (game_dt_duration, wall_dt_duration) = self.tick_time();
+        let game_dt = game_dt_duration.as_secs_f32();
+        let wall_dt = wall_dt_duration.as_secs_f32();
+        self.tick_wall_dt = wall_dt;
+
+        if let Some(cause) = self.update_simulation(game_dt, game_dt_duration) {
+            self.transition_to_game_over(cause);
+        }
 
         self.renderer
             .update_state(wall_dt, &self.input_state, &self.prev_input_state);
 
-        death
+        // Restart from game-over: explicit restart key, or any tap.
+        let restart_pressed = self.input_state.restart
+            || (matches!(self.state, AppState::GameOver { .. }) && self.input_state.touch_started);
+        if restart_pressed {
+            return Some(PendingTransition::ToTitle);
+        }
+
+        let win_size = window.inner_size();
+        self.process_title_input(win_size.width, win_size.height)
+    }
+
+    fn apply_transition(
+        &mut self,
+        t: PendingTransition,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+    ) {
+        match t {
+            PendingTransition::ToTitle => self.transition_to_title(device, queue),
+            PendingTransition::ToPlay => self.transition_to_play(device, queue),
+        }
     }
 }
 
@@ -1112,6 +1238,13 @@ impl Spout {
         self.overlay_text.resize(queue, config.width, config.height);
     }
 
+    /// Top-level frame entry point. Splits into four phases:
+    ///
+    /// 1. `update_phase` — pure-CPU simulation + input handling.
+    /// 2. `apply_transition` — GPU-bound state transitions (rebuild level
+    ///    and particle resources). Submits its own encoder.
+    /// 3. `draw_phase` — render the current state. Owns the main encoder.
+    /// 4. `post_phase` — frame-time bookkeeping + spare-budget level work.
     fn render(
         &mut self,
         view: &wgpu::TextureView,
@@ -1120,91 +1253,26 @@ impl Spout {
         window: &winit::window::Window,
     ) {
         let cpu_start = Instant::now();
-
-        // Read back GPU collision result from previous frame. Poll even outside
-        // gameplay so a reset/title transition cannot leave the detector stuck
-        // with a stale in-flight readback.
-        let collision_death = if let Some(result) = self.collision_detector.poll_result() {
-            if let AppState::Playing(play) = &mut self.state {
-                play.resolve_collision_result(&self.game_params, result)
-            } else {
-                None
-            }
-        } else {
-            None
-        };
-        if let Some(cause) = collision_death {
-            self.transition_to_game_over(cause);
+        let pending = self.update_phase(window);
+        if let Some(t) = pending {
+            self.apply_transition(t, device, queue);
         }
+        self.draw_phase(view, device, queue, window);
+        self.post_phase(cpu_start, window);
+    }
 
+    /// Run all GPU work for the current frame and submit it. Owns the render
+    /// encoder; doesn't mutate game-logic state (only consumes `pending_explosion`
+    /// and dispatches queued collision work).
+    fn draw_phase(
+        &mut self,
+        view: &wgpu::TextureView,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        window: &winit::window::Window,
+    ) {
         let mut encoder =
             device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-
-        // Update input and game state. May produce a death cause from
-        // simulation (timer expiry, out-of-bounds).
-        let sim_death = self.update_state();
-        if let Some(cause) = sim_death {
-            self.transition_to_game_over(cause);
-        }
-        let win_size = window.inner_size();
-
-        // Fullscreen toggle (edge-triggered, independent of game state).
-        if !self.prev_input_state.fullscreen && self.input_state.fullscreen {
-            if window.fullscreen().is_some() {
-                log::info!("Setting windowed mode.");
-                window.set_fullscreen(None);
-            } else {
-                log::info!("Setting borderless fullscreen.");
-                window.set_fullscreen(Some(winit::window::Fullscreen::Borderless(None)));
-            }
-        }
-
-        // Restart from game-over: explicit restart key, or any tap.
-        let restart_pressed = self.input_state.restart
-            || (matches!(self.state, AppState::GameOver { .. }) && self.input_state.touch_started);
-        if restart_pressed {
-            self.transition_to_title(device, queue);
-        }
-
-        // Title-screen input handling.
-        if let AppState::Title { instructions_open } = self.state {
-            let input = self.input_state;
-            let clicked_button = input.pointer_pressed.and_then(|point| {
-                self.title_button_at(instructions_open, point, win_size.width, win_size.height)
-            });
-            let mut title_action_handled = false;
-            let mut next_instructions_open = instructions_open;
-
-            if input.help {
-                next_instructions_open = !next_instructions_open;
-                title_action_handled = true;
-            }
-
-            if let Some(action) = clicked_button {
-                match action {
-                    TitleButtonAction::Music => self.audio.toggle(),
-                    TitleButtonAction::Help => {
-                        next_instructions_open = !next_instructions_open;
-                    }
-                }
-                title_action_handled = true;
-            } else if next_instructions_open && input.pointer_pressed.is_some() {
-                next_instructions_open = false;
-                title_action_handled = true;
-            }
-
-            // Start game on a NEW press of thrust or rotate (edge, not held).
-            let prev = self.prev_input_state;
-            let new_thrust = input.thrust > 0.0 && prev.thrust == 0.0;
-            let new_rotate = input.rotate.abs() > 0.0 && prev.rotate.abs() == 0.0;
-            if !title_action_handled && !next_instructions_open && (new_thrust || new_rotate) {
-                self.transition_to_play(device, queue);
-            } else if next_instructions_open != instructions_open {
-                self.state = AppState::Title {
-                    instructions_open: next_instructions_open,
-                };
-            }
-        }
 
         let viewport_offset = self.state.viewport_offset();
 
@@ -1229,7 +1297,7 @@ impl Spout {
             );
         }
 
-        // Run compute pipeline(s).
+        // Compute pipelines.
         self.level_manager.compose_tiles(&mut encoder);
         self.particle_system
             .run_compute(&self.level_manager, &mut encoder, &mut self.staging_belt);
@@ -1256,7 +1324,7 @@ impl Spout {
             }
         }
 
-        // Render background (clears and draws tiled background).
+        // Background → terrain → particles into the game view.
         self.background.update_state(
             &self.game_params,
             viewport_offset,
@@ -1265,13 +1333,9 @@ impl Spout {
         );
         self.background
             .render(&self.game_view_texture, &mut encoder);
-
-        // Render terrain (on top of background).
         self.level_manager
             .terrain_renderer
             .render(&self.game_view_texture, &mut encoder);
-
-        // Render particles.
         self.particle_system
             .render(&self.game_view_texture, &mut encoder);
 
@@ -1280,7 +1344,7 @@ impl Spout {
             self.prepare_title_ui(instructions_open, device, &mut encoder);
         }
 
-        // Render ship — only during active gameplay or pause.
+        // Ship — only during active gameplay or pause.
         if self.game_params.render_ship {
             let active_play = match &self.state {
                 AppState::Playing(p) | AppState::Paused(p) => Some(p),
@@ -1298,93 +1362,20 @@ impl Spout {
             }
         }
 
-        // In-game HUD — score/level/timer text drawn in Playing, Paused, and
-        // GameOver. The GAME OVER / TIMES UP overlay is added on top in GameOver.
-        let hud_play_and_cause: Option<(&Play, Option<DeathCause>)> = match &self.state {
-            AppState::Playing(p) | AppState::Paused(p) => Some((p, None)),
-            AppState::GameOver { play, cause } => Some((play, Some(*cause))),
-            _ => None,
-        };
-        if let Some((play, cause)) = hud_play_and_cause {
-            let score_text = format!("{}", play.score);
-            let level_text = format!("LV{}", play.current_level_index + 1);
-            let timer_text =
-                scoring::format_level_timer(play.level_timer_remaining(&self.game_params));
-            // Held below 1.0 so bloom contribution stays well under what the
-            // particle/ship neon hits when stacked. With bloom_threshold=0.4
-            // and soft-knee, value v → bloom contribution v*(v-0.4)/v = v-0.4.
-            let text_color = [0.7, 0.7, 0.7, 1.0];
-            let timer_color =
-                if play.level_timer_remaining(&self.game_params) <= Duration::from_secs(10) {
-                    [0.95, 0.45, 0.45, 1.0]
-                } else {
-                    text_color
-                };
-            let timer_x =
-                (self.game_text.surface_width - self.game_text.text_width(&timer_text, 1.0)) / 2.0;
-            let level_x =
-                self.game_text.surface_width - self.game_text.text_width(&level_text, 1.0) - 2.0;
-            self.game_text.draw(
-                device,
-                &mut encoder,
-                &self.game_view_texture,
-                &[
-                    (&score_text, 2.0, 2.0, 1.0, text_color),
-                    (&timer_text, timer_x, 2.0, 1.0, timer_color),
-                    (&level_text, level_x, 2.0, 1.0, text_color),
-                ],
-            );
+        self.draw_hud(device, &mut encoder);
 
-            if let Some(cause) = cause {
-                let w = self.game_text.surface_width;
-                let h = self.game_text.surface_height;
-                let status = match cause {
-                    DeathCause::TimeExpired => "TIMES UP",
-                    DeathCause::Collided | DeathCause::FellOff => "GAME OVER",
-                };
-                let status_x = (w - self.game_text.text_width(status, 1.0)) / 2.0;
-                let status_y = h * 0.28;
-
-                let score = format!("SCORE: {}", play.score);
-                let score_x = (w - self.game_text.text_width(&score, 1.0)) / 2.0;
-                let score_y = h * 0.5;
-
-                let restart = restart_prompt();
-                let restart_x = (w - self.game_text.text_width(restart, 1.0)) / 2.0;
-                let restart_y = h * 0.68;
-
-                self.game_text.draw(
-                    device,
-                    &mut encoder,
-                    &self.game_view_texture,
-                    &[
-                        (status, status_x, status_y, 1.0, text_color),
-                        (&score, score_x, score_y, 1.0, text_color),
-                        (restart, restart_x, restart_y, 1.0, text_color),
-                    ],
-                );
-            }
-        }
-
-        // Blit game view (240×135) → upscaled HDR (surface resolution).
+        // Blit game view → upscaled HDR → bloom → composite onto surface.
         self.renderer
             .blit(&self.upscaled_view, &mut encoder, &mut self.staging_belt);
-
-        // Run bloom post-process at full surface resolution (threshold + blur).
         self.bloom.render(&mut encoder);
-
-        // Composite upscaled HDR + bloom → surface (LDR).
         self.renderer.render(view, &mut encoder);
 
         if self.state.is_title() {
             self.title_overlay.render(view, &mut encoder);
         }
 
-        // Touch-zone diagonal hint. Only render if:
-        //   - Triangle scheme is active,
-        //   - the player has actually used touch this session (so it stays
-        //     hidden on keyboard-driven desktop and web), and
-        //   - we are in active gameplay (not title or game-over).
+        // Touch-zone diagonal hint only during active gameplay, on Triangle
+        // scheme, after the player has actually used touch this session.
         if matches!(
             self.game_params.touch_control_scheme,
             game_params::TouchControlScheme::Triangle
@@ -1396,21 +1387,21 @@ impl Spout {
 
         self.level_manager.decompose_tiles(&mut encoder);
 
-        // Frame timing — collected in all build profiles.
+        // FPS overlay (debug builds). Computes avg_dt now so the on-screen
+        // text uses up-to-date numbers; the same avg_dt is reused for the
+        // periodic frame log in `post_phase`.
         let dt = self.tick_wall_dt;
         if self.frame_times.len() >= 60 {
             self.frame_times.remove(0);
         }
         self.frame_times.push(dt);
-        let avg_dt = self.frame_times.iter().sum::<f32>() / self.frame_times.len() as f32;
-        let fps = if avg_dt > 0.0 { 1.0 / avg_dt } else { 0.0 };
-        let w = win_size.width;
-        let h = win_size.height;
 
-        // On-screen FPS overlay — debug builds only.
         #[cfg(debug_assertions)]
         {
-            let fps_text = format!("FPS:{:.0} {}x{}", fps, w, h);
+            let avg_dt = self.frame_times.iter().sum::<f32>() / self.frame_times.len() as f32;
+            let fps = if avg_dt > 0.0 { 1.0 / avg_dt } else { 0.0 };
+            let win_size = window.inner_size();
+            let fps_text = format!("FPS:{:.0} {}x{}", fps, win_size.width, win_size.height);
             let white = [1.0, 1.0, 1.0, 1.0];
             self.overlay_text.draw(
                 device,
@@ -1419,49 +1410,125 @@ impl Spout {
                 &[(&fps_text, 8.0, 8.0, 1.0, white)],
             );
         }
+        #[cfg(not(debug_assertions))]
+        let _ = window;
 
         self.staging_belt.finish();
         queue.submit(Some(encoder.finish()));
-        // Drain wgpu callbacks from the previous frame's completed GPU work (non-blocking).
-        // This fires the map_async callback set by start_readback() last frame, so that
-        // poll_result() at the top of the next frame sees map_ready == true without stalling.
+        // Drain wgpu callbacks from the previous frame's completed GPU work
+        // (non-blocking). Fires the map_async callback set by start_readback()
+        // last frame, so poll_result() at the top of the next frame sees
+        // map_ready == true without stalling.
         #[cfg(not(target_arch = "wasm32"))]
         device.poll(wgpu::PollType::Poll).ok();
         self.staging_belt.recall();
 
-        // Initiate async readback of collision result now that GPU work is submitted.
-        // On native the callback fires during the next poll(); on WASM it fires
-        // asynchronously before the next frame.
+        // Initiate async readback of collision result now that GPU work is
+        // submitted. On native the callback fires during the next poll(); on
+        // WASM it fires asynchronously before the next frame.
         self.collision_detector.start_readback();
+    }
 
-        // CPU-side render time: top of render() through post-submit cleanup.
-        // Excludes the spare-budget `work_until` block below. Not vsync-bounded,
-        // so this number changes with workload even when avg_dt is at the 60Hz floor.
+    /// Score / level / timer text + game-over overlay. Drawn whenever a `Play`
+    /// session exists (Playing, Paused, GameOver).
+    fn draw_hud(&mut self, device: &wgpu::Device, encoder: &mut wgpu::CommandEncoder) {
+        let hud_play_and_cause: Option<(&Play, Option<DeathCause>)> = match &self.state {
+            AppState::Playing(p) | AppState::Paused(p) => Some((p, None)),
+            AppState::GameOver { play, cause } => Some((play, Some(*cause))),
+            _ => None,
+        };
+        let Some((play, cause)) = hud_play_and_cause else {
+            return;
+        };
+
+        let score_text = format!("{}", play.score);
+        let level_text = format!("LV{}", play.current_level_index + 1);
+        let timer_text = scoring::format_level_timer(play.level_timer_remaining(&self.game_params));
+        // Held below 1.0 so bloom contribution stays well under what the
+        // particle/ship neon hits when stacked. With bloom_threshold=0.4 and
+        // soft-knee, value v → bloom contribution v*(v-0.4)/v = v-0.4.
+        let text_color = [0.7, 0.7, 0.7, 1.0];
+        let timer_color =
+            if play.level_timer_remaining(&self.game_params) <= Duration::from_secs(10) {
+                [0.95, 0.45, 0.45, 1.0]
+            } else {
+                text_color
+            };
+        let timer_x =
+            (self.game_text.surface_width - self.game_text.text_width(&timer_text, 1.0)) / 2.0;
+        let level_x =
+            self.game_text.surface_width - self.game_text.text_width(&level_text, 1.0) - 2.0;
+        self.game_text.draw(
+            device,
+            encoder,
+            &self.game_view_texture,
+            &[
+                (&score_text, 2.0, 2.0, 1.0, text_color),
+                (&timer_text, timer_x, 2.0, 1.0, timer_color),
+                (&level_text, level_x, 2.0, 1.0, text_color),
+            ],
+        );
+
+        if let Some(cause) = cause {
+            let w = self.game_text.surface_width;
+            let h = self.game_text.surface_height;
+            let status = match cause {
+                DeathCause::TimeExpired => "TIMES UP",
+                DeathCause::Collided | DeathCause::FellOff => "GAME OVER",
+            };
+            let status_x = (w - self.game_text.text_width(status, 1.0)) / 2.0;
+            let status_y = h * 0.28;
+
+            let score = format!("SCORE: {}", play.score);
+            let score_x = (w - self.game_text.text_width(&score, 1.0)) / 2.0;
+            let score_y = h * 0.5;
+
+            let restart = restart_prompt();
+            let restart_x = (w - self.game_text.text_width(restart, 1.0)) / 2.0;
+            let restart_y = h * 0.68;
+
+            self.game_text.draw(
+                device,
+                encoder,
+                &self.game_view_texture,
+                &[
+                    (status, status_x, status_y, 1.0, text_color),
+                    (&score, score_x, score_y, 1.0, text_color),
+                    (restart, restart_x, restart_y, 1.0, text_color),
+                ],
+            );
+        }
+    }
+
+    /// Frame-time accounting + periodic log + spare-budget level work. No
+    /// rendering, no state mutation.
+    fn post_phase(&mut self, cpu_start: Instant, window: &winit::window::Window) {
         let cpu_dt = cpu_start.elapsed().as_secs_f32();
         if self.cpu_times.len() >= 60 {
             self.cpu_times.remove(0);
         }
         self.cpu_times.push(cpu_dt);
+        let avg_dt = self.frame_times.iter().sum::<f32>() / self.frame_times.len() as f32;
         let avg_cpu = self.cpu_times.iter().sum::<f32>() / self.cpu_times.len() as f32;
+        let fps = if avg_dt > 0.0 { 1.0 / avg_dt } else { 0.0 };
 
         self.frame_log_count = self.frame_log_count.wrapping_add(1);
         if self.frame_log_count.is_multiple_of(60) {
+            let win_size = window.inner_size();
             log::info!(
                 "frame avg_dt={:.2}ms cpu={:.2}ms fps={:.1} surface={}x{} bloom_mips={}",
                 avg_dt * 1000.0,
                 avg_cpu * 1000.0,
                 fps,
-                w,
-                h,
+                win_size.width,
+                win_size.height,
                 self.game_params.visual_params.bloom_mip_levels,
             );
         }
 
-        {
-            // After rendering, do some "async" work:
-            let deadline = self.iteration_start + LEVEL_BUDGET;
-            self.level_manager.level_maker.work_until(deadline);
-        }
+        // Spare budget for background level generation.
+        let deadline = self.iteration_start + LEVEL_BUDGET;
+        self.level_manager.level_maker.work_until(deadline);
     }
 }
 
