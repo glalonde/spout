@@ -84,20 +84,22 @@ fn tap_restart_prompt() -> bool {
     false
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-enum GameMode {
-    /// Title screen: "SPOUT" rendered as terrain, eroded by a fixed emitter.
-    #[default]
-    Title,
-    /// Normal gameplay.
-    Playing,
+/// How the player died — drives the GAME OVER / TIMES UP overlay text and
+/// makes future causes (hazards, etc.) easy to add.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DeathCause {
+    Collided,
+    FellOff,
+    TimeExpired,
 }
 
+/// In-game session data, shared across Playing / Paused / GameOver.
+///
+/// Lives inside the relevant `AppState` variants. Methods on `Play` are pure
+/// game logic — they take `&GameParams`/`&InputState` rather than touching any
+/// GPU state, so the simulation step is testable without wgpu.
 #[derive(Debug, Default)]
-struct GameState {
-    mode: GameMode,
-    input_state: InputState,
-    prev_input_state: InputState,
+struct Play {
     ship_state: ship::ShipState,
     prev_ship_state: ship::ShipState,
     viewport_offset: i32,
@@ -106,12 +108,57 @@ struct GameState {
     score: i32,
     current_level_index: i32,
     level_elapsed: Duration,
-    paused: bool,
-    reset_requested: bool,
-    instructions_open: bool,
-    dead: bool,
-    time_expired: bool,
-    explosion_pending: bool,
+    pending_collision_segment: Option<PendingCollisionSegment>,
+    in_flight_collision_segment: Option<PendingCollisionSegment>,
+}
+
+/// Top-level state machine. Exhaustive — every screen / mode is a variant,
+/// and impossible combinations (e.g. dead-on-title) cannot be represented.
+#[derive(Debug)]
+enum AppState {
+    Title {
+        instructions_open: bool,
+    },
+    /// Placeholder for the upcoming settings screen. Not yet constructed.
+    #[allow(dead_code)]
+    Settings,
+    /// Placeholder for the upcoming leaderboard screen. Not yet constructed.
+    #[allow(dead_code)]
+    Leaderboard,
+    Playing(Play),
+    Paused(Play),
+    GameOver {
+        play: Play,
+        cause: DeathCause,
+    },
+}
+
+impl Default for AppState {
+    fn default() -> Self {
+        AppState::Title {
+            instructions_open: false,
+        }
+    }
+}
+
+impl AppState {
+    /// Camera offset for level/background rendering. Title/Settings/Leaderboard
+    /// have no notion of a viewport, so report 0 (level 0 origin).
+    fn viewport_offset(&self) -> i32 {
+        match self {
+            AppState::Playing(p) | AppState::Paused(p) => p.viewport_offset,
+            AppState::GameOver { play, .. } => play.viewport_offset,
+            AppState::Title { .. } | AppState::Settings | AppState::Leaderboard => 0,
+        }
+    }
+
+    fn is_title(&self) -> bool {
+        matches!(self, AppState::Title { .. })
+    }
+
+    fn is_playing(&self) -> bool {
+        matches!(self, AppState::Playing(_))
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -175,9 +222,226 @@ struct TitleButton {
     rect: UiRect,
 }
 
+/// Position + velocity captured at the moment of death, used to spawn the
+/// explosion particle burst on the next render.
+#[derive(Debug, Clone, Copy)]
+struct ExplosionRequest {
+    position: [f32; 2],
+    velocity: [f32; 2],
+}
+
+/// Particle emitter motion for the title screen: a fixed emitter angled
+/// up-left from the right edge of the viewport.
+fn title_emitter_motion(params: &game_params::GameParams) -> particles::EmitterMotion {
+    let w = params.viewport_width as f32;
+    let h = params.viewport_height as f32;
+    let x = w - 10.0;
+    let y = h * 0.75;
+    // ~170° — mostly left with a slight upward angle.
+    let angle = std::f32::consts::PI - 0.2;
+    particles::EmitterMotion {
+        position_start: [x, y],
+        position_end: [x, y],
+        velocity_start: [0.0, 0.0],
+        velocity_end: [0.0, 0.0],
+        angle_start: angle,
+        angle_end: angle,
+        ..Default::default()
+    }
+}
+
+/// Particle emitter motion driven by the ship's thrust. Returns `None` when
+/// thrust is off or the ship is no longer alive.
+fn ship_emitter_motion(
+    prev_ship: &ship::ShipState,
+    cur_ship: &ship::ShipState,
+    thrust: f32,
+) -> Option<particles::EmitterMotion> {
+    if thrust <= 0.0 {
+        return None;
+    }
+    let start = prev_ship.get_emitter_state();
+    let end = cur_ship.get_emitter_state();
+    Some(particles::EmitterMotion {
+        position_start: start.0,
+        position_end: end.0,
+        velocity_start: prev_ship.velocity,
+        velocity_end: cur_ship.velocity,
+        angle_start: start.1,
+        angle_end: end.1,
+        ..Default::default()
+    })
+}
+
+impl Play {
+    fn new(params: &game_params::GameParams) -> Self {
+        let ship_state = ship::ShipState::init(
+            &params.ship_params,
+            [
+                (params.viewport_width / 2) as f32 + 0.5,
+                (params.viewport_height / 2) as f32 + 0.5,
+            ],
+        );
+        Self {
+            ship_state,
+            prev_ship_state: ship_state,
+            ..Default::default()
+        }
+    }
+
+    fn level_timer_remaining(&self, params: &game_params::GameParams) -> Duration {
+        scoring::level_time_limit_duration(params).saturating_sub(self.level_elapsed)
+    }
+
+    fn commit_progress_height(&mut self, params: &game_params::GameParams, height: f32) {
+        let confirmed_height = height.floor() as i32;
+        self.progress_height = std::cmp::max(confirmed_height, self.progress_height);
+
+        let next_level_index =
+            scoring::level_index_for_progress(self.progress_height, params.level_height);
+        if next_level_index > self.current_level_index {
+            let levels_crossed = next_level_index - self.current_level_index;
+            let bonus = scoring::time_bonus_score(self.level_timer_remaining(params))
+                .saturating_mul(levels_crossed);
+            self.time_bonus_score = self.time_bonus_score.saturating_add(bonus);
+            self.current_level_index = next_level_index;
+            self.level_elapsed = Duration::ZERO;
+            log::info!(
+                "Entered level {} with {} time bonus points",
+                self.current_level_index + 1,
+                bonus
+            );
+        }
+
+        self.score = scoring::combined_score(self.progress_height, self.time_bonus_score);
+    }
+
+    fn update_camera(&mut self, params: &game_params::GameParams) {
+        let live_height = self.ship_state.position[1].floor() as i32;
+        let camera_height = std::cmp::max(live_height, self.progress_height);
+        self.viewport_offset = camera_height - (params.viewport_height / 2) as i32;
+    }
+
+    /// Advance ship physics one frame. Returns the death cause if the ship
+    /// flew off the playfield this step.
+    fn update_ship(
+        &mut self,
+        params: &game_params::GameParams,
+        input: &InputState,
+        dt: f32,
+    ) -> Option<DeathCause> {
+        let gravity = params.particle_system_params.gravity;
+
+        let rotate = if let Some(target) = input.target_heading {
+            // Bang-bang controller: rotate at full speed toward target heading,
+            // stop when within one frame's worth of rotation to avoid oscillation.
+            let current = self.ship_state.orientation;
+            let error = angle_diff(target, current);
+            let dead_zone = self.ship_state.rotation_rate * dt;
+            if error.abs() <= dead_zone {
+                0.0
+            } else {
+                error.signum()
+            }
+        } else {
+            input.rotate
+        };
+        self.ship_state.update(dt, input.thrust, rotate, gravity);
+
+        // Kill if the ship flies off the horizontal edges.
+        let x = self.ship_state.position[0];
+        if x < 0.0 || x >= params.level_width as f32 {
+            return Some(DeathCause::FellOff);
+        }
+
+        // Kill if the ship falls more than one viewport-height below the
+        // bottom of the visible window. At default gravity and viewport
+        // height, that is ~2.8 s of free-fall from rest from the viewport
+        // bottom — enough to recover from a stall, but not from a sustained
+        // fall.
+        let bottom = self.viewport_offset as f32;
+        let viewport_h = params.viewport_height as f32;
+        if self.ship_state.position[1] < bottom - viewport_h {
+            return Some(DeathCause::FellOff);
+        }
+        None
+    }
+
+    /// Advance one frame of gameplay. Returns the death cause if any check
+    /// killed the ship this step (timer expiry, out-of-bounds).
+    fn update(
+        &mut self,
+        params: &game_params::GameParams,
+        input: &InputState,
+        game_dt: f32,
+        game_dt_duration: Duration,
+    ) -> Option<DeathCause> {
+        self.level_elapsed = self.level_elapsed.saturating_add(game_dt_duration);
+        if self.level_elapsed >= scoring::level_time_limit_duration(params) {
+            log::info!(
+                "Level timer expired on level {}",
+                self.current_level_index + 1,
+            );
+            return Some(DeathCause::TimeExpired);
+        }
+
+        if game_dt <= 0.0 {
+            return None;
+        }
+
+        let prev_ship = self.ship_state;
+        self.prev_ship_state = prev_ship;
+        if let Some(cause) = self.update_ship(params, input, game_dt) {
+            return Some(cause);
+        }
+        self.update_camera(params);
+        record_collision_motion(
+            &mut self.pending_collision_segment,
+            prev_ship,
+            self.ship_state,
+        );
+        None
+    }
+
+    /// Apply a GPU collision-detection readback to current play state.
+    /// Returns `Some(DeathCause::Collided)` if the ship hit terrain.
+    fn resolve_collision_result(
+        &mut self,
+        params: &game_params::GameParams,
+        result: collision::CollisionResult,
+    ) -> Option<DeathCause> {
+        let segment = self.in_flight_collision_segment.take()?;
+        if result.hit {
+            let impact_ship = segment.ship_at(result.impact_t);
+            self.commit_progress_height(params, impact_ship.position[1]);
+            self.prev_ship_state = segment.prev_ship;
+            self.ship_state = impact_ship;
+            self.pending_collision_segment = None;
+            log::info!(
+                "Ship collided with terrain at ({:.0}, {:.0}) t={:.3}",
+                impact_ship.position[0],
+                impact_ship.position[1],
+                result.impact_t
+            );
+            Some(DeathCause::Collided)
+        } else {
+            self.commit_progress_height(params, segment.next_ship.position[1]);
+            None
+        }
+    }
+}
+
 struct Spout {
     game_params: game_params::GameParams,
-    state: GameState,
+    state: AppState,
+    /// Input snapshot for this frame. Lives on `Spout` (not in `AppState`) so
+    /// it carries across screen transitions and edge-detection isn't broken
+    /// when state changes.
+    input_state: InputState,
+    prev_input_state: InputState,
+    /// One-shot explosion to emit on the next render. Set when transitioning
+    /// into `GameOver`; consumed by the render pass.
+    pending_explosion: Option<ExplosionRequest>,
     collector: InputCollector,
     level_manager: level_manager::LevelManager,
     game_time: Duration,
@@ -191,8 +455,6 @@ struct Spout {
     particle_system: particles::ParticleSystem,
     ship_renderer: ship::ShipRenderer,
     collision_detector: collision::CollisionDetector,
-    pending_collision_segment: Option<PendingCollisionSegment>,
-    in_flight_collision_segment: Option<PendingCollisionSegment>,
     background: background::BackgroundRenderer,
     /// Renders into the game view (240x135) — pixel-perfect with terrain/particles.
     game_text: text::TextRenderer,
@@ -247,15 +509,11 @@ impl Spout {
         Some((game_x, game_y))
     }
 
-    fn title_buttons(&self) -> Vec<TitleButton> {
+    fn title_buttons(&self, instructions_open: bool) -> Vec<TitleButton> {
         let pad_x = 4.0;
         let button_h = 32.0;
         let help_y = self.game_params.viewport_height as f32 - button_h - 6.0;
-        let help_label = if self.state.instructions_open {
-            "X"
-        } else {
-            "?"
-        };
+        let help_label = if instructions_open { "X" } else { "?" };
         let mut buttons = vec![TitleButton {
             action: TitleButtonAction::Help,
             label: help_label,
@@ -267,7 +525,7 @@ impl Spout {
             },
         }];
 
-        if self.state.instructions_open {
+        if instructions_open {
             let music_label = if self.audio.is_playing() {
                 "[MUSIC ON]"
             } else {
@@ -291,6 +549,7 @@ impl Spout {
 
     fn title_button_at(
         &self,
+        instructions_open: bool,
         point: PointerPress,
         surface_width: u32,
         surface_height: u32,
@@ -300,7 +559,7 @@ impl Spout {
         }
 
         let (game_x, game_y) = self.surface_to_game_point(point, surface_width, surface_height)?;
-        self.title_buttons()
+        self.title_buttons(instructions_open)
             .iter()
             .find(|button| button.rect.contains(game_x, game_y))
             .map(|button| button.action)
@@ -317,13 +576,18 @@ impl Spout {
         point.x >= w * 0.72 && point.y >= h * 0.62
     }
 
-    fn draw_title_help_button(&self, device: &wgpu::Device, encoder: &mut wgpu::CommandEncoder) {
-        if self.state.instructions_open {
+    fn draw_title_help_button(
+        &self,
+        instructions_open: bool,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+    ) {
+        if instructions_open {
             return;
         }
 
         let Some(button) = self
-            .title_buttons()
+            .title_buttons(instructions_open)
             .into_iter()
             .find(|button| button.action == TitleButtonAction::Help)
         else {
@@ -343,8 +607,13 @@ impl Spout {
         );
     }
 
-    fn prepare_title_ui(&self, device: &wgpu::Device, encoder: &mut wgpu::CommandEncoder) {
-        let clear_color = if self.state.instructions_open {
+    fn prepare_title_ui(
+        &self,
+        instructions_open: bool,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+    ) {
+        let clear_color = if instructions_open {
             wgpu::Color {
                 r: 0.02,
                 g: 0.05,
@@ -374,12 +643,13 @@ impl Spout {
         let button_color = [0.7, 0.78, 0.78, 1.0];
         let text_color = [0.82, 0.86, 0.82, 1.0];
         let accent_color = [0.9, 0.72, 0.48, 1.0];
-        let buttons = self.title_buttons();
+        let buttons = self.title_buttons(instructions_open);
 
         let mut texts: Vec<(&str, f32, f32, f32, [f32; 4])> = Vec::new();
-        for button in buttons.iter().filter(|button| {
-            button.action != TitleButtonAction::Help || self.state.instructions_open
-        }) {
+        for button in buttons
+            .iter()
+            .filter(|button| button.action != TitleButtonAction::Help || instructions_open)
+        {
             let scale = 1.0;
             let label_x = button.rect.x
                 + (button.rect.w - self.game_text.text_width(button.label, scale)) / 2.0;
@@ -387,7 +657,7 @@ impl Spout {
             texts.push((button.label, label_x, label_y, scale, button_color));
         }
 
-        if self.state.instructions_open {
+        if instructions_open {
             let w = self.game_text.surface_width;
             let scale = 1.0;
             let using_touch = self.collector.has_been_touched() || tap_restart_prompt();
@@ -416,23 +686,16 @@ impl Spout {
             .draw(device, encoder, &self.title_ui_view, &texts);
     }
 
-    fn enter_title(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
-        // Preserve input state across transitions to avoid false edges
-        // (e.g. fullscreen toggle firing because prev_input was cleared).
-        let prev_input = self.state.prev_input_state;
-        let cur_input = self.state.input_state;
-        self.state = GameState {
-            mode: GameMode::Title,
-            prev_input_state: prev_input,
-            input_state: cur_input,
-            ..Default::default()
+    /// Reset to the title screen. Used at startup and after death/restart.
+    fn transition_to_title(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
+        self.state = AppState::Title {
+            instructions_open: false,
         };
         self.game_time = Duration::default();
         self.iteration_start = Instant::now();
 
         let mut init_encoder =
             device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-
         self.level_manager = level_manager::LevelManager::init_title(
             device,
             &self.game_params,
@@ -440,17 +703,13 @@ impl Spout {
             &mut init_encoder,
             &mut self.staging_belt,
         );
-
         self.particle_system = particles::ParticleSystem::new(
             device,
             &self.game_params,
             &mut init_encoder,
             &self.level_manager,
         );
-
         self.collision_detector.result = collision::CollisionResult::default();
-        self.clear_collision_segments();
-
         self.particle_system.set_nozzle_speed(75.0, 75.0);
 
         self.staging_belt.finish();
@@ -460,30 +719,14 @@ impl Spout {
         log::info!("Entered title screen");
     }
 
-    fn start_game(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
-        let prev_input = self.state.prev_input_state;
-        let cur_input = self.state.input_state;
-        let ship_state = ship::ShipState::init(
-            &self.game_params.ship_params,
-            [
-                (self.game_params.viewport_width / 2) as f32 + 0.5,
-                (self.game_params.viewport_height / 2) as f32 + 0.5,
-            ],
-        );
-        self.state = GameState {
-            mode: GameMode::Playing,
-            prev_input_state: prev_input,
-            input_state: cur_input,
-            ship_state,
-            prev_ship_state: ship_state,
-            ..Default::default()
-        };
+    /// Start a fresh game from the title (or after game-over).
+    fn transition_to_play(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
+        self.state = AppState::Playing(Play::new(&self.game_params));
         self.game_time = Duration::default();
         self.iteration_start = Instant::now();
 
         let mut init_encoder =
             device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-
         self.level_manager = level_manager::LevelManager::init(
             device,
             &self.game_params,
@@ -491,18 +734,13 @@ impl Spout {
             &mut init_encoder,
             &mut self.staging_belt,
         );
-
         self.particle_system = particles::ParticleSystem::new(
             device,
             &self.game_params,
             &mut init_encoder,
             &self.level_manager,
         );
-
         self.collision_detector.result = collision::CollisionResult::default();
-        self.clear_collision_segments();
-
-        // Restore normal emission speed for gameplay.
         let base_speed = self.game_params.particle_system_params.emission_speed;
         self.particle_system
             .set_nozzle_speed(base_speed, base_speed);
@@ -514,12 +752,57 @@ impl Spout {
         log::info!("Game started");
     }
 
+    /// Take the current `Play` out of `AppState::Playing` and move it into
+    /// `AppState::GameOver`, queueing the explosion burst for the next frame.
+    fn transition_to_game_over(&mut self, cause: DeathCause) {
+        let prev = std::mem::take(&mut self.state);
+        let mut play = match prev {
+            AppState::Playing(p) => p,
+            other => {
+                // Shouldn't happen — only call this from a Playing context.
+                self.state = other;
+                return;
+            }
+        };
+        // Drop any in-flight collision pipelining; the result no longer matters.
+        play.pending_collision_segment = None;
+        play.in_flight_collision_segment = None;
+        self.pending_explosion = Some(ExplosionRequest {
+            position: play.ship_state.position,
+            velocity: play.ship_state.velocity,
+        });
+        log::info!(
+            "Game over (cause: {:?}) at ({:.0}, {:.0})",
+            cause,
+            play.ship_state.position[0],
+            play.ship_state.position[1]
+        );
+        self.state = AppState::GameOver { play, cause };
+    }
+
+    /// Toggle Playing ↔ Paused. No-op in other states.
+    fn toggle_pause(&mut self) {
+        let prev = std::mem::take(&mut self.state);
+        self.state = match prev {
+            AppState::Playing(play) => {
+                log::info!("Paused game at t={:#?}", self.game_time);
+                AppState::Paused(play)
+            }
+            AppState::Paused(play) => {
+                log::info!("Unpaused game at t={:#?}", self.game_time);
+                AppState::Playing(play)
+            }
+            other => other,
+        };
+    }
+
     fn tick(&mut self) -> (Duration, Duration) {
         let now = Instant::now();
         let delta_t = (now - self.iteration_start).min(MAX_FRAME_DT);
         self.iteration_start = now;
 
-        if self.state.paused {
+        let paused = matches!(self.state, AppState::Paused(_));
+        if paused {
             (Duration::ZERO, delta_t)
         } else {
             self.game_time += delta_t;
@@ -527,225 +810,22 @@ impl Spout {
         }
     }
 
-    fn update_paused(&mut self) {
-        if self.state.input_state.pause && !self.state.prev_input_state.pause {
-            // new pause signal.
-            self.state.paused = !self.state.paused;
-            if self.state.paused {
-                log::info!("Paused game at t={:#?}", self.game_time);
-            } else {
-                log::info!("Unpaused game at t={:#?}", self.game_time);
-            }
-        }
-    }
-
-    fn update_ship(&mut self, dt: f32) {
-        let gravity = self.game_params.particle_system_params.gravity;
-
-        if self.state.dead {
-            // Dead: no thrust or rotation, just gravity pulls it down.
-            self.state.ship_state.update(dt, 0.0, 0.0, gravity);
-            return;
-        }
-
-        let input_state = self.state.input_state;
-        let rotate = if let Some(target) = input_state.target_heading {
-            // Bang-bang controller: rotate at full speed toward target heading,
-            // stop when within one frame's worth of rotation to avoid oscillation.
-            let current = self.state.ship_state.orientation;
-            let error = angle_diff(target, current);
-            let dead = self.state.ship_state.rotation_rate * dt;
-            if error.abs() <= dead {
-                0.0
-            } else {
-                error.signum()
-            }
-        } else {
-            input_state.rotate
-        };
-        self.state
-            .ship_state
-            .update(dt, input_state.thrust, rotate, gravity);
-
-        // Kill the ship if it flies off the horizontal edges.
-        let x = self.state.ship_state.position[0];
-        if x < 0.0 || x >= self.game_params.level_width as f32 {
-            self.state.dead = true;
-            self.state.explosion_pending = true;
-        }
-
-        // Kill the ship if it falls more than one viewport-height below the
-        // bottom of the visible window. At default gravity (40 game units/s²)
-        // and viewport_height 160, that is ~2.8 s of free-fall from rest from
-        // the viewport bottom — enough to recover from a stall, but not from
-        // a sustained fall.
-        let bottom = self.state.viewport_offset as f32;
-        let viewport_h = self.game_params.viewport_height as f32;
-        if self.state.ship_state.position[1] < bottom - viewport_h {
-            self.state.dead = true;
-            self.state.explosion_pending = true;
-        }
-    }
-
-    fn title_emitter_motion(&self) -> particles::EmitterMotion {
-        // Emit from the right side above the title, angled slightly up-left.
-        let w = self.game_params.viewport_width as f32;
-        let h = self.game_params.viewport_height as f32;
-        let x = w - 10.0;
-        let y = h * 0.75;
-        // ~170° — mostly left with a slight upward angle.
-        let angle = std::f32::consts::PI - 0.2;
-        particles::EmitterMotion {
-            position_start: [x, y],
-            position_end: [x, y],
-            velocity_start: [0.0, 0.0],
-            velocity_end: [0.0, 0.0],
-            angle_start: angle,
-            angle_end: angle,
-            ..Default::default()
-        }
-    }
-
-    fn update_particle_system(&mut self, dt: f32, prev_ship: &ship::ShipState) {
-        let maybe_motion = match self.state.mode {
-            GameMode::Title => {
-                // Always emit from the fixed title emitter.
-                Some(self.title_emitter_motion())
-            }
-            GameMode::Playing => {
-                let current_ship = &self.state.ship_state;
-                if self.state.input_state.thrust > 0.0 && !self.state.dead {
-                    let start_emitter = prev_ship.get_emitter_state();
-                    let end_emitter = current_ship.get_emitter_state();
-                    Some(particles::EmitterMotion {
-                        position_start: start_emitter.0,
-                        position_end: end_emitter.0,
-                        velocity_start: prev_ship.velocity,
-                        velocity_end: current_ship.velocity,
-                        angle_start: start_emitter.1,
-                        angle_end: end_emitter.1,
-                        ..Default::default()
-                    })
-                } else {
-                    None
-                }
-            }
-        };
-
-        // Updates state, but doesn't run GPU just yet.
-        self.particle_system
-            .update_state(dt, self.state.viewport_offset, maybe_motion);
-    }
-
-    fn clear_collision_segments(&mut self) {
-        self.pending_collision_segment = None;
-        self.in_flight_collision_segment = None;
-    }
-
-    fn level_timer_remaining(&self) -> Duration {
-        scoring::level_time_limit_duration(&self.game_params)
-            .saturating_sub(self.state.level_elapsed)
-    }
-
-    fn commit_progress_height(&mut self, height: f32) {
-        let confirmed_height = height.floor() as i32;
-        self.state.progress_height = std::cmp::max(confirmed_height, self.state.progress_height);
-
-        let next_level_index = scoring::level_index_for_progress(
-            self.state.progress_height,
-            self.game_params.level_height,
-        );
-        if next_level_index > self.state.current_level_index {
-            let levels_crossed = next_level_index - self.state.current_level_index;
-            let bonus = scoring::time_bonus_score(self.level_timer_remaining())
-                .saturating_mul(levels_crossed);
-            self.state.time_bonus_score = self.state.time_bonus_score.saturating_add(bonus);
-            self.state.current_level_index = next_level_index;
-            self.state.level_elapsed = Duration::ZERO;
-            log::info!(
-                "Entered level {} with {} time bonus points",
-                self.state.current_level_index + 1,
-                bonus
-            );
-        }
-
-        self.state.score =
-            scoring::combined_score(self.state.progress_height, self.state.time_bonus_score);
-    }
-
-    fn update_camera_from_live_ship(&mut self) {
-        let live_height = self.state.ship_state.position[1].floor() as i32;
-        let camera_height = std::cmp::max(live_height, self.state.progress_height);
-        self.state.viewport_offset = camera_height - (self.game_params.viewport_height / 2) as i32;
-    }
-
-    fn update_level_timer(&mut self, dt: Duration) {
-        if !self.state.dead {
-            self.state.level_elapsed = self.state.level_elapsed.saturating_add(dt);
-        }
-    }
-
-    fn expire_level_timer_if_needed(&mut self) {
-        if self.state.dead {
-            return;
-        }
-
-        if self.state.level_elapsed >= scoring::level_time_limit_duration(&self.game_params) {
-            self.state.dead = true;
-            self.state.time_expired = true;
-            self.state.explosion_pending = true;
-            self.clear_collision_segments();
-            log::info!(
-                "Level timer expired on level {} at t={:#?}",
-                self.state.current_level_index + 1,
-                self.game_time
-            );
-        }
-    }
-
-    fn resolve_collision_result(&mut self, result: collision::CollisionResult) {
-        let Some(segment) = self.in_flight_collision_segment.take() else {
-            return;
-        };
-
-        if self.state.dead {
-            self.pending_collision_segment = None;
-            return;
-        }
-
-        if result.hit {
-            let impact_ship = segment.ship_at(result.impact_t);
-            self.commit_progress_height(impact_ship.position[1]);
-            self.state.prev_ship_state = segment.prev_ship;
-            self.state.ship_state = impact_ship;
-            self.state.dead = true;
-            self.state.explosion_pending = true;
-            self.pending_collision_segment = None;
-            log::info!(
-                "Ship collided with terrain at ({:.0}, {:.0}) t={:.3}",
-                impact_ship.position[0],
-                impact_ship.position[1],
-                result.impact_t
-            );
-        } else {
-            self.commit_progress_height(segment.next_ship.position[1]);
-        }
-    }
-
-    /// Mostly responsible for updating superficial state based on new inputs.
-    fn update_state(&mut self) {
+    /// Advance per-frame state: input snapshot, time tick, simulation step.
+    /// Returns a death cause if the simulation killed the ship this frame
+    /// (timer expiry, out-of-bounds). The caller is responsible for triggering
+    /// the GameOver transition with that cause.
+    fn update_state(&mut self) -> Option<DeathCause> {
         self.audio.poll();
 
-        // Snapshot all input sources into logical InputState for this frame.
-        self.state.prev_input_state = self.state.input_state;
-        self.state.input_state = self.collector.current_state();
-        if self.state.input_state.restart
-            || (self.state.dead && self.state.input_state.touch_started)
-        {
-            self.state.reset_requested = true;
-        }
+        // Snapshot input.
+        self.prev_input_state = self.input_state;
+        self.input_state = self.collector.current_state();
 
-        self.update_paused();
+        // Pause toggle (only meaningful in Playing/Paused; toggle_pause is
+        // a no-op elsewhere).
+        if self.input_state.pause && !self.prev_input_state.pause {
+            self.toggle_pause();
+        }
 
         self.level_manager
             .level_maker
@@ -756,46 +836,49 @@ impl Spout {
         let wall_dt = wall_dt_duration.as_secs_f32();
         self.tick_wall_dt = wall_dt;
 
-        match self.state.mode {
-            GameMode::Title => {
-                // No ship physics or collision in title mode.
-                // Just run particles to erode the title text.
-                let prev_ship = self.state.ship_state;
-                self.update_particle_system(game_dt, &prev_ship);
+        // Drive simulation + particle emitter for the active state.
+        let death = match &mut self.state {
+            AppState::Title { .. } => {
+                self.particle_system.update_state(
+                    game_dt,
+                    0,
+                    Some(title_emitter_motion(&self.game_params)),
+                );
+                None
             }
-            GameMode::Playing => {
-                let prev_ship = self.state.ship_state;
-
-                self.update_level_timer(game_dt_duration);
-                self.expire_level_timer_if_needed();
-
-                // Keep ship and camera motion responsive. Collision readback
-                // confirms score later, or rewinds death to the exact impact.
-                if !self.state.dead && game_dt > 0.0 {
-                    self.state.prev_ship_state = prev_ship;
-                    self.update_ship(game_dt);
-                    if !self.state.dead {
-                        self.update_camera_from_live_ship();
-                        record_collision_motion(
-                            &mut self.pending_collision_segment,
-                            prev_ship,
-                            self.state.ship_state,
-                        );
-                    } else {
-                        self.clear_collision_segments();
-                    }
-                }
-
-                self.update_particle_system(game_dt, &prev_ship);
+            AppState::Playing(play) => {
+                let prev_ship = play.ship_state;
+                let cause = play.update(
+                    &self.game_params,
+                    &self.input_state,
+                    game_dt,
+                    game_dt_duration,
+                );
+                let motion = if cause.is_none() {
+                    ship_emitter_motion(&prev_ship, &play.ship_state, self.input_state.thrust)
+                } else {
+                    None
+                };
+                self.particle_system
+                    .update_state(game_dt, play.viewport_offset, motion);
+                cause
             }
-        }
+            AppState::Paused(_)
+            | AppState::GameOver { .. }
+            | AppState::Settings
+            | AppState::Leaderboard => {
+                // No simulation step. Particles continue to animate without a
+                // new emitter motion (drifting from previous frame's state).
+                let offset = self.state.viewport_offset();
+                self.particle_system.update_state(game_dt, offset, None);
+                None
+            }
+        };
 
-        // Update camera state.
-        self.renderer.update_state(
-            wall_dt,
-            &self.state.input_state,
-            &self.state.prev_input_state,
-        );
+        self.renderer
+            .update_state(wall_dt, &self.input_state, &self.prev_input_state);
+
+        death
     }
 }
 
@@ -809,8 +892,6 @@ impl Spout {
     ) -> Self {
         window.set_cursor_visible(false);
         let game_params = game_params::get_game_config_from_default_file();
-        // Start in title mode — no ship needed yet.
-        let game_state = GameState::default();
 
         let game_view_texture = make_texture(
             device,
@@ -842,8 +923,8 @@ impl Spout {
             (game_params.level_width * game_params.level_height * 4) as u64,
         );
 
-        // Use a placeholder level manager for construction; enter_title() will
-        // replace it immediately after.
+        // Use a placeholder level manager for construction; transition_to_title()
+        // below will replace it immediately after.
         let level_manager = level_manager::LevelManager::init(
             device,
             &game_params,
@@ -936,7 +1017,10 @@ impl Spout {
 
         let mut spout = Spout {
             game_params,
-            state: game_state,
+            state: AppState::default(),
+            input_state: InputState::default(),
+            prev_input_state: InputState::default(),
+            pending_explosion: None,
             collector,
             level_manager,
             game_time: Duration::default(),
@@ -950,8 +1034,6 @@ impl Spout {
             particle_system,
             ship_renderer,
             collision_detector,
-            pending_collision_segment: None,
-            in_flight_collision_segment: None,
             background,
             game_text,
             audio,
@@ -964,7 +1046,7 @@ impl Spout {
             tick_wall_dt: 0.0,
             frame_log_count: 0,
         };
-        spout.enter_title(device, queue);
+        spout.transition_to_title(device, queue);
         spout
     }
 
@@ -1042,21 +1124,32 @@ impl Spout {
         // Read back GPU collision result from previous frame. Poll even outside
         // gameplay so a reset/title transition cannot leave the detector stuck
         // with a stale in-flight readback.
-        if let Some(result) = self.collision_detector.poll_result() {
-            if self.state.mode == GameMode::Playing {
-                self.resolve_collision_result(result);
+        let collision_death = if let Some(result) = self.collision_detector.poll_result() {
+            if let AppState::Playing(play) = &mut self.state {
+                play.resolve_collision_result(&self.game_params, result)
+            } else {
+                None
             }
+        } else {
+            None
+        };
+        if let Some(cause) = collision_death {
+            self.transition_to_game_over(cause);
         }
 
         let mut encoder =
             device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
 
-        // Update input and game state first, so transitions see correct prev/current.
-        self.update_state();
+        // Update input and game state. May produce a death cause from
+        // simulation (timer expiry, out-of-bounds).
+        let sim_death = self.update_state();
+        if let Some(cause) = sim_death {
+            self.transition_to_game_over(cause);
+        }
         let win_size = window.inner_size();
 
         // Fullscreen toggle (edge-triggered, independent of game state).
-        if !self.state.prev_input_state.fullscreen && self.state.input_state.fullscreen {
+        if !self.prev_input_state.fullscreen && self.input_state.fullscreen {
             if window.fullscreen().is_some() {
                 log::info!("Setting windowed mode.");
                 window.set_fullscreen(None);
@@ -1066,19 +1159,24 @@ impl Spout {
             }
         }
 
-        // Handle mode transitions after input is updated.
-        if self.state.reset_requested {
-            self.state.reset_requested = false;
-            self.enter_title(device, queue);
-        } else if self.state.mode == GameMode::Title {
-            let input = self.state.input_state;
-            let clicked_button = input
-                .pointer_pressed
-                .and_then(|point| self.title_button_at(point, win_size.width, win_size.height));
+        // Restart from game-over: explicit restart key, or any tap.
+        let restart_pressed = self.input_state.restart
+            || (matches!(self.state, AppState::GameOver { .. }) && self.input_state.touch_started);
+        if restart_pressed {
+            self.transition_to_title(device, queue);
+        }
+
+        // Title-screen input handling.
+        if let AppState::Title { instructions_open } = self.state {
+            let input = self.input_state;
+            let clicked_button = input.pointer_pressed.and_then(|point| {
+                self.title_button_at(instructions_open, point, win_size.width, win_size.height)
+            });
             let mut title_action_handled = false;
+            let mut next_instructions_open = instructions_open;
 
             if input.help {
-                self.state.instructions_open = !self.state.instructions_open;
+                next_instructions_open = !next_instructions_open;
                 title_action_handled = true;
             }
 
@@ -1086,42 +1184,45 @@ impl Spout {
                 match action {
                     TitleButtonAction::Music => self.audio.toggle(),
                     TitleButtonAction::Help => {
-                        self.state.instructions_open = !self.state.instructions_open;
+                        next_instructions_open = !next_instructions_open;
                     }
                 }
                 title_action_handled = true;
-            } else if self.state.instructions_open && input.pointer_pressed.is_some() {
-                self.state.instructions_open = false;
+            } else if next_instructions_open && input.pointer_pressed.is_some() {
+                next_instructions_open = false;
                 title_action_handled = true;
             }
 
             // Start game on a NEW press of thrust or rotate (edge, not held).
-            let prev = self.state.prev_input_state;
+            let prev = self.prev_input_state;
             let new_thrust = input.thrust > 0.0 && prev.thrust == 0.0;
             let new_rotate = input.rotate.abs() > 0.0 && prev.rotate.abs() == 0.0;
-            if !title_action_handled && !self.state.instructions_open && (new_thrust || new_rotate)
-            {
-                self.start_game(device, queue);
+            if !title_action_handled && !next_instructions_open && (new_thrust || new_rotate) {
+                self.transition_to_play(device, queue);
+            } else if next_instructions_open != instructions_open {
+                self.state = AppState::Title {
+                    instructions_open: next_instructions_open,
+                };
             }
         }
 
+        let viewport_offset = self.state.viewport_offset();
+
         self.level_manager.sync_height(
             device,
-            self.state.viewport_offset,
+            viewport_offset,
             &mut encoder,
             &self.game_params,
             &mut self.staging_belt,
         );
 
         // Ship explosion burst — write particles before compute runs.
-        if self.state.explosion_pending {
-            self.state.explosion_pending = false;
-            let ship = &self.state.ship_state;
+        if let Some(explosion) = self.pending_explosion.take() {
             self.particle_system.emit_burst(
                 &mut encoder,
                 &mut self.staging_belt,
-                ship.position,
-                ship.velocity,
+                explosion.position,
+                explosion.velocity,
                 50000, // burst count
                 self.game_params.particle_system_params.emission_speed,
                 self.game_params.particle_system_params.max_particle_life,
@@ -1133,25 +1234,24 @@ impl Spout {
         self.particle_system
             .run_compute(&self.level_manager, &mut encoder, &mut self.staging_belt);
 
-        // Collision detection — only during gameplay.
-        if self.state.mode == GameMode::Playing
-            && !self.state.dead
-            && self.in_flight_collision_segment.is_none()
-        {
-            if let Some(segment) = self.pending_collision_segment.take() {
-                let dispatched = self.collision_detector.dispatch(
-                    device,
-                    &mut encoder,
-                    &mut self.staging_belt,
-                    &segment.next_ship,
-                    &segment.prev_ship,
-                    self.level_manager.terrain_buffer(),
-                    self.game_params.level_width,
-                );
-                if dispatched {
-                    self.in_flight_collision_segment = Some(segment);
-                } else {
-                    self.pending_collision_segment = Some(segment);
+        // Collision detection — only during active gameplay.
+        if let AppState::Playing(play) = &mut self.state {
+            if play.in_flight_collision_segment.is_none() {
+                if let Some(segment) = play.pending_collision_segment.take() {
+                    let dispatched = self.collision_detector.dispatch(
+                        device,
+                        &mut encoder,
+                        &mut self.staging_belt,
+                        &segment.next_ship,
+                        &segment.prev_ship,
+                        self.level_manager.terrain_buffer(),
+                        self.game_params.level_width,
+                    );
+                    if dispatched {
+                        play.in_flight_collision_segment = Some(segment);
+                    } else {
+                        play.pending_collision_segment = Some(segment);
+                    }
                 }
             }
         }
@@ -1159,7 +1259,7 @@ impl Spout {
         // Render background (clears and draws tiled background).
         self.background.update_state(
             &self.game_params,
-            self.state.viewport_offset,
+            viewport_offset,
             &mut encoder,
             &mut self.staging_belt,
         );
@@ -1175,38 +1275,51 @@ impl Spout {
         self.particle_system
             .render(&self.game_view_texture, &mut encoder);
 
-        if self.state.mode == GameMode::Title {
-            self.draw_title_help_button(device, &mut encoder);
-            self.prepare_title_ui(device, &mut encoder);
+        if let AppState::Title { instructions_open } = self.state {
+            self.draw_title_help_button(instructions_open, device, &mut encoder);
+            self.prepare_title_ui(instructions_open, device, &mut encoder);
         }
 
-        // Render ship — only during gameplay, and not when dead.
-        if self.state.mode == GameMode::Playing && self.game_params.render_ship && !self.state.dead
-        {
-            self.ship_renderer.render(
-                &self.state.ship_state,
-                &self.game_params,
-                self.state.viewport_offset,
-                &self.game_view_texture,
-                &mut encoder,
-                &mut self.staging_belt,
-            );
+        // Render ship — only during active gameplay or pause.
+        if self.game_params.render_ship {
+            let active_play = match &self.state {
+                AppState::Playing(p) | AppState::Paused(p) => Some(p),
+                _ => None,
+            };
+            if let Some(play) = active_play {
+                self.ship_renderer.render(
+                    &play.ship_state,
+                    &self.game_params,
+                    play.viewport_offset,
+                    &self.game_view_texture,
+                    &mut encoder,
+                    &mut self.staging_belt,
+                );
+            }
         }
 
-        // In-game HUD — only during gameplay.
-        if self.state.mode == GameMode::Playing {
-            let score_text = format!("{}", self.state.score);
-            let level_text = format!("LV{}", self.state.current_level_index + 1);
-            let timer_text = scoring::format_level_timer(self.level_timer_remaining());
+        // In-game HUD — score/level/timer text drawn in Playing, Paused, and
+        // GameOver. The GAME OVER / TIMES UP overlay is added on top in GameOver.
+        let hud_play_and_cause: Option<(&Play, Option<DeathCause>)> = match &self.state {
+            AppState::Playing(p) | AppState::Paused(p) => Some((p, None)),
+            AppState::GameOver { play, cause } => Some((play, Some(*cause))),
+            _ => None,
+        };
+        if let Some((play, cause)) = hud_play_and_cause {
+            let score_text = format!("{}", play.score);
+            let level_text = format!("LV{}", play.current_level_index + 1);
+            let timer_text =
+                scoring::format_level_timer(play.level_timer_remaining(&self.game_params));
             // Held below 1.0 so bloom contribution stays well under what the
             // particle/ship neon hits when stacked. With bloom_threshold=0.4
             // and soft-knee, value v → bloom contribution v*(v-0.4)/v = v-0.4.
             let text_color = [0.7, 0.7, 0.7, 1.0];
-            let timer_color = if self.level_timer_remaining() <= Duration::from_secs(10) {
-                [0.95, 0.45, 0.45, 1.0]
-            } else {
-                text_color
-            };
+            let timer_color =
+                if play.level_timer_remaining(&self.game_params) <= Duration::from_secs(10) {
+                    [0.95, 0.45, 0.45, 1.0]
+                } else {
+                    text_color
+                };
             let timer_x =
                 (self.game_text.surface_width - self.game_text.text_width(&timer_text, 1.0)) / 2.0;
             let level_x =
@@ -1222,20 +1335,17 @@ impl Spout {
                 ],
             );
 
-            // Game over overlay.
-            if self.state.dead {
+            if let Some(cause) = cause {
                 let w = self.game_text.surface_width;
                 let h = self.game_text.surface_height;
-
-                let status = if self.state.time_expired {
-                    "TIMES UP"
-                } else {
-                    "GAME OVER"
+                let status = match cause {
+                    DeathCause::TimeExpired => "TIMES UP",
+                    DeathCause::Collided | DeathCause::FellOff => "GAME OVER",
                 };
                 let status_x = (w - self.game_text.text_width(status, 1.0)) / 2.0;
                 let status_y = h * 0.28;
 
-                let score = format!("SCORE: {}", self.state.score);
+                let score = format!("SCORE: {}", play.score);
                 let score_x = (w - self.game_text.text_width(&score, 1.0)) / 2.0;
                 let score_y = h * 0.5;
 
@@ -1266,7 +1376,7 @@ impl Spout {
         // Composite upscaled HDR + bloom → surface (LDR).
         self.renderer.render(view, &mut encoder);
 
-        if self.state.mode == GameMode::Title {
+        if self.state.is_title() {
             self.title_overlay.render(view, &mut encoder);
         }
 
@@ -1279,7 +1389,7 @@ impl Spout {
             self.game_params.touch_control_scheme,
             game_params::TouchControlScheme::Triangle
         ) && self.collector.has_been_touched()
-            && self.state.mode == GameMode::Playing
+            && self.state.is_playing()
         {
             self.touch_zone_indicator.render(view, &mut encoder);
         }
