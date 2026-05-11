@@ -1,10 +1,27 @@
 use spout::game_params::GameParams;
 use spout::input::{InputFrame, PointerPress};
 use spout::text::TextRenderer;
+use spout::ui::{self, RectStyle, UiButton, UiRect, UiRenderer};
 
-#[derive(Debug, Default)]
+const BUTTON_W: f32 = 78.0;
+const BUTTON_H: f32 = 34.0;
+const BUTTON_GAP: f32 = 12.0;
+const BUTTON_BOTTOM_MARGIN: f32 = 14.0;
+const BUTTON_LABEL_H: f32 = 12.0;
+
+#[derive(Debug)]
 pub struct TitleScreen {
     instructions_open: bool,
+    focused_button: ButtonAction,
+}
+
+impl Default for TitleScreen {
+    fn default() -> Self {
+        Self {
+            instructions_open: false,
+            focused_button: ButtonAction::Play,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -19,30 +36,21 @@ pub struct TitleRenderFlags {
     pub using_touch: bool,
 }
 
+pub struct TitleUiRenderContext<'a> {
+    pub device: &'a wgpu::Device,
+    pub encoder: &'a mut wgpu::CommandEncoder,
+    pub title_ui_view: &'a wgpu::TextureView,
+    pub ui: &'a UiRenderer,
+    pub params: &'a GameParams,
+    pub text: &'a TextRenderer,
+    pub flags: TitleRenderFlags,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ButtonAction {
+    Play,
+    Menu,
     Music,
-    Help,
-}
-
-#[derive(Debug, Clone, Copy)]
-struct UiRect {
-    x: f32,
-    y: f32,
-    w: f32,
-    h: f32,
-}
-
-impl UiRect {
-    fn contains(&self, x: f32, y: f32) -> bool {
-        x >= self.x && x <= self.x + self.w && y >= self.y && y <= self.y + self.h
-    }
-}
-
-struct Button {
-    action: ButtonAction,
-    label: &'static str,
-    rect: UiRect,
 }
 
 impl TitleScreen {
@@ -64,79 +72,44 @@ impl TitleScreen {
                 surface_size.1,
             )
         });
-        let mut title_action_handled = false;
 
         if input.help_pressed() {
-            self.instructions_open = !self.instructions_open;
-            title_action_handled = true;
+            self.toggle_menu();
+            return None;
         }
 
         if let Some(action) = clicked_button {
-            match action {
-                ButtonAction::Music => {
-                    return Some(TitleAction::ToggleMusic);
-                }
-                ButtonAction::Help => {
-                    self.instructions_open = !self.instructions_open;
-                }
-            }
-            title_action_handled = true;
+            self.focused_button = action;
+            return self.activate_button(action);
         } else if self.instructions_open && input.pointer_pressed().is_some() {
-            self.instructions_open = false;
-            title_action_handled = true;
+            self.close_menu();
+            return None;
         }
 
-        if !title_action_handled
-            && !self.instructions_open
-            && (input.thrust_started() || input.rotate_started())
-        {
+        let buttons = self.buttons(params, text, music_playing);
+        self.ensure_focus_visible(&buttons);
+
+        if input.menu_cancel_pressed() && self.instructions_open {
+            self.close_menu();
+            return None;
+        }
+
+        if self.move_focus_from_input(input, &buttons) {
+            return None;
+        }
+
+        if input.menu_confirm_pressed() {
+            return self.activate_button(self.focused_button);
+        }
+
+        if !self.instructions_open && (input.thrust_started() || input.rotate_started()) {
             return Some(TitleAction::StartGame);
         }
 
         None
     }
 
-    pub fn draw_help_button(
-        &self,
-        device: &wgpu::Device,
-        encoder: &mut wgpu::CommandEncoder,
-        game_view_texture: &wgpu::TextureView,
-        params: &GameParams,
-        text: &TextRenderer,
-    ) {
-        if self.instructions_open {
-            return;
-        }
-
-        let Some(button) = self
-            .buttons(params, text, false)
-            .into_iter()
-            .find(|button| button.action == ButtonAction::Help)
-        else {
-            return;
-        };
-
-        let color = [0.55, 0.55, 0.55, 1.0];
-        let label_x = button.rect.x + (button.rect.w - text.text_width(button.label, 1.0)) / 2.0;
-        let label_y = button.rect.y + (button.rect.h - 12.0) / 2.0;
-
-        text.draw(
-            device,
-            encoder,
-            game_view_texture,
-            &[(button.label, label_x, label_y, 1.0, color)],
-        );
-    }
-
-    pub fn prepare_ui(
-        &self,
-        device: &wgpu::Device,
-        encoder: &mut wgpu::CommandEncoder,
-        title_ui_view: &wgpu::TextureView,
-        params: &GameParams,
-        text: &TextRenderer,
-        flags: TitleRenderFlags,
-    ) {
+    pub fn prepare_ui(&self, ctx: TitleUiRenderContext<'_>) {
         let clear_color = if self.instructions_open {
             wgpu::Color {
                 r: 0.02,
@@ -148,10 +121,10 @@ impl TitleScreen {
             wgpu::Color::TRANSPARENT
         };
         {
-            let _pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            let _pass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("title_ui_clear"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: title_ui_view,
+                    view: ctx.title_ui_view,
                     resolve_target: None,
                     depth_slice: None,
                     ops: wgpu::Operations {
@@ -167,24 +140,32 @@ impl TitleScreen {
         let button_color = [0.7, 0.78, 0.78, 1.0];
         let text_color = [0.82, 0.86, 0.82, 1.0];
         let accent_color = [0.9, 0.72, 0.48, 1.0];
-        let buttons = self.buttons(params, text, flags.music_playing);
+        let buttons = self.buttons(ctx.params, ctx.text, ctx.flags.music_playing);
+        let rects: Vec<(UiRect, RectStyle)> = buttons
+            .iter()
+            .map(|button| (button.rect, self.button_style(button.action)))
+            .collect();
+        ctx.ui
+            .draw_rects(ctx.device, ctx.encoder, ctx.title_ui_view, &rects);
 
         let mut texts: Vec<(&str, f32, f32, f32, [f32; 4])> = Vec::new();
-        for button in buttons
-            .iter()
-            .filter(|button| button.action != ButtonAction::Help || self.instructions_open)
-        {
+        for button in &buttons {
             let scale = 1.0;
             let label_x =
-                button.rect.x + (button.rect.w - text.text_width(button.label, scale)) / 2.0;
-            let label_y = button.rect.y + (button.rect.h - 12.0) / 2.0;
-            texts.push((button.label, label_x, label_y, scale, button_color));
+                button.rect.x + (button.rect.w - ctx.text.text_width(button.label, scale)) / 2.0;
+            let label_y = button.rect.y + (button.rect.h - BUTTON_LABEL_H) / 2.0;
+            let color = if button.action == self.focused_button {
+                accent_color
+            } else {
+                button_color
+            };
+            texts.push((button.label, label_x, label_y, scale, color));
         }
 
         if self.instructions_open {
-            let w = text.surface_width;
+            let w = ctx.text.surface_width;
             let scale = 1.0;
-            let lines: Vec<(&str, f32, [f32; 4])> = if flags.using_touch {
+            let lines: Vec<(&str, f32, [f32; 4])> = if ctx.flags.using_touch {
                 vec![
                     ("OBJECTIVE", 24.0, accent_color),
                     ("BLAST AND CLIMB", 42.0, text_color),
@@ -200,12 +181,13 @@ impl TitleScreen {
                 ]
             };
             texts.extend(lines.into_iter().map(|(line, y, color)| {
-                let x = (w - text.text_width(line, scale)) / 2.0;
+                let x = (w - ctx.text.text_width(line, scale)) / 2.0;
                 (line, x, y, scale, color)
             }));
         }
 
-        text.draw(device, encoder, title_ui_view, &texts);
+        ctx.text
+            .draw(ctx.device, ctx.encoder, ctx.title_ui_view, &texts);
     }
 
     fn buttons(
@@ -213,42 +195,63 @@ impl TitleScreen {
         params: &GameParams,
         text: &TextRenderer,
         music_playing: bool,
-    ) -> Vec<Button> {
-        let pad_x = 4.0;
-        let button_h = 32.0;
-        let help_y = params.viewport_height as f32 - button_h - 6.0;
-        let help_label = if self.instructions_open { "X" } else { "?" };
-        let mut buttons = vec![Button {
-            action: ButtonAction::Help,
-            label: help_label,
-            rect: UiRect {
-                x: params.viewport_width as f32 - 56.0 - 6.0,
-                y: help_y,
-                w: 56.0,
-                h: button_h,
-            },
-        }];
-
+    ) -> Vec<UiButton<ButtonAction>> {
+        let y = params.viewport_height as f32 - BUTTON_H - BUTTON_BOTTOM_MARGIN;
         if self.instructions_open {
             let music_label = if music_playing {
-                "[MUSIC ON]"
+                "MUSIC ON"
             } else {
-                "[MUSIC OFF]"
+                "MUSIC OFF"
             };
-            let music_w = text.text_width(music_label, 1.0) + pad_x * 2.0;
-            buttons.push(Button {
-                action: ButtonAction::Music,
-                label: music_label,
-                rect: UiRect {
-                    x: 18.0,
-                    y: 100.0,
-                    w: music_w,
-                    h: button_h,
+            let music_w = (text.text_width(music_label, 1.0) + 18.0).max(96.0);
+            return vec![
+                UiButton {
+                    action: ButtonAction::Music,
+                    label: music_label,
+                    rect: UiRect {
+                        x: 18.0,
+                        y,
+                        w: music_w,
+                        h: BUTTON_H,
+                    },
                 },
-            });
+                UiButton {
+                    action: ButtonAction::Menu,
+                    label: "X",
+                    rect: UiRect {
+                        x: params.viewport_width as f32 - 44.0 - BUTTON_BOTTOM_MARGIN,
+                        y,
+                        w: 44.0,
+                        h: BUTTON_H,
+                    },
+                },
+            ];
         }
 
-        buttons
+        let row_w = BUTTON_W * 2.0 + BUTTON_GAP;
+        let start_x = (params.viewport_width as f32 - row_w) / 2.0;
+        vec![
+            UiButton {
+                action: ButtonAction::Play,
+                label: "PLAY",
+                rect: UiRect {
+                    x: start_x,
+                    y,
+                    w: BUTTON_W,
+                    h: BUTTON_H,
+                },
+            },
+            UiButton {
+                action: ButtonAction::Menu,
+                label: "MENU",
+                rect: UiRect {
+                    x: start_x + BUTTON_W + BUTTON_GAP,
+                    y,
+                    w: BUTTON_W,
+                    h: BUTTON_H,
+                },
+            },
+        ]
     }
 
     fn button_at(
@@ -260,56 +263,101 @@ impl TitleScreen {
         surface_width: u32,
         surface_height: u32,
     ) -> Option<ButtonAction> {
-        if title_help_surface_hit(point, surface_width, surface_height) {
-            return Some(ButtonAction::Help);
-        }
-
-        let (game_x, game_y) = surface_to_game_point(point, params, surface_width, surface_height)?;
+        let (game_x, game_y) = ui::surface_to_game_point(
+            point,
+            params.viewport_width,
+            params.viewport_height,
+            surface_width,
+            surface_height,
+        )?;
         self.buttons(params, text, music_playing)
             .iter()
             .find(|button| button.rect.contains(game_x, game_y))
             .map(|button| button.action)
     }
-}
 
-fn surface_to_game_point(
-    point: PointerPress,
-    params: &GameParams,
-    surface_width: u32,
-    surface_height: u32,
-) -> Option<(f32, f32)> {
-    if surface_width == 0 || surface_height == 0 {
-        return None;
+    fn activate_button(&mut self, action: ButtonAction) -> Option<TitleAction> {
+        match action {
+            ButtonAction::Play => Some(TitleAction::StartGame),
+            ButtonAction::Menu => {
+                self.toggle_menu();
+                None
+            }
+            ButtonAction::Music => Some(TitleAction::ToggleMusic),
+        }
     }
 
-    let game_w = params.viewport_width as f32;
-    let game_h = params.viewport_height as f32;
-    let surface_w = surface_width as f32;
-    let surface_h = surface_height as f32;
-    let scale = (surface_w / game_w)
-        .min(surface_h / game_h)
-        .floor()
-        .max(1.0);
-    let draw_w = game_w * scale;
-    let draw_h = game_h * scale;
-    let offset_x = ((surface_w - draw_w) * 0.5).floor();
-    let offset_y = ((surface_h - draw_h) * 0.5).floor();
-
-    if point.x < offset_x
-        || point.x > offset_x + draw_w
-        || point.y < offset_y
-        || point.y > offset_y + draw_h
-    {
-        return None;
+    fn toggle_menu(&mut self) {
+        if self.instructions_open {
+            self.close_menu();
+        } else {
+            self.instructions_open = true;
+            self.focused_button = ButtonAction::Menu;
+        }
     }
 
-    let game_x = (point.x - offset_x) / draw_w * game_w;
-    let game_y = (point.y - offset_y) / draw_h * game_h;
-    Some((game_x, game_y))
-}
+    fn close_menu(&mut self) {
+        self.instructions_open = false;
+        self.focused_button = ButtonAction::Menu;
+    }
 
-fn title_help_surface_hit(point: PointerPress, surface_width: u32, surface_height: u32) -> bool {
-    let w = surface_width as f32;
-    let h = surface_height as f32;
-    point.x >= w * 0.72 && point.y >= h * 0.62
+    fn ensure_focus_visible(&mut self, buttons: &[UiButton<ButtonAction>]) {
+        if buttons
+            .iter()
+            .any(|button| button.action == self.focused_button)
+        {
+            return;
+        }
+
+        if let Some(button) = buttons.first() {
+            self.focused_button = button.action;
+        }
+    }
+
+    fn move_focus_from_input(
+        &mut self,
+        input: InputFrame,
+        buttons: &[UiButton<ButtonAction>],
+    ) -> bool {
+        let delta = if input.menu_left_pressed() || input.menu_up_pressed() {
+            -1
+        } else if input.menu_right_pressed() || input.menu_down_pressed() {
+            1
+        } else {
+            0
+        };
+
+        if delta == 0 || buttons.is_empty() {
+            return false;
+        }
+
+        let current = buttons
+            .iter()
+            .position(|button| button.action == self.focused_button)
+            .unwrap_or(0);
+        let next = if delta < 0 {
+            current.checked_sub(1).unwrap_or(buttons.len() - 1)
+        } else {
+            (current + 1) % buttons.len()
+        };
+        self.focused_button = buttons[next].action;
+        true
+    }
+
+    fn button_style(&self, action: ButtonAction) -> RectStyle {
+        let focused = action == self.focused_button;
+        RectStyle {
+            fill_color: if focused {
+                [0.08, 0.12, 0.13, 0.78]
+            } else {
+                [0.02, 0.05, 0.07, 0.68]
+            },
+            outline_color: if focused {
+                [0.9, 0.72, 0.48, 1.0]
+            } else {
+                [0.45, 0.57, 0.58, 0.92]
+            },
+            outline_px: if focused { 2.0 } else { 1.0 },
+        }
+    }
 }

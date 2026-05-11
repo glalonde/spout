@@ -71,6 +71,12 @@ mod tests {
         assert!(!state.restart);
         assert!(!state.audio_next_track);
         assert!(!state.audio_toggle);
+        assert!(!state.menu_up);
+        assert!(!state.menu_down);
+        assert!(!state.menu_left);
+        assert!(!state.menu_right);
+        assert!(!state.menu_confirm);
+        assert!(!state.menu_cancel);
         assert!(!state.touch_started);
     }
 
@@ -84,6 +90,12 @@ mod tests {
             help: true,
             audio_next_track: true,
             audio_toggle: true,
+            menu_up: true,
+            menu_down: true,
+            menu_left: true,
+            menu_right: true,
+            menu_confirm: true,
+            menu_cancel: true,
             pause: true,
             fullscreen: true,
             ..Default::default()
@@ -96,6 +108,12 @@ mod tests {
         assert!(frame.help_pressed());
         assert!(frame.audio_next_track_pressed());
         assert!(frame.audio_toggle_pressed());
+        assert!(frame.menu_up_pressed());
+        assert!(frame.menu_down_pressed());
+        assert!(frame.menu_left_pressed());
+        assert!(frame.menu_right_pressed());
+        assert!(frame.menu_confirm_pressed());
+        assert!(frame.menu_cancel_pressed());
         assert!(frame.touch_started());
         assert!(frame.thrust_started());
         assert!(frame.rotate_started());
@@ -110,6 +128,12 @@ mod tests {
             fullscreen: true,
             audio_next_track: true,
             audio_toggle: true,
+            menu_up: true,
+            menu_down: true,
+            menu_left: true,
+            menu_right: true,
+            menu_confirm: true,
+            menu_cancel: true,
             ..Default::default()
         };
         let previous = current;
@@ -119,6 +143,12 @@ mod tests {
         assert!(!frame.fullscreen_pressed());
         assert!(!frame.audio_next_track_pressed());
         assert!(!frame.audio_toggle_pressed());
+        assert!(!frame.menu_up_pressed());
+        assert!(!frame.menu_down_pressed());
+        assert!(!frame.menu_left_pressed());
+        assert!(!frame.menu_right_pressed());
+        assert!(!frame.menu_confirm_pressed());
+        assert!(!frame.menu_cancel_pressed());
         assert!(!frame.thrust_started());
         assert!(!frame.rotate_started());
     }
@@ -417,6 +447,14 @@ pub struct InputState {
     pub pause: bool,
     pub fullscreen: bool,
 
+    // Menu controls (keyboard/gamepad-style, edge-triggered by InputFrame):
+    pub menu_up: bool,
+    pub menu_down: bool,
+    pub menu_left: bool,
+    pub menu_right: bool,
+    pub menu_confirm: bool,
+    pub menu_cancel: bool,
+
     // Camera controls (debug, keyboard-only):
     pub cam_in: bool,
     pub cam_out: bool,
@@ -466,6 +504,30 @@ impl InputFrame {
 
     pub fn audio_toggle_pressed(&self) -> bool {
         self.current.audio_toggle && !self.previous.audio_toggle
+    }
+
+    pub fn menu_up_pressed(&self) -> bool {
+        self.current.menu_up && !self.previous.menu_up
+    }
+
+    pub fn menu_down_pressed(&self) -> bool {
+        self.current.menu_down && !self.previous.menu_down
+    }
+
+    pub fn menu_left_pressed(&self) -> bool {
+        self.current.menu_left && !self.previous.menu_left
+    }
+
+    pub fn menu_right_pressed(&self) -> bool {
+        self.current.menu_right && !self.previous.menu_right
+    }
+
+    pub fn menu_confirm_pressed(&self) -> bool {
+        self.current.menu_confirm && !self.previous.menu_confirm
+    }
+
+    pub fn menu_cancel_pressed(&self) -> bool {
+        self.current.menu_cancel && !self.previous.menu_cancel
     }
 
     pub fn touch_started(&self) -> bool {
@@ -660,6 +722,12 @@ pub struct InputCollector {
     help_requested: bool,
     audio_next_track_requested: bool,
     audio_toggle_requested: bool,
+    held_menu_up: bool,
+    held_menu_down: bool,
+    held_menu_left: bool,
+    held_menu_right: bool,
+    held_menu_confirm: bool,
+    held_menu_cancel: bool,
     pointer_press: Option<PointerPress>,
     cursor_x: f32,
     cursor_y: f32,
@@ -695,6 +763,12 @@ impl Default for InputCollector {
             help_requested: false,
             audio_next_track_requested: false,
             audio_toggle_requested: false,
+            held_menu_up: false,
+            held_menu_down: false,
+            held_menu_left: false,
+            held_menu_right: false,
+            held_menu_confirm: false,
+            held_menu_cancel: false,
             pointer_press: None,
             cursor_x: 0.0,
             cursor_y: 0.0,
@@ -864,6 +938,14 @@ impl InputCollector {
                 KeyCode::KeyT if pressed => self.audio_next_track_requested = true,
                 KeyCode::KeyY if pressed => self.audio_toggle_requested = true,
 
+                // Menu navigation
+                KeyCode::ArrowUp => self.held_menu_up = pressed,
+                KeyCode::ArrowDown => self.held_menu_down = pressed,
+                KeyCode::ArrowLeft => self.held_menu_left = pressed,
+                KeyCode::ArrowRight => self.held_menu_right = pressed,
+                KeyCode::Enter | KeyCode::Space => self.held_menu_confirm = pressed,
+                KeyCode::Escape => self.held_menu_cancel = pressed,
+
                 _ => {}
             }
         }
@@ -971,6 +1053,12 @@ impl InputCollector {
             audio_toggle,
             pause: self.held_pause,
             fullscreen: self.held_fullscreen,
+            menu_up: self.held_menu_up,
+            menu_down: self.held_menu_down,
+            menu_left: self.held_menu_left,
+            menu_right: self.held_menu_right,
+            menu_confirm: self.held_menu_confirm,
+            menu_cancel: self.held_menu_cancel,
             cam_in: self.held_cam_in,
             cam_out: self.held_cam_out,
             cam_up: self.held_cam_up,

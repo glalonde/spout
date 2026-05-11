@@ -18,7 +18,7 @@ use spout::scoring;
 use spout::ship;
 
 use graphics::Graphics;
-use screens::title::{TitleAction, TitleRenderFlags, TitleScreen};
+use screens::title::{TitleAction, TitleRenderFlags, TitleScreen, TitleUiRenderContext};
 
 /// Shortest signed angular distance from `current` to `target`, in [-π, π].
 fn angle_diff(target: f32, current: f32) -> f32 {
@@ -959,24 +959,18 @@ impl Spout {
             .render(&self.graphics.game_view_texture, &mut encoder);
 
         if let AppState::Title(title) = &self.state {
-            title.draw_help_button(
+            title.prepare_ui(TitleUiRenderContext {
                 device,
-                &mut encoder,
-                &self.graphics.game_view_texture,
-                &self.game_params,
-                &self.graphics.game_text,
-            );
-            title.prepare_ui(
-                device,
-                &mut encoder,
-                &self.graphics.title_ui_view,
-                &self.game_params,
-                &self.graphics.game_text,
-                TitleRenderFlags {
+                encoder: &mut encoder,
+                title_ui_view: &self.graphics.title_ui_view,
+                ui: &self.graphics.ui,
+                params: &self.game_params,
+                text: &self.graphics.game_text,
+                flags: TitleRenderFlags {
                     music_playing: self.audio.is_playing(),
                     using_touch: self.collector.has_been_touched() || tap_restart_prompt(),
                 },
-            );
+            });
         }
 
         // Ship — only during active gameplay or pause.

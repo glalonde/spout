@@ -6,6 +6,7 @@ use spout::ship;
 use spout::text;
 use spout::title_overlay;
 use spout::touch_zone_indicator;
+use spout::ui;
 
 pub(crate) struct Graphics {
     pub(crate) game_view_texture: wgpu::TextureView,
@@ -18,6 +19,7 @@ pub(crate) struct Graphics {
     pub(crate) background: background::BackgroundRenderer,
     /// Renders into the game view (240x135) — pixel-perfect with terrain/particles.
     pub(crate) game_text: text::TextRenderer,
+    pub(crate) ui: ui::UiRenderer,
     pub(crate) staging_belt: wgpu::util::StagingBelt,
     pub(crate) touch_zone_indicator: touch_zone_indicator::TouchZoneIndicator,
     /// Debug overlay: FPS counter rendered at display resolution. Debug builds only.
@@ -82,6 +84,13 @@ impl Graphics {
             text::YDirection::Up,
             text::Font::O4b11,
         );
+        let ui = ui::UiRenderer::new(
+            device,
+            bloom::GAME_VIEW_FORMAT,
+            game_params.viewport_width,
+            game_params.viewport_height,
+            text::YDirection::Up,
+        );
         #[cfg(debug_assertions)]
         let overlay_text = text::TextRenderer::init(
             device,
@@ -116,6 +125,7 @@ impl Graphics {
             ship_renderer,
             background,
             game_text,
+            ui,
             staging_belt,
             touch_zone_indicator,
             #[cfg(debug_assertions)]

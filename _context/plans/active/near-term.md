@@ -235,6 +235,9 @@ Tasks:
       sharp and does not glow.
 - [x] Use a bottom-right `X` close button inside the overlay instead of a
       textual close instruction.
+- [x] Replace the title-screen `?` affordance with boxed `PLAY` / `MENU`
+      buttons. `MENU` opens the help overlay, and title buttons support
+      arrow-key focus plus Enter/Space confirmation.
 
 ---
 
