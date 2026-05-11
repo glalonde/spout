@@ -69,6 +69,8 @@ mod tests {
         assert!(!state.pause);
         assert!(!state.fullscreen);
         assert!(!state.restart);
+        assert!(!state.audio_next_track);
+        assert!(!state.audio_toggle);
         assert!(!state.touch_started);
     }
 
@@ -80,6 +82,8 @@ mod tests {
             restart: true,
             touch_started: true,
             help: true,
+            audio_next_track: true,
+            audio_toggle: true,
             pause: true,
             fullscreen: true,
             ..Default::default()
@@ -90,6 +94,8 @@ mod tests {
         assert!(frame.fullscreen_pressed());
         assert!(frame.restart_pressed());
         assert!(frame.help_pressed());
+        assert!(frame.audio_next_track_pressed());
+        assert!(frame.audio_toggle_pressed());
         assert!(frame.touch_started());
         assert!(frame.thrust_started());
         assert!(frame.rotate_started());
@@ -102,6 +108,8 @@ mod tests {
             rotate: 1.0,
             pause: true,
             fullscreen: true,
+            audio_next_track: true,
+            audio_toggle: true,
             ..Default::default()
         };
         let previous = current;
@@ -109,8 +117,25 @@ mod tests {
 
         assert!(!frame.pause_pressed());
         assert!(!frame.fullscreen_pressed());
+        assert!(!frame.audio_next_track_pressed());
+        assert!(!frame.audio_toggle_pressed());
         assert!(!frame.thrust_started());
         assert!(!frame.rotate_started());
+    }
+
+    #[test]
+    fn keyboard_audio_actions_are_one_shot() {
+        let mut c = InputCollector::default();
+        c.audio_next_track_requested = true;
+        c.audio_toggle_requested = true;
+
+        let first = c.current_state();
+        assert!(first.audio_next_track);
+        assert!(first.audio_toggle);
+
+        let second = c.current_state();
+        assert!(!second.audio_next_track);
+        assert!(!second.audio_toggle);
     }
 
     #[test]
@@ -386,6 +411,8 @@ pub struct InputState {
     pub touch_started: bool,
     pub pointer_pressed: Option<PointerPress>,
     pub help: bool,
+    pub audio_next_track: bool,
+    pub audio_toggle: bool,
 
     pub pause: bool,
     pub fullscreen: bool,
@@ -431,6 +458,14 @@ impl InputFrame {
 
     pub fn help_pressed(&self) -> bool {
         self.current.help && !self.previous.help
+    }
+
+    pub fn audio_next_track_pressed(&self) -> bool {
+        self.current.audio_next_track && !self.previous.audio_next_track
+    }
+
+    pub fn audio_toggle_pressed(&self) -> bool {
+        self.current.audio_toggle && !self.previous.audio_toggle
     }
 
     pub fn touch_started(&self) -> bool {
@@ -623,6 +658,8 @@ pub struct InputCollector {
     held_cam_reset: bool,
     restart_requested: bool,
     help_requested: bool,
+    audio_next_track_requested: bool,
+    audio_toggle_requested: bool,
     pointer_press: Option<PointerPress>,
     cursor_x: f32,
     cursor_y: f32,
@@ -656,6 +693,8 @@ impl Default for InputCollector {
             held_cam_reset: false,
             restart_requested: false,
             help_requested: false,
+            audio_next_track_requested: false,
+            audio_toggle_requested: false,
             pointer_press: None,
             cursor_x: 0.0,
             cursor_y: 0.0,
@@ -822,6 +861,8 @@ impl InputCollector {
 
                 // Misc
                 KeyCode::KeyF => self.held_fullscreen = pressed,
+                KeyCode::KeyT if pressed => self.audio_next_track_requested = true,
+                KeyCode::KeyY if pressed => self.audio_toggle_requested = true,
 
                 _ => {}
             }
@@ -869,6 +910,10 @@ impl InputCollector {
         self.restart_requested = false;
         let help = self.help_requested;
         self.help_requested = false;
+        let audio_next_track = self.audio_next_track_requested;
+        self.audio_next_track_requested = false;
+        let audio_toggle = self.audio_toggle_requested;
+        self.audio_toggle_requested = false;
         let mut pointer_pressed = self.pointer_press.take();
 
         let keyboard_thrust = if self.held_thrust { 1.0 } else { 0.0 };
@@ -922,6 +967,8 @@ impl InputCollector {
             touch_started,
             pointer_pressed,
             help,
+            audio_next_track,
+            audio_toggle,
             pause: self.held_pause,
             fullscreen: self.held_fullscreen,
             cam_in: self.held_cam_in,

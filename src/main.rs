@@ -597,6 +597,18 @@ impl Spout {
         }
     }
 
+    /// Audio input edges are global commands, but they still flow through
+    /// `InputCollector` so window-event handling stays platform-agnostic.
+    fn handle_audio_input(&mut self, input: InputFrame) {
+        if input.audio_next_track_pressed() {
+            self.audio.next_track();
+        }
+
+        if input.audio_toggle_pressed() {
+            self.audio.toggle();
+        }
+    }
+
     /// Drive the simulation for the active state. Returns a death cause if
     /// the sim killed the ship this frame (timer expiry, fell off the
     /// playfield).
@@ -684,6 +696,7 @@ impl Spout {
         let input = InputFrame::new(self.input_state, self.prev_input_state);
 
         self.handle_global_input(window, input);
+        self.handle_audio_input(input);
 
         self.level_manager
             .level_maker
@@ -808,28 +821,6 @@ impl Spout {
 
     fn update(&mut self, event: winit::event::WindowEvent) {
         self.collector.handle_winit_event(&event);
-
-        // One-shot audio actions are handled here directly since they are
-        // immediate commands, not held state.
-        use winit::keyboard::{KeyCode, PhysicalKey};
-        if let winit::event::WindowEvent::KeyboardInput {
-            event:
-                winit::event::KeyEvent {
-                    physical_key: PhysicalKey::Code(key),
-                    state,
-                    ..
-                },
-            ..
-        } = event
-        {
-            if state == winit::event::ElementState::Pressed {
-                match key {
-                    KeyCode::KeyT => self.audio.next_track(),
-                    KeyCode::KeyY => self.audio.toggle(),
-                    _ => {}
-                }
-            }
-        }
     }
 
     fn resize(
