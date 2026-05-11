@@ -1,4 +1,5 @@
-use std::future::Future;
+//! winit ApplicationHandler shell and async wgpu init for Spout.
+
 use std::sync::Arc;
 use web_time::Instant;
 #[cfg(target_arch = "wasm32")]
@@ -11,92 +12,40 @@ use winit::{
     window::WindowId,
 };
 
-#[rustfmt::skip]
-#[allow(unused)]
-pub const OPENGL_TO_WGPU_MATRIX: glam::Mat4 = glam::Mat4::from_cols_array(&[
-    1.0, 0.0, 0.0, 0.0,
-    0.0, 1.0, 0.0, 0.0,
-    0.0, 0.0, 0.5, 0.0,
-    0.0, 0.0, 0.5, 1.0,
-]);
+use crate::Spout;
 
-#[allow(dead_code)]
-pub trait Example: 'static + Sized {
-    fn optional_features() -> wgpu::Features {
-        wgpu::Features::empty()
-    }
-    fn required_features() -> wgpu::Features {
-        wgpu::Features::empty()
-    }
-    fn required_downlevel_capabilities() -> wgpu::DownlevelCapabilities {
-        wgpu::DownlevelCapabilities {
-            flags: wgpu::DownlevelFlags::empty(),
-            shader_model: wgpu::ShaderModel::Sm5,
-            ..wgpu::DownlevelCapabilities::default()
-        }
-    }
-    fn required_limits() -> wgpu::Limits {
-        wgpu::Limits::downlevel_webgl2_defaults()
-    }
-    fn init(
-        config: &wgpu::SurfaceConfiguration,
-        adapter: &wgpu::Adapter,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        window: &winit::window::Window,
-    ) -> Self;
-    fn resize(
-        &mut self,
-        config: &wgpu::SurfaceConfiguration,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-    );
-    fn update(&mut self, event: WindowEvent);
-    fn render(
-        &mut self,
-        view: &wgpu::TextureView,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        spawner: &Spawner,
-        window: &winit::window::Window,
-    );
-}
-
-/// GPU state produced by async initialization. Separated from `FrameworkApp`
-/// so it can be written into a shared cell from a spawned future on WASM.
-struct GpuState<E: Example> {
+/// GPU state produced by async initialization. Separated from `App` so it can
+/// be written into a shared cell from a spawned future on WASM.
+struct GpuState {
     adapter: wgpu::Adapter,
     device: wgpu::Device,
     queue: wgpu::Queue,
     surface: wgpu::Surface<'static>,
     config: wgpu::SurfaceConfiguration,
-    example: E,
+    spout: Spout,
 }
 
-#[allow(dead_code)]
-struct FrameworkApp<E: Example> {
+struct App {
     title: String,
     /// Set as soon as the window is created, before GPU init completes.
     window: Option<Arc<winit::window::Window>>,
     /// Set once GPU init completes.
-    gpu: Option<GpuState<E>>,
-    spawner: Spawner,
+    gpu: Option<GpuState>,
     last_frame: Instant,
     frame_count: u32,
     accum_time: f32,
     /// On WASM, `init_gpu` runs via `spawn_local`. The completed result lands
     /// here and is picked up in `about_to_wait`.
     #[cfg(target_arch = "wasm32")]
-    pending_gpu: std::rc::Rc<std::cell::RefCell<Option<GpuState<E>>>>,
+    pending_gpu: std::rc::Rc<std::cell::RefCell<Option<GpuState>>>,
 }
 
-impl<E: Example> FrameworkApp<E> {
+impl App {
     fn new(title: &str) -> Self {
         Self {
             title: title.to_owned(),
             window: None,
             gpu: None,
-            spawner: Spawner::new(),
             last_frame: Instant::now(),
             frame_count: 0,
             accum_time: 0.0,
@@ -111,10 +60,10 @@ impl<E: Example> FrameworkApp<E> {
 /// On native this is driven by `pollster::block_on`; on WASM it is driven by
 /// `wasm_bindgen_futures::spawn_local` so the JS event loop keeps running while
 /// `request_adapter` / `request_device` resolve their underlying Promises.
-async fn init_gpu<E: Example>(
+async fn init_gpu(
     window: Arc<winit::window::Window>,
     display_handle: winit::event_loop::OwnedDisplayHandle,
-) -> GpuState<E> {
+) -> GpuState {
     let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_with_display_handle_from_env(
         Box::new(display_handle),
     ));
@@ -135,16 +84,11 @@ async fn init_gpu<E: Example>(
     let adapter_info = adapter.get_info();
     log::info!("Using {} ({:?})", adapter_info.name, adapter_info.backend);
 
-    let optional_features = E::optional_features();
-    let required_features = E::required_features();
-    let adapter_features = adapter.features();
-    assert!(
-        adapter_features.contains(required_features),
-        "Adapter does not support required features for this example: {:?}",
-        required_features - adapter_features
-    );
-
-    let required_downlevel = E::required_downlevel_capabilities();
+    let required_features = wgpu::Features::empty();
+    let required_downlevel = wgpu::DownlevelCapabilities {
+        flags: wgpu::DownlevelFlags::COMPUTE_SHADERS,
+        ..Default::default()
+    };
     let downlevel = adapter.get_downlevel_capabilities();
     assert!(
         downlevel.shader_model >= required_downlevel.shader_model,
@@ -157,12 +101,12 @@ async fn init_gpu<E: Example>(
         required_downlevel.flags - downlevel.flags
     );
 
-    let needed_limits = E::required_limits().using_resolution(adapter.limits());
+    let needed_limits = wgpu::Limits::downlevel_defaults().using_resolution(adapter.limits());
 
     let (device, queue) = adapter
         .request_device(&wgpu::DeviceDescriptor {
             label: None,
-            required_features: (optional_features & adapter_features) | required_features,
+            required_features,
             required_limits: needed_limits,
             memory_hints: wgpu::MemoryHints::Performance,
             experimental_features: wgpu::ExperimentalFeatures::disabled(),
@@ -188,8 +132,8 @@ async fn init_gpu<E: Example>(
         .expect("Surface not supported by the adapter");
     surface.configure(&device, &config);
 
-    log::info!("Initializing the example...");
-    let example = E::init(&config, &adapter, &device, &queue, &window);
+    log::info!("Initializing Spout...");
+    let spout = Spout::init(&config, &adapter, &device, &queue, &window);
 
     GpuState {
         adapter,
@@ -197,11 +141,11 @@ async fn init_gpu<E: Example>(
         queue,
         surface,
         config,
-        example,
+        spout,
     }
 }
 
-impl<E: Example> ApplicationHandler for FrameworkApp<E> {
+impl ApplicationHandler for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         // Only initialize once (guards against repeated calls on Android/iOS).
         if self.window.is_some() {
@@ -234,7 +178,7 @@ impl<E: Example> ApplicationHandler for FrameworkApp<E> {
 
         #[cfg(not(target_arch = "wasm32"))]
         {
-            self.gpu = Some(pollster::block_on(init_gpu::<E>(window, display_handle)));
+            self.gpu = Some(pollster::block_on(init_gpu(window, display_handle)));
         }
 
         // On WASM, block_on would deadlock: request_adapter / request_device
@@ -245,7 +189,7 @@ impl<E: Example> ApplicationHandler for FrameworkApp<E> {
         {
             let pending = std::rc::Rc::clone(&self.pending_gpu);
             wasm_bindgen_futures::spawn_local(async move {
-                let gpu = init_gpu::<E>(window, display_handle).await;
+                let gpu = init_gpu(window, display_handle).await;
                 *pending.borrow_mut() = Some(gpu);
             });
         }
@@ -286,7 +230,7 @@ impl<E: Example> ApplicationHandler for FrameworkApp<E> {
                     gpu.config.width = size.width;
                     gpu.config.height = size.height;
                     gpu.surface.configure(&gpu.device, &gpu.config);
-                    gpu.example.resize(&gpu.config, &gpu.device, &gpu.queue);
+                    gpu.spout.resize(&gpu.config, &gpu.device, &gpu.queue);
                 }
             }
             WindowEvent::RedrawRequested => {
@@ -301,8 +245,6 @@ impl<E: Example> ApplicationHandler for FrameworkApp<E> {
                     self.accum_time = 0.0;
                     self.frame_count = 0;
                 }
-
-                self.spawner.run_until_stalled();
 
                 let gpu = self.gpu.as_mut().unwrap(); // safe: checked above
                 let window = self.window.as_ref().unwrap(); // safe: set before gpu
@@ -336,13 +278,12 @@ impl<E: Example> ApplicationHandler for FrameworkApp<E> {
                     .texture
                     .create_view(&wgpu::TextureViewDescriptor::default());
 
-                gpu.example
-                    .render(&view, &gpu.device, &gpu.queue, &self.spawner, window);
+                gpu.spout.render(&view, &gpu.device, &gpu.queue, window);
                 frame.present();
             }
             event => {
                 if let Some(gpu) = self.gpu.as_mut() {
-                    gpu.example.update(event);
+                    gpu.spout.update(event);
                 }
             }
         }
@@ -363,30 +304,7 @@ impl<E: Example> ApplicationHandler for FrameworkApp<E> {
     }
 }
 
-pub struct Spawner {
-    executor: async_executor::LocalExecutor<'static>,
-}
-
-#[allow(unused)]
-impl Spawner {
-    fn new() -> Self {
-        Self {
-            executor: async_executor::LocalExecutor::new(),
-        }
-    }
-
-    #[allow(dead_code)]
-    pub fn spawn_local(&self, future: impl Future<Output = ()> + 'static) {
-        self.executor.spawn(future).detach();
-    }
-
-    fn run_until_stalled(&self) {
-        while self.executor.try_tick() {}
-    }
-}
-
-#[allow(dead_code)]
-pub fn run<E: Example>(title: &str) {
+pub fn run(title: &str) {
     #[cfg(not(target_arch = "wasm32"))]
     env_logger::Builder::from_default_env()
         .filter_level(log::LevelFilter::Info)
@@ -399,11 +317,6 @@ pub fn run<E: Example>(title: &str) {
     }
 
     let event_loop = EventLoop::new().expect("Failed to create event loop");
-    let mut app = FrameworkApp::<E>::new(title);
+    let mut app = App::new(title);
     event_loop.run_app(&mut app).expect("Event loop error");
 }
-
-// This allows treating the framework as a standalone example,
-// thus avoiding listing the example names in `Cargo.toml`.
-#[allow(dead_code)]
-fn main() {}

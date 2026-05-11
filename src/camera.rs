@@ -2,9 +2,13 @@
 
 use std::f32::consts::PI;
 
-#[allow(clippy::duplicate_mod)]
-#[path = "../examples/framework.rs"]
-mod framework;
+#[rustfmt::skip]
+const OPENGL_TO_WGPU_MATRIX: glam::Mat4 = glam::Mat4::from_cols_array(&[
+    1.0, 0.0, 0.0, 0.0,
+    0.0, 1.0, 0.0, 0.0,
+    0.0, 0.0, 0.5, 0.0,
+    0.0, 0.0, 0.5, 1.0,
+]);
 
 pub struct CameraMotion {
     pub angular_speed: f32,
@@ -165,8 +169,8 @@ impl Camera {
         let cam_pos = self.state.pos();
         let cam_up = self.state.up();
         let mx_view = glam::Mat4::look_at_rh(cam_pos, self.state.center, cam_up);
-        let proj = framework::OPENGL_TO_WGPU_MATRIX * mx_projection;
-        let view = framework::OPENGL_TO_WGPU_MATRIX * mx_view;
+        let proj = OPENGL_TO_WGPU_MATRIX * mx_projection;
+        let view = OPENGL_TO_WGPU_MATRIX * mx_view;
 
         let mut raw = [0f32; 16 * 2];
         raw[..16].copy_from_slice(&AsRef::<[f32; 16]>::as_ref(&proj)[..]);
