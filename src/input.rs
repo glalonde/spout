@@ -73,6 +73,47 @@ mod tests {
     }
 
     #[test]
+    fn input_frame_reports_edges() {
+        let current = InputState {
+            thrust: 1.0,
+            rotate: -1.0,
+            restart: true,
+            touch_started: true,
+            help: true,
+            pause: true,
+            fullscreen: true,
+            ..Default::default()
+        };
+        let frame = InputFrame::new(current, InputState::default());
+
+        assert!(frame.pause_pressed());
+        assert!(frame.fullscreen_pressed());
+        assert!(frame.restart_pressed());
+        assert!(frame.help_pressed());
+        assert!(frame.touch_started());
+        assert!(frame.thrust_started());
+        assert!(frame.rotate_started());
+    }
+
+    #[test]
+    fn input_frame_ignores_held_values() {
+        let current = InputState {
+            thrust: 1.0,
+            rotate: 1.0,
+            pause: true,
+            fullscreen: true,
+            ..Default::default()
+        };
+        let previous = current;
+        let frame = InputFrame::new(current, previous);
+
+        assert!(!frame.pause_pressed());
+        assert!(!frame.fullscreen_pressed());
+        assert!(!frame.thrust_started());
+        assert!(!frame.rotate_started());
+    }
+
+    #[test]
     fn keyboard_thrust() {
         let mut c = InputCollector::default();
         c.held_thrust = true;
@@ -358,6 +399,55 @@ pub struct InputState {
     pub cam_right: bool,
     pub cam_perspective: bool,
     pub cam_reset: bool,
+}
+
+/// Current + previous input snapshots for edge-triggered actions.
+///
+/// This keeps consumers from open-coding `current && !previous` checks, and
+/// gives future menu/gamepad navigation a single place to grow semantic input
+/// intents without changing every screen.
+#[derive(Debug, Copy, Clone, Default)]
+pub struct InputFrame {
+    pub current: InputState,
+    pub previous: InputState,
+}
+
+impl InputFrame {
+    pub fn new(current: InputState, previous: InputState) -> Self {
+        Self { current, previous }
+    }
+
+    pub fn pause_pressed(&self) -> bool {
+        self.current.pause && !self.previous.pause
+    }
+
+    pub fn fullscreen_pressed(&self) -> bool {
+        self.current.fullscreen && !self.previous.fullscreen
+    }
+
+    pub fn restart_pressed(&self) -> bool {
+        self.current.restart && !self.previous.restart
+    }
+
+    pub fn help_pressed(&self) -> bool {
+        self.current.help && !self.previous.help
+    }
+
+    pub fn touch_started(&self) -> bool {
+        self.current.touch_started
+    }
+
+    pub fn pointer_pressed(&self) -> Option<PointerPress> {
+        self.current.pointer_pressed
+    }
+
+    pub fn thrust_started(&self) -> bool {
+        self.current.thrust > 0.0 && self.previous.thrust == 0.0
+    }
+
+    pub fn rotate_started(&self) -> bool {
+        self.current.rotate.abs() > 0.0 && self.previous.rotate.abs() == 0.0
+    }
 }
 
 // --- Touch layout -------------------------------------------------------

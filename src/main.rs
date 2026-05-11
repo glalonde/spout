@@ -12,7 +12,7 @@ use spout::background;
 use spout::bloom;
 use spout::collision;
 use spout::game_params;
-use spout::input::{InputCollector, InputState};
+use spout::input::{InputCollector, InputFrame, InputState};
 use spout::level_manager;
 use spout::particles;
 use spout::render;
@@ -599,12 +599,12 @@ impl Spout {
 
     /// Window-level / state-agnostic input edges: pause toggle, fullscreen.
     /// Neither needs GPU access.
-    fn handle_global_input(&mut self, window: &winit::window::Window) {
-        if self.input_state.pause && !self.prev_input_state.pause {
+    fn handle_global_input(&mut self, window: &winit::window::Window, input: InputFrame) {
+        if input.pause_pressed() {
             self.toggle_pause();
         }
 
-        if !self.prev_input_state.fullscreen && self.input_state.fullscreen {
+        if input.fullscreen_pressed() {
             if window.fullscreen().is_some() {
                 log::info!("Setting windowed mode.");
                 window.set_fullscreen(None);
@@ -664,14 +664,18 @@ impl Spout {
 
     /// Title-screen input. The screen owns its UI sub-state and reports
     /// high-level actions back to `Spout`.
-    fn process_title_input(&mut self, surface_w: u32, surface_h: u32) -> Option<PendingTransition> {
+    fn process_title_input(
+        &mut self,
+        input: InputFrame,
+        surface_w: u32,
+        surface_h: u32,
+    ) -> Option<PendingTransition> {
         let AppState::Title(title) = &mut self.state else {
             return None;
         };
 
         match title.update(
-            self.input_state,
-            self.prev_input_state,
+            input,
             &self.game_params,
             &self.game_text,
             self.audio.is_playing(),
@@ -695,8 +699,9 @@ impl Spout {
 
         self.prev_input_state = self.input_state;
         self.input_state = self.collector.current_state();
+        let input = InputFrame::new(self.input_state, self.prev_input_state);
 
-        self.handle_global_input(window);
+        self.handle_global_input(window, input);
 
         self.level_manager
             .level_maker
@@ -712,17 +717,17 @@ impl Spout {
         }
 
         self.renderer
-            .update_state(wall_dt, &self.input_state, &self.prev_input_state);
+            .update_state(wall_dt, &input.current, &input.previous);
 
         // Restart from game-over: explicit restart key, or any tap.
-        let restart_pressed = self.input_state.restart
-            || (matches!(self.state, AppState::GameOver { .. }) && self.input_state.touch_started);
+        let restart_pressed = input.restart_pressed()
+            || (matches!(self.state, AppState::GameOver { .. }) && input.touch_started());
         if restart_pressed {
             return Some(PendingTransition::ToTitle);
         }
 
         let win_size = window.inner_size();
-        self.process_title_input(win_size.width, win_size.height)
+        self.process_title_input(input, win_size.width, win_size.height)
     }
 
     fn apply_transition(

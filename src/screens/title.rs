@@ -1,5 +1,5 @@
 use spout::game_params::GameParams;
-use spout::input::{InputState, PointerPress};
+use spout::input::{InputFrame, PointerPress};
 use spout::text::TextRenderer;
 
 #[derive(Debug, Default)]
@@ -48,14 +48,13 @@ struct Button {
 impl TitleScreen {
     pub fn update(
         &mut self,
-        input: InputState,
-        prev_input: InputState,
+        input: InputFrame,
         params: &GameParams,
         text: &TextRenderer,
         music_playing: bool,
         surface_size: (u32, u32),
     ) -> Option<TitleAction> {
-        let clicked_button = input.pointer_pressed.and_then(|point| {
+        let clicked_button = input.pointer_pressed().and_then(|point| {
             self.button_at(
                 point,
                 params,
@@ -67,7 +66,7 @@ impl TitleScreen {
         });
         let mut title_action_handled = false;
 
-        if input.help {
+        if input.help_pressed() {
             self.instructions_open = !self.instructions_open;
             title_action_handled = true;
         }
@@ -82,14 +81,15 @@ impl TitleScreen {
                 }
             }
             title_action_handled = true;
-        } else if self.instructions_open && input.pointer_pressed.is_some() {
+        } else if self.instructions_open && input.pointer_pressed().is_some() {
             self.instructions_open = false;
             title_action_handled = true;
         }
 
-        let new_thrust = input.thrust > 0.0 && prev_input.thrust == 0.0;
-        let new_rotate = input.rotate.abs() > 0.0 && prev_input.rotate.abs() == 0.0;
-        if !title_action_handled && !self.instructions_open && (new_thrust || new_rotate) {
+        if !title_action_handled
+            && !self.instructions_open
+            && (input.thrust_started() || input.rotate_started())
+        {
             return Some(TitleAction::StartGame);
         }
 
