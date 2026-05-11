@@ -62,7 +62,8 @@ impl TitleScreen {
         music_playing: bool,
         surface_size: (u32, u32),
     ) -> Option<TitleAction> {
-        let clicked_button = input.pointer_pressed().and_then(|point| {
+        let pointer_pressed = input.pointer_pressed();
+        let clicked_button = pointer_pressed.and_then(|point| {
             self.button_at(
                 point,
                 params,
@@ -81,8 +82,10 @@ impl TitleScreen {
         if let Some(action) = clicked_button {
             self.focused_button = action;
             return self.activate_button(action);
-        } else if self.instructions_open && input.pointer_pressed().is_some() {
-            self.close_menu();
+        } else if pointer_pressed.is_some() {
+            if self.instructions_open {
+                self.close_menu();
+            }
             return None;
         }
 
