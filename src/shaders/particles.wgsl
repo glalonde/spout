@@ -76,7 +76,9 @@ fn get_buffer_offset(cell: vec2<i32>) -> u32 {
 
 // Returns true if bounce occurred.
 fn try_erode(terrain_cell: vec2<i32>, speed: f32) -> bool {
-  let dmg_amt = i32(uniforms.damage_rate * speed);
+  let dmg_amt = max(i32(uniforms.damage_rate * speed), 0);
+  // Overkill damage may drive terrain below zero. Readers treat <= 0 as empty;
+  // add a separate cleanup pass later if storage needs a nonnegative invariant.
   let actual_value = atomicAdd(&terrain_buffer[get_buffer_offset(terrain_cell)], -dmg_amt);
   return actual_value > 0;
 }

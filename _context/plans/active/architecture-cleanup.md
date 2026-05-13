@@ -27,6 +27,8 @@ Merged in PRs #77-#84:
       a one-frame dt offset with `0.0` as the neutral value.
 - [x] Guarded `clear_density_buffer.wgsl` against rounded-up workgroup lanes
       and added a non-workgroup-multiple density clear test.
+- [x] Kept particle terrain erosion on the fast atomic decrement path and
+      documented that overkill damage may drive destroyed cells negative.
 
 ## Highest Priority
 
@@ -64,9 +66,10 @@ Merged in PRs #77-#84:
       frame composes terrain, runs particle erosion, then dispatches ship
       collision against the mutated terrain. Keep that if desired, but encode it
       explicitly as `collide_after_erosion` or change the order deliberately.
-- [ ] Make terrain erosion saturating. `try_erode` subtracts damage before
-      checking solidity, so empty cells can become negative terrain. Clamp empty
-      terrain at zero before adding richer material or damage semantics.
+- [ ] Add a frame-boundary terrain clamp only if future systems need
+      nonnegative stored health. Today `try_erode` intentionally uses
+      `atomicAdd` for speed, may drive destroyed cells negative on overkill,
+      and render/collision code treats `<= 0` as empty.
 - [ ] Centralize ship geometry shared by Rust and WGSL so render, collision,
       and emitter offsets cannot drift again.
 - [ ] Rename or hide CPU terrain query helpers that read initial pre-erosion
