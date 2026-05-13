@@ -8,7 +8,6 @@ significant work and update it when they learn something worth keeping.
 ```
 _context/
   README.md              ← this file (index + process)
-  rule-changes.md        ← player-facing gameplay rule patch notes
   wasm-debugging.md      ← WASM/WebGPU gotchas and debugging workflow
   plans/
     active/              ← one file per in-progress initiative
@@ -19,7 +18,6 @@ _context/
 
 | File/dir | Purpose |
 |----------|---------|
-| `rule-changes.md` | Player-facing patch notes for gameplay rule changes |
 | `wasm-debugging.md` | Concrete WASM gotchas with fixes; WGSL pitfalls; browser debugging workflow |
 | `plans/active/` | In-progress plans — decisions made, scope, status, open items |
 | `plans/archive/` | Completed plans and old assessments (preserved for history) |
@@ -36,7 +34,7 @@ _context/
 **During work:**
 - If a plan file exists for your task, keep its status current as you go.
 - If gameplay rules change, add a short player-facing note to
-  `rule-changes.md`.
+  `RULE_CHANGES.md`.
 
 **At the end of a session:**
 1. Update any plan files touched — mark completed items, note new open issues.

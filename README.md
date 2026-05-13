@@ -9,6 +9,7 @@ Asteroids-style 2D arcade game with GPU-accelerated particle terrain destruction
 Live programming streams on YouTube: [https://youtu.be/QauR0n0V48M](https://youtu.be/QauR0n0V48M)
 
 See [docs/pipeline.md](docs/pipeline.md) for a diagram of the per-frame compute and render pipeline.
+See [RULE_CHANGES.md](RULE_CHANGES.md) for player-facing gameplay rule patch notes.
 
 > **Legacy version** is in branch `legacy_wgpu` — more feature-complete but based on older libraries.
 
