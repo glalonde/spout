@@ -4,5 +4,8 @@ var<storage, read_write> density_buffer: array<u32>;
 @compute @workgroup_size({{ particle_workgroup_size }})
 fn main(@builtin(global_invocation_id) global_id: vec3<u32>,  @builtin(num_workgroups) num_workgroups: vec3<u32>) {
   let gid = global_id[0];
+  if (gid >= arrayLength(&density_buffer)) {
+    return;
+  }
   density_buffer[gid] = 0u;
 }

@@ -1054,6 +1054,38 @@ mod tests {
     use super::*;
     use crate::gpu_test_utils as gpu;
 
+    fn read_buffer<T: bytemuck::Pod>(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        buffer: &SizedBuffer,
+    ) -> Vec<T> {
+        let staging_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Storage readback staging"),
+            size: buffer.size,
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("Storage readback encoder"),
+        });
+        encoder.copy_buffer_to_buffer(&buffer.buffer, 0, &staging_buffer, 0, buffer.size);
+        queue.submit(Some(encoder.finish()));
+
+        let buffer_slice = staging_buffer.slice(..);
+        buffer_slice.map_async(wgpu::MapMode::Read, |_| {});
+        if let Err(err) = device.poll(wgpu::PollType::wait_indefinitely()) {
+            panic!("storage readback poll should complete: {err}");
+        }
+
+        let data = buffer_slice.get_mapped_range();
+        let values = bytemuck::cast_slice(&data).to_vec();
+        drop(data);
+        staging_buffer.unmap();
+
+        values
+    }
+
     /// Emit N particles with the given params and read the particle buffer back from the GPU.
     fn run_emitter_and_read_back(
         device: &wgpu::Device,
@@ -1238,6 +1270,56 @@ mod tests {
         let raw = gpu::readback_pixels(&device, &staging_buffer);
         let rgba = gpu::rgba16f_to_rgba8(&raw, TEST_W, TEST_H);
         gpu::compare_or_generate_golden("particle_render", &rgba, TEST_W, TEST_H);
+    }
+
+    #[test]
+    fn clear_density_buffer_handles_rounded_workgroups() {
+        use wgpu::util::DeviceExt;
+
+        let Some((device, queue)) = gpu::try_create_headless_device() else {
+            eprintln!(
+                "No GPU adapter available — skipping clear_density_buffer_handles_rounded_workgroups"
+            );
+            return;
+        };
+
+        let cell_count = PARTICLE_WORKGROUP_SIZE * 2 + 17;
+        let density_data = vec![7u32; cell_count as usize];
+        let density_buffer = SizedBuffer {
+            buffer: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Rounded density clear test buffer"),
+                contents: bytemuck::cast_slice(&density_data),
+                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            }),
+            size: std::mem::size_of_val(density_data.as_slice()) as u64,
+        };
+        let (clear_work_groups, clear_pipeline, clear_bind_group) =
+            ParticleSystem::init_clear_buffer_pipeline(&device, &density_buffer);
+        assert_eq!(clear_work_groups, 3);
+
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("Rounded density clear encoder"),
+        });
+        {
+            let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("Rounded density clear pass"),
+                timestamp_writes: None,
+            });
+            cpass.set_pipeline(&clear_pipeline);
+            cpass.set_bind_group(0, &clear_bind_group, &[]);
+            cpass.dispatch_workgroups(clear_work_groups, 1, 1);
+        }
+        queue.submit(Some(encoder.finish()));
+        if let Err(err) = device.poll(wgpu::PollType::wait_indefinitely()) {
+            panic!("rounded density clear should complete: {err}");
+        }
+
+        let cleared = read_buffer::<u32>(&device, &queue, &density_buffer);
+        assert_eq!(cleared.len(), cell_count as usize);
+        assert!(
+            cleared.iter().all(|value| *value == 0),
+            "density clear should zero every in-bounds cell"
+        );
     }
 
     /// Emit a radial burst via `emit_burst` and read the particle buffer back,

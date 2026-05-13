@@ -25,10 +25,12 @@ Merged in PRs #77-#84:
       `level_width == viewport_width` until terrain/view/density widths split.
 - [x] Renamed the CPU `Particle` ABI field to `subframe_dt_offset`, made it
       a one-frame dt offset with `0.0` as the neutral value.
+- [x] Guarded `clear_density_buffer.wgsl` against rounded-up workgroup lanes
+      and added a non-workgroup-multiple density clear test.
 
 ## Highest Priority
 
-- [ ] Fix density-buffer clear dispatch bounds. `clear_density_buffer.wgsl`
+- [x] Fix density-buffer clear dispatch bounds. `clear_density_buffer.wgsl`
       writes `density_buffer[gid]` without guarding rounded-up workgroup lanes;
       the checked-in 261×160 viewport dispatches 41,984 lanes for 41,760 cells.
       Add an `arrayLength` guard and cover a non-workgroup-multiple density
