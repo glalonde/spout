@@ -28,6 +28,7 @@ Merged in PRs #77-#84:
 - [x] Guarded `clear_density_buffer.wgsl` against rounded-up workgroup lanes
       and added a non-workgroup-multiple density clear test.
 - [x] Fixed bloom mip-level clamping to include the legal 1×1 tail level.
+- [x] Aligned terrain fragment uniform signedness between Rust and WGSL.
 
 ## Highest Priority
 
@@ -119,9 +120,9 @@ Merged in PRs #77-#84:
       `queue` in `TouchZoneIndicator::new`, and store decoded background tile
       dimensions instead of hardcoding `tile_size: 65.0`.
 - [ ] Align shader ABI names and constants: split particle `view_width`,
-      `density_width`, and `terrain_stride`; make terrain uniform signedness
-      match Rust; resolve dead emitter velocity fields; and move density heat
-      scale into a shared include or build-time constant.
+      `density_width`, and `terrain_stride`; resolve dead emitter velocity
+      fields; and move density heat scale into a shared include or build-time
+      constant.
 
 ## Platform / Boundaries
 

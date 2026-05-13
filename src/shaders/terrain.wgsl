@@ -32,8 +32,8 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
 struct Uniforms {
     viewport_width: u32,
     viewport_height: u32,
-    viewport_offset: u32,
-    terrain_buffer_offset: u32,
+    viewport_offset: i32,
+    terrain_buffer_offset: i32,
 };
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
 
@@ -45,8 +45,8 @@ fn get_cell_xy(tx: i32, ty: i32) -> i32 {
     if tx < 0 || tx >= i32(uniforms.viewport_width) {
         return 0;
     }
-    let absolute_height = i32(uniforms.viewport_offset) + ty;
-    let row_in_terrain_buffer = absolute_height - i32(uniforms.terrain_buffer_offset);
+    let absolute_height = uniforms.viewport_offset + ty;
+    let row_in_terrain_buffer = absolute_height - uniforms.terrain_buffer_offset;
     let cells_per_row = i32(uniforms.viewport_width);
     let cell_offset = row_in_terrain_buffer * cells_per_row + tx;
     if cell_offset < 0 || u32(cell_offset) >= arrayLength(&terrain_buffer) {
