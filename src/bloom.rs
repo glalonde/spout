@@ -33,7 +33,7 @@ pub const GAME_VIEW_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Flo
 /// clamped to this. Floor of 1 — at minimum we need a single mip to render to.
 fn clamp_mip_levels(width: u32, height: u32, requested: u32) -> u32 {
     let half = width.min(height).max(2) / 2;
-    let max_levels = (half as f32).log2().floor() as u32;
+    let max_levels = u32::BITS - half.leading_zeros();
     requested.clamp(1, max_levels.max(1))
 }
 
@@ -374,6 +374,15 @@ mod tests {
     const TEST_H: u32 = 64;
     /// Bytes per pixel for Rgba16Float: 4 channels × 2 bytes (f16) = 8.
     const BPP: u32 = 8;
+
+    #[test]
+    fn clamp_mip_levels_includes_one_pixel_tail() {
+        assert_eq!(clamp_mip_levels(64, 64, 99), 6);
+        assert_eq!(clamp_mip_levels(32, 32, 99), 5);
+        assert_eq!(clamp_mip_levels(3, 3, 99), 1);
+        assert_eq!(clamp_mip_levels(64, 64, 3), 3);
+        assert_eq!(clamp_mip_levels(64, 64, 0), 1);
+    }
 
     fn make_game_view_texture(device: &wgpu::Device) -> wgpu::Texture {
         device.create_texture(&wgpu::TextureDescriptor {

@@ -27,6 +27,7 @@ Merged in PRs #77-#84:
       a one-frame dt offset with `0.0` as the neutral value.
 - [x] Guarded `clear_density_buffer.wgsl` against rounded-up workgroup lanes
       and added a non-workgroup-multiple density clear test.
+- [x] Fixed bloom mip-level clamping to include the legal 1×1 tail level.
 
 ## Highest Priority
 
@@ -92,7 +93,7 @@ Merged in PRs #77-#84:
 - [ ] Move render-target formats and texture creation out of `bloom.rs` into a
       render-target/formats owner; bloom should consume the HDR format, not own
       the whole game-view contract.
-- [ ] Fix and test bloom mip-level clamping. The current clamp appears to
+- [x] Fix and test bloom mip-level clamping. The current clamp appears to
       undercount the legal 1×1 tail level for power-of-two texture dimensions.
 - [ ] Extract a behavior-preserving `FrameRenderer` facade after `Graphics`.
       `Graphics` currently groups resources, but `Spout::draw_phase` still owns
