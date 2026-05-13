@@ -145,5 +145,5 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>, @builtin(num_workgr
     (*particle).position = ship_position + local_rotate_global * local_emit_position; 
     (*particle).velocity = local_rotate_global * local_emit_velocity;
     (*particle).ttl = mix(emit_data.nozzle.ttl_min, emit_data.nozzle.ttl_max, .5); 
-    (*particle).local_dt = emit_data.dt - pass_time;
+    (*particle).subframe_dt_offset = -pass_time;
 }

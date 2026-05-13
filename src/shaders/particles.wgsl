@@ -118,12 +118,11 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>, @builtin(num_workgr
     return;
   } 
 
-  // To get smooth positioning between iterations, some newly emitted particles will have less than the uniform time delta.
-  var dt = uniforms.dt;
-  if ((*particle).local_dt >= 0.0) {
-    dt = (*particle).local_dt;
-    (*particle).local_dt = -1.0;
-  }
+  // New particles can be emitted partway through the frame.
+  // `subframe_dt_offset` adjusts the uniform frame dt once, then resets to the
+  // neutral offset for later updates.
+  let dt = max(uniforms.dt + (*particle).subframe_dt_offset, 0.0);
+  (*particle).subframe_dt_offset = 0.0;
 
   // TODO collisions 
   let signed_delta = (*particle).velocity * dt;

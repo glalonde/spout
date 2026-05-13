@@ -1,15 +1,16 @@
 # Near-Term Features
 
 Concrete next things to build — one step above backlog, not yet in active development.
-Items are ordered roughly by dependency (text rendering unlocks most of the rest).
+Items are ordered roughly by dependency.
 
 ---
 
-## 1. Text Rendering (prerequisite for HUD/UI) — IN PROGRESS (PR #55)
+## 1. Text Rendering / HUD
 
-**Blocker for:** score display, game over screen, debug overlay, any menus.
-
-Used `fontdue` (pure Rust font rasterizer) instead of `glyphon` — glyphon doesn't support wgpu 29 yet. Hand-rolled bitmap atlas approach is a better fit for Pixel Six anyway.
+Core text rendering has shipped and is used by the HUD, title, debug overlay,
+and game-over screen. Used `fontdue` (pure Rust font rasterizer) instead of
+`glyphon` — glyphon doesn't support wgpu 29 yet. Hand-rolled bitmap atlas
+approach is a better fit for Pixel Six anyway.
 
 Tasks:
 - [x] Embed Pixel Six font via `include_bytes!` (already in repo from legacy)
@@ -70,12 +71,17 @@ Done: title screen → playing → dead → game over → title flow implemented
 
 Independent — no blockers. More urgent now that iOS is running on device.
 
-Currently the game renders at a fixed internal resolution (240×135) upscaled to fill the window. On iPhone 15 Pro (2556×1179, ~19.5:9) the game viewport doesn't fill the screen correctly — letterboxed or wrong aspect.
+The game renders at a fixed internal resolution and letterboxes into the surface.
+Basic resize works; the remaining architecture work is to centralize surface,
+safe-area, backing-pixel, and game-viewport mapping into `SurfaceMetrics` so
+camera, input, title overlay, and touch UI cannot drift.
 
 Tasks:
 - [x] Decide internal render resolution strategy → camera letterboxes game quad (261×160) into surface; bars on one axis only.
 - [x] Full-screen Metal surface on iOS — see 8d above.
-- [ ] Handle window resize gracefully (resize swapchain, update camera projection)
+- [x] Handle window resize gracefully (resize swapchain, update camera projection)
+- [ ] Add shared `SurfaceMetrics` for surface/game mapping (see
+      `architecture-cleanup.md`)
 - [ ] Optional: expose resolution config in `game_config.toml`
 
 ---
@@ -86,15 +92,19 @@ Fixed: `rand` dep removed, `fastrand::Rng::new().shuffle()` used instead. Level 
 
 ---
 
-## 7. Music: Non-Blocking Track Render (WASM)
+## 7. Music: Web Worker Track Render (WASM)
 
-`render_track` runs synchronously inside `spawn_local` on WASM, blocking the main thread for ~2–4 s while a tracker file decodes. Visible as a freeze when a track loads.
+WASM track rendering now yields in chunks while running from `spawn_local`, so
+the old fully synchronous freeze is no longer the active problem. A Web Worker
+would still be cleaner for large tracker files and keeps audio decode/render
+work off the browser main thread.
 
 Native is already correct (background thread via `std::thread::spawn`).
 
 Tasks:
-- [ ] Move `render_track` to a Web Worker on WASM (see `music.md` Phase 3 for options)
-- [ ] Verify no main-thread freeze when starting / cycling tracks in the browser
+- [ ] Add an explicit user-gesture audio-unlock path for Web Audio.
+- [ ] Move `render_track` to a Web Worker on WASM (see `music.md` Phase 3 for options).
+- [ ] Verify no main-thread hitch when starting / cycling tracks in the browser.
 
 ---
 
@@ -120,20 +130,17 @@ treats the app as a legacy app and runs it in 480×320-point compatibility mode
 (1440×960 px at 3×), centered on the real screen with massive OS-level black
 bars that don't pass touch events. Fixed by adding `<key>UILaunchScreen</key><dict/>`
 to `ios/Info.plist`. Also added:
-- `framework.rs` `init_gpu`: `window.outer_size()` on iOS (safe-area guard) + logging.
-- `framework.rs` `resumed`: landscape lock, hide status bar + home indicator.
+- `src/app.rs` `init_gpu`: `window.outer_size()` on iOS (safe-area guard) + logging.
+- `src/app.rs` `resumed`: landscape lock, hide status bar + home indicator.
 
 ### 8e. In-game settings overlay (longer term)
 See `autonomous-improvement.md` for full design. Lower priority.
 
 ---
 
-## 9. macOS App Packaging — needs rebase + merge
+## 9. macOS App Packaging ✅
 
-Work is complete on the `macos-packaging` branch (diverged from master at
-`a9fa746`, ~23 commits behind). Needs rebase onto master and a PR.
-
-What's on that branch:
+Merged to `master`. Current assets:
 - `macos/Info.plist` — bundle metadata (com.glalonde.spout, Metal, macOS 13+)
 - `scripts/package_macos.sh` — builds release binary, assembles .app, ad-hoc
   or Developer ID signs, optional --dmg flag
@@ -141,10 +148,11 @@ What's on that branch:
   dispatch; uploads .app + .dmg as release artifacts
 - `_context/macos-signing.md` — signing/notarization docs (team HNRULUX5AH)
 
-Steps:
-- [ ] `git checkout macos-packaging && git rebase master`
-- [ ] Resolve any conflicts (likely none — touches different files)
-- [ ] Open PR and merge
+Follow-up:
+- [ ] Release workflow hardening: `.github/workflows/release.yml` and
+      `.github/workflows/release-macos.yml` both trigger on `v*` tags and can
+      race to create/update the GitHub Release. Consolidate release publishing
+      into one final job after Linux/macOS/WASM artifacts are built.
 
 ---
 

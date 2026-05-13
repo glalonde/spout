@@ -25,7 +25,8 @@ RUSTFLAGS=--cfg=web_sys_unstable_apis cargo build --target wasm32-unknown-unknow
 
 | Path | Purpose |
 |------|---------|
-| `src/main.rs` | Entry point, game loop, winit event handling, state machine |
+| `src/app.rs` | winit app harness, window/surface lifecycle, platform event handling |
+| `src/main.rs` | Game loop, state machine, simulation/render phase coordination |
 | `src/particles.rs` | Particle system: GPU buffers, emitters, compute pass |
 | `src/level_manager.rs` | Level/terrain generation and progressive scrolling |
 | `src/render.rs` | Top-level render pipeline coordination |
@@ -35,13 +36,11 @@ RUSTFLAGS=--cfg=web_sys_unstable_apis cargo build --target wasm32-unknown-unknow
 | `src/camera.rs` | Camera/viewport transforms |
 | `src/game_params.rs` | Config structs (deserialized from `game_config.toml`) |
 | `src/shaders/` | WGSL compute and render shaders |
-| `examples/framework.rs` | winit app harness (shared by main and tests) |
-| `int_grid/` | Local sub-crate: fixed-point 2D integer grid |
 | `build.rs` | Generates shaders at compile time via `tera` templating |
 
 ## Shaders
 
-Shaders are in `src/shaders/` as WGSL. `build.rs` uses `tera` to inject constants from `int_grid` at compile time. Do not edit generated shader output directly — edit the `.wgsl` or `.wgsl.include` source files.
+Shaders are in `src/shaders/` as WGSL. `build.rs` uses `tera` to inject compile-time constants such as compute workgroup size. Do not edit generated shader output directly — edit the `.wgsl` or `.wgsl.include` source files.
 
 After any GPU or WASM change, read `_context/wasm-debugging.md` for known pitfalls before committing.
 
