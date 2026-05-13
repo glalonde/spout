@@ -33,6 +33,8 @@ _context/
 
 **During work:**
 - If a plan file exists for your task, keep its status current as you go.
+- If a gameplay rule changes in a way that substantially affects play, update
+  `PATCH_NOTES.md` with the commit hash, date, and player-facing description.
 
 **At the end of a session:**
 1. Update any plan files touched — mark completed items, note new open issues.

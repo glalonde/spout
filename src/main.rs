@@ -114,10 +114,10 @@ struct Play {
     prev_ship_state: ship::ShipState,
     viewport_offset: i32,
     progress_height: i32,
-    time_bonus_score: i32,
     score: i32,
     current_level_index: i32,
-    level_elapsed: Duration,
+    timer_elapsed: Duration,
+    timer_budget: Duration,
     pending_collision_segment: Option<PendingCollisionSegment>,
     in_flight_collision_segment: Option<PendingCollisionSegment>,
 }
@@ -281,12 +281,15 @@ impl Play {
         Self {
             ship_state,
             prev_ship_state: ship_state,
+            timer_budget: scoring::level_time_limit_duration(params),
             ..Default::default()
         }
     }
 
     fn level_timer_remaining(&self, params: &game_params::GameParams) -> Duration {
-        scoring::level_time_limit_duration(params).saturating_sub(self.level_elapsed)
+        self.timer_budget
+            .max(scoring::level_time_limit_duration(params))
+            .saturating_sub(self.timer_elapsed)
     }
 
     fn commit_progress_height(&mut self, params: &game_params::GameParams, height: f32) {
@@ -297,19 +300,17 @@ impl Play {
             scoring::level_index_for_progress(self.progress_height, params.level_height);
         if next_level_index > self.current_level_index {
             let levels_crossed = next_level_index - self.current_level_index;
-            let bonus = scoring::time_bonus_score(self.level_timer_remaining(params))
-                .saturating_mul(levels_crossed);
-            self.time_bonus_score = self.time_bonus_score.saturating_add(bonus);
+            let time_award = scoring::level_time_award(params, levels_crossed);
+            self.timer_budget = self.timer_budget.saturating_add(time_award);
             self.current_level_index = next_level_index;
-            self.level_elapsed = Duration::ZERO;
             log::info!(
-                "Entered level {} with {} time bonus points",
+                "Entered level {} with {:.1}s added to time bank",
                 self.current_level_index + 1,
-                bonus
+                time_award.as_secs_f32()
             );
         }
 
-        self.score = scoring::combined_score(self.progress_height, self.time_bonus_score);
+        self.score = scoring::height_score(self.progress_height);
     }
 
     fn update_camera(&mut self, params: &game_params::GameParams) {
@@ -372,8 +373,11 @@ impl Play {
         game_dt: f32,
         game_dt_duration: Duration,
     ) -> Option<DeathCause> {
-        self.level_elapsed = self.level_elapsed.saturating_add(game_dt_duration);
-        if self.level_elapsed >= scoring::level_time_limit_duration(params) {
+        self.timer_elapsed = self.timer_elapsed.saturating_add(game_dt_duration);
+        let timer_budget = self
+            .timer_budget
+            .max(scoring::level_time_limit_duration(params));
+        if self.timer_elapsed >= timer_budget {
             log::info!(
                 "Level timer expired on level {}",
                 self.current_level_index + 1,
@@ -1179,7 +1183,7 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::{angle_diff, record_collision_motion, AppState, PendingCollisionSegment, Play};
-    use std::f32::consts::PI;
+    use std::{f32::consts::PI, time::Duration};
 
     fn approx(a: f32, b: f32) -> bool {
         (a - b).abs() < 1e-5
@@ -1239,6 +1243,39 @@ mod tests {
                 diff
             );
         }
+    }
+
+    #[test]
+    fn level_transition_banks_time_and_keeps_score_height_based() {
+        let mut params = spout::game_params::GameParams::default();
+        params.level_height = 100;
+        params.level_params.level_time_limit_seconds = 60.0;
+
+        let mut play = Play::new(&params);
+        play.timer_elapsed = Duration::from_secs(40);
+        play.commit_progress_height(&params, 100.0);
+
+        assert_eq!(play.current_level_index, 1);
+        assert_eq!(play.level_timer_remaining(&params), Duration::from_secs(80));
+        assert_eq!(play.score, 100);
+    }
+
+    #[test]
+    fn crossing_multiple_levels_adds_one_time_award_per_level() {
+        let mut params = spout::game_params::GameParams::default();
+        params.level_height = 100;
+        params.level_params.level_time_limit_seconds = 60.0;
+
+        let mut play = Play::new(&params);
+        play.timer_elapsed = Duration::from_secs(40);
+        play.commit_progress_height(&params, 250.0);
+
+        assert_eq!(play.current_level_index, 2);
+        assert_eq!(
+            play.level_timer_remaining(&params),
+            Duration::from_secs(140)
+        );
+        assert_eq!(play.score, 250);
     }
 
     #[test]

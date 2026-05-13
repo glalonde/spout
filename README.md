@@ -2,13 +2,14 @@
 
 # Spout
 
-![Spout preview](./assets/spout_preview.png)
+![Spout preview](./assets/spout_screenshot.png)
 
 Asteroids-style 2D arcade game with GPU-accelerated particle terrain destruction. Runs natively on desktop (via wgpu/Metal/Vulkan/DX12) and in the browser (via WebAssembly + WebGPU).
 
 Live programming streams on YouTube: [https://youtu.be/QauR0n0V48M](https://youtu.be/QauR0n0V48M)
 
 See [docs/pipeline.md](docs/pipeline.md) for a diagram of the per-frame compute and render pipeline.
+See [PATCH_NOTES.md](PATCH_NOTES.md) for player-facing gameplay rule patch notes.
 
 > **Legacy version** is in branch `legacy_wgpu` — more feature-complete but based on older libraries.
 
