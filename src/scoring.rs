@@ -4,8 +4,6 @@ use std::time::Duration;
 
 use crate::game_params;
 
-const TIME_BONUS_SCORE_PER_SECOND: i32 = 10;
-
 pub fn level_time_limit_duration(params: &game_params::GameParams) -> Duration {
     let seconds = params.level_params.level_time_limit_seconds;
     if seconds.is_finite() && seconds > 0.0 {
@@ -28,9 +26,11 @@ pub fn format_level_timer(remaining: Duration) -> String {
     format!("{minutes}:{seconds:02}")
 }
 
-pub fn time_bonus_score(remaining: Duration) -> i32 {
-    let seconds = ceil_duration_seconds(remaining).min(i32::MAX as u64) as i32;
-    seconds.saturating_mul(TIME_BONUS_SCORE_PER_SECOND)
+pub fn level_time_award(params: &game_params::GameParams, levels_crossed: i32) -> Duration {
+    let levels_crossed = levels_crossed.max(0) as u32;
+    level_time_limit_duration(params)
+        .checked_mul(levels_crossed)
+        .unwrap_or(Duration::MAX)
 }
 
 pub fn level_index_for_progress(progress_height: i32, level_height: u32) -> i32 {
@@ -41,8 +41,8 @@ pub fn level_index_for_progress(progress_height: i32, level_height: u32) -> i32 
     }
 }
 
-pub fn combined_score(progress_height: i32, time_bonus_score: i32) -> i32 {
-    progress_height.saturating_add(time_bonus_score)
+pub fn height_score(progress_height: i32) -> i32 {
+    progress_height
 }
 
 #[cfg(test)]
@@ -58,10 +58,8 @@ mod tests {
     }
 
     #[test]
-    fn time_bonus_uses_remaining_seconds_ceiling() {
+    fn timer_display_uses_remaining_seconds_ceiling() {
         assert_eq!(ceil_duration_seconds(Duration::from_millis(1)), 1);
-        assert_eq!(time_bonus_score(Duration::from_millis(1)), 10);
-        assert_eq!(time_bonus_score(Duration::from_secs(42)), 420);
     }
 
     #[test]
@@ -75,11 +73,20 @@ mod tests {
     }
 
     #[test]
-    fn level_index_uses_progress_height_not_bonus_score() {
+    fn level_time_award_multiplies_configured_level_time() {
+        let mut params = game_params::GameParams::default();
+        params.level_params.level_time_limit_seconds = 30.0;
+
+        assert_eq!(level_time_award(&params, 0), Duration::ZERO);
+        assert_eq!(level_time_award(&params, 2), Duration::from_secs(60));
+    }
+
+    #[test]
+    fn scoring_uses_progress_height() {
         assert_eq!(level_index_for_progress(-10, 100), 0);
         assert_eq!(level_index_for_progress(99, 100), 0);
         assert_eq!(level_index_for_progress(100, 100), 1);
         assert_eq!(level_index_for_progress(250, 100), 2);
-        assert_eq!(combined_score(105, 900), 1005);
+        assert_eq!(height_score(105), 105);
     }
 }

@@ -297,15 +297,16 @@ Tasks:
 
 ## 18. Time-Attack: Per-Level Timer
 
-Each level has a target time. Reaching the next level early awards bonus
-points; running out triggers game over. Adds pressure and gives each level
-a clear arc.
+Each level has a target time. Reaching the next level adds another level's
+worth of time to the countdown, so fast play builds a bank; running out
+triggers game over. Score remains height-based. Adds pressure and gives each
+level a clear arc.
 
 Tasks:
 - [x] Add `level_time_limit_seconds` to `LevelParams` (per-level override
       possible later)
 - [x] HUD countdown timer; visual emphasis as time runs low
-- [x] On level transition: compute remaining time → bonus points
+- [x] On level transition: add another level-time award to the countdown
 - [x] On expiry: game over with a `TIME UP` overlay variant
 - [ ] Tune so early levels feel generous, later ones tighten
 
