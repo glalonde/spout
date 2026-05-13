@@ -72,6 +72,10 @@ work — it documents decisions made, known gotchas, and work already scoped.
 non-obvious gotchas to `_context/wasm-debugging.md`, and move completed plans
 to `_context/plans/archive/`.
 
+When changing a gameplay rule in a way that substantially affects play, update
+`PATCH_NOTES.md` with the commit hash, date, and player-facing description of
+the rule change. Keep that note in the same PR/commit series as the rule change.
+
 **When committing code that closes a plan item:** update the relevant
 `_context/plans/` file in the same commit. Plan files and code changes that
 belong together ship together — don't leave the plans to drift.
