@@ -34,7 +34,7 @@ _context/
 **During work:**
 - If a plan file exists for your task, keep its status current as you go.
 - If gameplay rules change, add a short player-facing note to
-  `RULE_CHANGES.md`.
+  `PATCH_NOTES.md`.
 
 **At the end of a session:**
 1. Update any plan files touched — mark completed items, note new open issues.
