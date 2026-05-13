@@ -2,7 +2,7 @@
 
 # Spout
 
-![Spout preview](./assets/spout_preview.png)
+![Spout preview](./assets/spout_screenshot.png)
 
 Asteroids-style 2D arcade game with GPU-accelerated particle terrain destruction. Runs natively on desktop (via wgpu/Metal/Vulkan/DX12) and in the browser (via WebAssembly + WebGPU).
 
